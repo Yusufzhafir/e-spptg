@@ -4,7 +4,6 @@ import {
   ResearchTeamMember,
   BoundaryWitness,
   GeographicCoordinate,
-  UploadedDocument,
   BoundaryDirection,
   OverlapResult,
 } from '../../types';
@@ -35,8 +34,8 @@ import {
   DialogTitle,
 } from '../ui/dialog';
 import { Plus, Trash2, Upload, MapPin, AlertTriangle } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
 import { Badge } from '../ui/badge';
+import { toast } from 'sonner';
 
 interface Step2Props {
   draft: SubmissionDraft;
@@ -348,7 +347,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
               <div className="border border-gray-200 rounded-lg p-8 text-center text-gray-500">
                 <MapPin className="w-12 h-12 mx-auto mb-2 text-gray-400" />
                 <p>Belum ada titik koordinat</p>
-                <p className="text-sm">Klik "Tambah Titik" untuk memulai</p>
+                <p className="text-sm">Klik &quot;Tambah Titik&quot; untuk memulai</p>
               </div>
             ) : (
               <div className="border border-gray-200 rounded-lg overflow-hidden">

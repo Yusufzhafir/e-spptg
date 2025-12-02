@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { MapView } from './MapView';
 import { ChevronLeft, ChevronRight, Save, Send, Upload } from 'lucide-react';
 import { Submission } from '../types';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface SubmissionFormProps {
   onSubmit: (data: Partial<Submission>) => void;
@@ -32,7 +32,8 @@ export function SubmissionForm({ onSubmit, onCancel }: SubmissionFormProps) {
     coordinates: [],
   });
 
-  const updateField = (field: string, value: any) => {
+   
+  const updateField = (field: string, value: string | number) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 

@@ -31,14 +31,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../ui/alert-dialog';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '../ui/accordion';
-import { CheckCircle2, XCircle, FileText, MapPin, AlertTriangle, Upload, File, X } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+
+
+import { CheckCircle2, XCircle, MapPin, AlertTriangle, Upload, File, X } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface Step3Props {
   draft: SubmissionDraft;
@@ -456,7 +452,7 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
                   </div>
                   {selectedStatus === 'SPPTG terdaftar' && (
                     <p className="text-xs text-gray-600 mt-2">
-                      ✓ Langkah "Penerbitan SPPTG" akan terbuka setelah menyimpan keputusan
+                      ✓ Langkah &quot;Penerbitan SPPTG&quot; akan terbuka setelah menyimpan keputusan
                     </p>
                   )}
                 </div>
@@ -787,7 +783,7 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
             <AlertDialogTitle>Peringatan Tumpang Tindih</AlertDialogTitle>
             <AlertDialogDescription>
               Lahan pengajuan ini tumpang tindih dengan {draft.overlapResults.length} kawasan
-              non-SPPTG. Tetap lanjutkan dengan status "SPPTG terdaftar"?
+              non-SPPTG. Tetap lanjutkan dengan status &quot;SPPTG terdaftar&quot;?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

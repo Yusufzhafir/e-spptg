@@ -10,7 +10,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 interface DashboardProps {
   submissions: Submission[];
   kpiData: KPIData;
-  monthlyData: any[];
+  /* eslint-disable @typescript-eslint/no-empty-object-type */
+  monthlyData: {}[];
   statusFilter: string;
   onStatusFilterChange: (value: string) => void;
   onNewSubmission: () => void;

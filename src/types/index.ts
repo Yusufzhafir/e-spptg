@@ -18,7 +18,8 @@ export interface Submission {
   catatan?: string;
   
   // Peta & Dokumen
-  geoJSON?: any;
+  /* eslint-disable @typescript-eslint/no-empty-object-type */
+  geoJSON?: string | {}; 
   coordinates?: [number, number][];
   dokumen?: File | string;
   

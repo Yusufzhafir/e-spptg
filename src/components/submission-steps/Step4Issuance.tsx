@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { SubmissionDraft, UploadedDocument } from '../../types';
+import { SubmissionDraft } from '../../types';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from '../ui/dialog';
 import { Upload, File, X, CheckCircle2, Download, Printer, ArrowLeft } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface Step4Props {
   draft: SubmissionDraft;
@@ -82,7 +82,7 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
       {draft.status !== 'SPPTG terdaftar' && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <p className="text-yellow-900">
-            ⚠️ Penerbitan SPPTG hanya tersedia untuk status "SPPTG terdaftar". Status saat ini:{' '}
+            ⚠️ Penerbitan SPPTG hanya tersedia untuk status &quot;SPPTG terdaftar&quot;. Status saat ini:{' '}
             <strong>{draft.status || 'Belum ditentukan'}</strong>
           </p>
         </div>
@@ -206,11 +206,11 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
                     <strong>Semua informasi penerbitan telah lengkap</strong>
                   </p>
                   <div className="space-y-1 text-sm text-green-800">
-                    <p>• Dokumen SPPTG: {draft.dokumenSPPTG.name}</p>
+                    <p>• Dokumen SPPTG: {draft.dokumenSPPTG?.name}</p>
                     <p>• Nomor SPPTG: {draft.nomorSPPTG}</p>
                     <p>
                       • Tanggal Terbit:{' '}
-                      {new Date(draft.tanggalTerbit).toLocaleDateString('id-ID', {
+                      {new Date(draft.tanggalTerbit || "").toLocaleDateString('id-ID', {
                         day: 'numeric',
                         month: 'long',
                         year: 'numeric',
@@ -225,7 +225,7 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
           {/* Info Box */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <p className="text-sm text-blue-900">
-              <strong>ℹ️ Informasi:</strong> Setelah menekan tombol "Terbitkan SPPTG", dokumen
+              <strong>ℹ️ Informasi:</strong> Setelah menekan tombol &quot;Terbitkan SPPTG&quot;, dokumen
               akan disimpan dan dapat diunduh atau dicetak. Pastikan semua informasi sudah benar
               sebelum melanjutkan.
             </p>

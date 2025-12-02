@@ -52,7 +52,7 @@ import {
   AlertTriangle,
   Shield,
 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface ProhibitedAreasTabProps {
   prohibitedAreas: ProhibitedArea[];
@@ -398,7 +398,7 @@ export function ProhibitedAreasTab({
             </DialogDescription>
           </DialogHeader>
 
-          <Tabs value={uploadMethod} onValueChange={(v) => setUploadMethod(v as any)}>
+          <Tabs value={uploadMethod} onValueChange={(v) => setUploadMethod(v as "upload")}>
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="upload">
                 <Upload className="h-4 w-4 mr-2" />

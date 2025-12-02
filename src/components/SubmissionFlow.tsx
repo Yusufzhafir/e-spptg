@@ -9,13 +9,13 @@ import {
 } from './ui/breadcrumb';
 import { Button } from './ui/button';
 import { Check, FileText, MapPin, ClipboardCheck, Award } from 'lucide-react';
-import { cn } from './ui/utils';
 import { SubmissionDraft } from '../types';
 import { Step1DocumentUpload } from './submission-steps/Step1DocumentUpload';
 import { Step2FieldValidation } from './submission-steps/Step2FieldValidation';
 import { Step3Results } from './submission-steps/Step3Results';
 import { Step4Issuance } from './submission-steps/Step4Issuance';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 
 interface SubmissionFlowProps {
   submissionId?: string;
@@ -213,7 +213,7 @@ export function SubmissionFlow({ submissionId, onCancel, onComplete }: Submissio
                   </p>
                   {isLocked && (
                     <p className="text-xs text-gray-500 mt-1 text-center max-w-[100px]">
-                      Hanya tersedia jika status "SPPTG terdaftar"
+                      Hanya tersedia jika status &quot;SPPTG terdaftar&quot;
                     </p>
                   )}
                 </div>

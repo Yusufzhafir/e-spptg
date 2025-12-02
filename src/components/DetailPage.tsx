@@ -1,15 +1,15 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { MapView } from './MapView';
 import { StatusBadge } from './StatusBadge';
 import { ChevronLeft, FileText, Clock, MessageSquare } from 'lucide-react';
-import { Submission, StatusSPPTG } from '../types';
-import { toast } from 'sonner@2.0.3';
+import { StatusSPPTG, Submission } from '@/types';
+import { toast } from 'sonner';
+import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
 
 interface DetailPageProps {
   submission: Submission;
@@ -72,7 +72,7 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
               submissions={[submission]}
               selectedSubmission={submission}
               height="500px"
-              center={submission.coordinates?.[0] as any}
+              center={submission.coordinates?.[0] as [number,number]}
               zoom={15}
             />
 
@@ -110,7 +110,7 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="status">Ubah Status</Label>
-              <Select value={newStatus} onValueChange={(v) => setNewStatus(v as StatusSKT)}>
+              <Select value={newStatus} onValueChange={(v) => setNewStatus(v as StatusSPPTG)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Pilih status baru" />
                 </SelectTrigger>

@@ -1,8 +1,7 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
-import { Calendar, Download, FileUp, PlusCircle } from 'lucide-react';
-import { StatusSPPTG } from '../types';
+import { Download, FileUp, PlusCircle } from 'lucide-react';
 
 interface FilterPanelProps {
   statusFilter: string;

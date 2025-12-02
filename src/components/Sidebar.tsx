@@ -1,5 +1,5 @@
+import { cn } from '@/lib/utils';
 import { Home, FileText, CheckSquare, Map, BarChart3, Settings } from 'lucide-react';
-import { cn } from './ui/utils';
 
 interface SidebarProps {
   currentPage: string;

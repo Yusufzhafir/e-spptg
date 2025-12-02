@@ -37,8 +37,8 @@ import {
   AlertDialogTitle,
 } from './ui/alert-dialog';
 import { Badge } from './ui/badge';
-import { Search, Plus, Eye, Edit, Power, KeyRound } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { Search, Plus, Edit, Power, KeyRound } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface UsersTabProps {
   users: User[];
