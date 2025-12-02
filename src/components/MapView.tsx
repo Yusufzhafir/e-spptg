@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Submission, StatusSKT } from '../types';
+import { Submission, StatusSPPTG } from '../types';
 import { StatusBadge } from './StatusBadge';
 
 interface MapViewProps {
@@ -22,15 +22,15 @@ export function MapView({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [hoveredSubmission, setHoveredSubmission] = useState<Submission | null>(null);
 
-  const getPolygonColor = (status: StatusSKT) => {
+  const getPolygonColor = (status: StatusSPPTG) => {
     switch (status) {
-      case 'SKT terdaftar':
+      case 'SPPTG terdaftar':
         return '#22c55e';
-      case 'SKT terdata':
+      case 'SPPTG terdata':
         return '#3b82f6';
-      case 'SKT ditolak':
+      case 'SPPTG ditolak':
         return '#ef4444';
-      case 'SKT ditinjau ulang':
+      case 'SPPTG ditinjau ulang':
         return '#eab308';
       default:
         return '#6b7280';
