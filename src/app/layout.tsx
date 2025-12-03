@@ -21,6 +21,14 @@ import {
   StatusSPPTG,
   SubmissionDraft,
 } from '@/types';
+import {
+  ClerkProvider,
+  SignInButton,
+  SignUpButton,
+  SignedIn,
+  SignedOut,
+  UserButton,
+} from '@clerk/nextjs'
 import { toast } from 'sonner';
 import { usePathname, useRouter } from 'next/navigation';
 
@@ -48,6 +56,7 @@ export type AppStateContextValue = {
 };
 
 import { createContext, useContext } from 'react';
+import { TRPCProvider } from '@/trpc/client';
 
 const AppStateContext = createContext<AppStateContextValue | null>(null);
 
@@ -78,8 +87,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     pathname === '/pengaturan'
       ? 'pengaturan'
       : pathname.startsWith('/pengajuan')
-      ? 'pengajuan'
-      : 'beranda';
+        ? 'pengajuan'
+        : 'beranda';
 
   const filteredSubmissions = useMemo(() => {
     let filtered = submissions;
@@ -152,19 +161,19 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       prev.map((s) =>
         s.id === id
           ? {
-              ...s,
-              status,
-              verifikator: 'Bambang Supriyanto',
-              riwayat: [
-                ...s.riwayat,
-                {
-                  tanggal: new Date().toLocaleString('id-ID'),
-                  status,
-                  petugas: 'Bambang Supriyanto',
-                  alasan: alasan || undefined,
-                },
-              ],
-            }
+            ...s,
+            status,
+            verifikator: 'Bambang Supriyanto',
+            riwayat: [
+              ...s.riwayat,
+              {
+                tanggal: new Date().toLocaleString('id-ID'),
+                status,
+                petugas: 'Bambang Supriyanto',
+                alasan: alasan || undefined,
+              },
+            ],
+          }
           : s
       )
     );
@@ -235,25 +244,29 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   };
 
   return (
-    <html lang="en">
-      <body>
-        <AppStateContext.Provider value={contextValue}>
-          <Toaster position="top-right" />
-          <div className="min-h-screen bg-gray-50 flex">
-            <Sidebar
-              currentPage={currentPage}
-              onPageChange={handlePageChange}
-            />
-            <div className="flex-1 flex flex-col">
-              <Header
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
-              />
-              <main className="flex-1 p-6">{children}</main>
-            </div>
-          </div>
-        </AppStateContext.Provider>
-      </body>
-    </html>
+    <ClerkProvider>
+      <TRPCProvider>
+        <html lang="en">
+          <body>
+            <AppStateContext.Provider value={contextValue}>
+              <Toaster position="top-right" />
+              <div className="min-h-screen bg-gray-50 flex">
+                <Sidebar
+                  currentPage={currentPage}
+                  onPageChange={handlePageChange}
+                />
+                <div className="flex-1 flex flex-col">
+                  <Header
+                    searchQuery={searchQuery}
+                    onSearchChange={setSearchQuery}
+                  />
+                  <main className="flex-1 p-6">{children}</main>
+                </div>
+              </div>
+            </AppStateContext.Provider>
+          </body>
+        </html>
+      </TRPCProvider>
+    </ClerkProvider>
   );
 }

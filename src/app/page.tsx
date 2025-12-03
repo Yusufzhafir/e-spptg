@@ -20,7 +20,7 @@ export default function DashboardPage() {
 
   const handleEditSubmission = (submission: {id:string}) => {
     // For now, reuse detail page
-    window.location.href = `/pengajuan/${submission.id}`;
+    window.location.href = `/testing-trpc/`;
   };
 
   return (
