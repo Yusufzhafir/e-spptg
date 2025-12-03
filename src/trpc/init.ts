@@ -1,5 +1,5 @@
 import { initTRPC } from '@trpc/server';
-import { FetchCreateContextFnOptions, FetchHandlerRequestOptions } from '@trpc/server/adapters/fetch';
+import { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
 import { auth } from '@clerk/nextjs/server';
 
 

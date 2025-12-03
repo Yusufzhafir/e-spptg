@@ -23,11 +23,6 @@ import {
 } from '@/types';
 import {
   ClerkProvider,
-  SignInButton,
-  SignUpButton,
-  SignedIn,
-  SignedOut,
-  UserButton,
 } from '@clerk/nextjs'
 import { toast } from 'sonner';
 import { usePathname, useRouter } from 'next/navigation';
