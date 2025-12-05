@@ -6,7 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "generate-schema": "pnpm drizzle-kit generate --config stag.drizzle.config.ts",
+    "pull:stag": "pnpm drizzle-kit pull --config stag.drizzle.config.ts",
+    "push:stag": "pnpm drizzle-kit push --config stag.drizzle.config.ts",
+    "pull:prod": "pnpm drizzle-kit pull --config prod.drizzle.config.ts",
+    "push:prod": "pnpm drizzle-kit push --config prod.drizzle.config.ts",
+    "generate:prod":"pnpm drizzle-kit generate --config prod.drizzle.config.ts",
+    "generate:stag":"pnpm drizzle-kit generate --config stag.drizzle.config.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.35.6",
@@ -72,6 +79,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.7",
     "eslint": "^9",
     "eslint-config-next": "16.0.6",
     "eslint-plugin-unused-imports": "^4.3.0",
