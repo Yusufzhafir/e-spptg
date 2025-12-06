@@ -1,3 +1,5 @@
+import { type users } from "@/server/db/schema";
+
 export type StatusSPPTG = 'SPPTG terdaftar' | 'SPPTG terdata' | 'SPPTG ditolak' | 'SPPTG ditinjau ulang';
 
 export interface Submission {
@@ -61,7 +63,7 @@ export interface KPIData {
   total: number;
 }
 
-export type UserRole = 'Superadmin' | 'Admin' | 'Verifikator' | 'Viewer';
+export type UserRole = (typeof users.$inferInsert)["peran"]
 export type UserStatus = 'Aktif' | 'Nonaktif';
 
 export interface User {

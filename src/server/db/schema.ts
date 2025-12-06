@@ -99,6 +99,7 @@ export const users = pgTable(
       cache: 1,
     }),
     nama: varchar('nama', { length: 255 }).notNull(),
+    clerkUserId: varchar('clerk_user_id', { length: 255 }).notNull().unique(),
     nipNik: varchar('nip_nik', { length: 20 }).notNull(),
     email: varchar('email', { length: 255 }).notNull(),
     peran: userRoleEnum('peran').notNull(),
@@ -109,6 +110,7 @@ export const users = pgTable(
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
 );
+
 
 // ============================================================================
 // VILLAGES TABLE

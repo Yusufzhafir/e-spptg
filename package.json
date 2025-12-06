@@ -12,10 +12,14 @@
     "push:stag": "pnpm drizzle-kit push --config stag.drizzle.config.ts",
     "pull:prod": "pnpm drizzle-kit pull --config prod.drizzle.config.ts",
     "push:prod": "pnpm drizzle-kit push --config prod.drizzle.config.ts",
-    "generate:prod":"pnpm drizzle-kit generate --config prod.drizzle.config.ts",
-    "generate:stag":"pnpm drizzle-kit generate --config stag.drizzle.config.ts"
+    "generate:prod": "pnpm drizzle-kit generate --config prod.drizzle.config.ts",
+    "generate:stag": "pnpm drizzle-kit generate --config stag.drizzle.config.ts",
+    "migrate:stag": "pnpm drizzle-kit migrate --config stag.drizzle.config.ts",
+    "migrate:prod": "pnpm drizzle-kit migrate --config prod.drizzle.config.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.946.0",
+    "@aws-sdk/s3-request-presigner": "^3.946.0",
     "@clerk/nextjs": "^6.35.6",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",

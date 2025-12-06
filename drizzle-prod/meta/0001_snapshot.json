@@ -1,0 +1,947 @@
+{
+  "id": "0f57ba89-059f-4f81-9122-cf5e190e0c74",
+  "prevId": "2c27e431-31ff-4275-b986-b3f886a667cb",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.overlap_results": {
+      "name": "overlap_results",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "agriculture_land_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "submissionId": {
+          "name": "submissionId",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prohibitedAreaId": {
+          "name": "prohibitedAreaId",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "luas_overlap": {
+          "name": "luas_overlap",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "percentage_overlap": {
+          "name": "percentage_overlap",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nama_kawasan": {
+          "name": "nama_kawasan",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "jenis_kawasan": {
+          "name": "jenis_kawasan",
+          "type": "prohibited_area_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "intersection_geom": {
+          "name": "intersection_geom",
+          "type": "geometry(point)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.prohibited_areas": {
+      "name": "prohibited_areas",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "prohibited_areas_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "nama_kawasan": {
+          "name": "nama_kawasan",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "jenis_kawasan": {
+          "name": "jenis_kawasan",
+          "type": "prohibited_area_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sumber_data": {
+          "name": "sumber_data",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dasar_hukum": {
+          "name": "dasar_hukum",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tanggal_efektif": {
+          "name": "tanggal_efektif",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tanggal_unggah": {
+          "name": "tanggal_unggah",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "diunggahOleh": {
+          "name": "diunggahOleh",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status_validasi": {
+          "name": "status_validasi",
+          "type": "validation_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Lolos'"
+        },
+        "aktif_di_validasi": {
+          "name": "aktif_di_validasi",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "warna": {
+          "name": "warna",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "catatan": {
+          "name": "catatan",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "geom": {
+          "name": "geom",
+          "type": "geometry(point)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "prohibited_areas_geom_idx": {
+          "name": "prohibited_areas_geom_idx",
+          "columns": [
+            {
+              "expression": "geom",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gist",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.status_history": {
+      "name": "status_history",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "status_history_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "submissionId": {
+          "name": "submissionId",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status_before": {
+          "name": "status_before",
+          "type": "status_spptg",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status_after": {
+          "name": "status_after",
+          "type": "status_spptg",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "petugas": {
+          "name": "petugas",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "alasan": {
+          "name": "alasan",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "feedback": {
+          "name": "feedback",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tanggal": {
+          "name": "tanggal",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.submission_drafts": {
+      "name": "submission_drafts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "submission_drafts_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "current_step": {
+          "name": "current_step",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_saved": {
+          "name": "last_saved",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.submissions": {
+      "name": "submissions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "submissions_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "nama_pemilik": {
+          "name": "nama_pemilik",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nik": {
+          "name": "nik",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "alamat": {
+          "name": "alamat",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nomor_hp": {
+          "name": "nomor_hp",
+          "type": "varchar(15)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "villageId": {
+          "name": "villageId",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kecamatan": {
+          "name": "kecamatan",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kabupaten": {
+          "name": "kabupaten",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "luas": {
+          "name": "luas",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "penggunaan_lahan": {
+          "name": "penggunaan_lahan",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "catatan": {
+          "name": "catatan",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "geom": {
+          "name": "geom",
+          "type": "geometry(point)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "geo_json": {
+          "name": "geo_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "status_spptg",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tanggal_pengajuan": {
+          "name": "tanggal_pengajuan",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "verifikator": {
+          "name": "verifikator",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "riwayat": {
+          "name": "riwayat",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "feedback": {
+          "name": "feedback",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "submissions_geom_idx": {
+          "name": "submissions_geom_idx",
+          "columns": [
+            {
+              "expression": "geom",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gist",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.submissions_documents": {
+      "name": "submissions_documents",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "document_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "filename": {
+          "name": "filename",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_type": {
+          "name": "file_type",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "size": {
+          "name": "size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category": {
+          "name": "category",
+          "type": "document_category",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "submissionId": {
+          "name": "submissionId",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "draftId": {
+          "name": "draftId",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "uploadedBy": {
+          "name": "uploadedBy",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_temporary": {
+          "name": "is_temporary",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "uploaded_at": {
+          "name": "uploaded_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.users": {
+      "name": "users",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "users_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "nama": {
+          "name": "nama",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "clerk_user_id": {
+          "name": "clerk_user_id",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nip_nik": {
+          "name": "nip_nik",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "peran": {
+          "name": "peran",
+          "type": "user_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "user_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Aktif'"
+        },
+        "nomor_hp": {
+          "name": "nomor_hp",
+          "type": "varchar(15)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "terakhir_masuk": {
+          "name": "terakhir_masuk",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "users_clerk_user_id_unique": {
+          "name": "users_clerk_user_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "clerk_user_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.villages": {
+      "name": "villages",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "villages_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "kode_desa": {
+          "name": "kode_desa",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nama_desa": {
+          "name": "nama_desa",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kecamatan": {
+          "name": "kecamatan",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kabupaten": {
+          "name": "kabupaten",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provinsi": {
+          "name": "provinsi",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "jumlah_pengajuan": {
+          "name": "jumlah_pengajuan",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.boundary_direction": {
+      "name": "boundary_direction",
+      "schema": "public",
+      "values": [
+        "Utara",
+        "Timur",
+        "Selatan",
+        "Barat"
+      ]
+    },
+    "public.coordinate_system": {
+      "name": "coordinate_system",
+      "schema": "public",
+      "values": [
+        "geografis",
+        "utm"
+      ]
+    },
+    "public.document_category": {
+      "name": "document_category",
+      "schema": "public",
+      "values": [
+        "KTP",
+        "KK",
+        "Kwitansi",
+        "Permohonan",
+        "SK Kepala Desa",
+        "Berita Acara",
+        "Pernyataan Jual Beli",
+        "Asal Usul",
+        "Tidak Sengketa",
+        "Foto Lahan",
+        "SPPG",
+        "Lampiran Feedback",
+        "Lainnya"
+      ]
+    },
+    "public.prohibited_area_type": {
+      "name": "prohibited_area_type",
+      "schema": "public",
+      "values": [
+        "Hutan Lindung",
+        "Tanah Pemerintah",
+        "Cagar Alam",
+        "Kawasan Industri",
+        "Fasum/Fasos",
+        "Sempadan Sungai",
+        "Sempadan Pantai",
+        "Kawasan Rawan Bencana",
+        "Aset TNI/POLRI",
+        "Lainnya"
+      ]
+    },
+    "public.status_spptg": {
+      "name": "status_spptg",
+      "schema": "public",
+      "values": [
+        "SPPTG terdata",
+        "SPPTG terdaftar",
+        "Ditolak",
+        "Ditinjau Ulang",
+        "Terbit SPPTG"
+      ]
+    },
+    "public.user_role": {
+      "name": "user_role",
+      "schema": "public",
+      "values": [
+        "Superadmin",
+        "Admin",
+        "Verifikator",
+        "Viewer"
+      ]
+    },
+    "public.user_status": {
+      "name": "user_status",
+      "schema": "public",
+      "values": [
+        "Aktif",
+        "Nonaktif"
+      ]
+    },
+    "public.validation_status": {
+      "name": "validation_status",
+      "schema": "public",
+      "values": [
+        "Lolos",
+        "Perlu Perbaikan"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
