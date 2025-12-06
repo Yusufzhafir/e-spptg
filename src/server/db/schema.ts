@@ -32,8 +32,8 @@ export const userStatusEnum = pgEnum('user_status', [
 export const statusSPPTGEnum = pgEnum('status_spptg', [
   'SPPTG terdata',
   'SPPTG terdaftar',
-  'Ditolak',
-  'Ditinjau Ulang',
+  'SPPTG ditolak',
+  'SPPTG ditinjau ulang',
   'Terbit SPPTG',
 ]);
 
@@ -199,7 +199,7 @@ export const submissionDrafts = pgTable(
     
     // Entire SubmissionDraft as JSONB
     // This includes all the form data, uploads, coordinates, etc.
-    payload: jsonb('payload').notNull(),
+    payload: jsonb('payload').$type<object>().notNull(),
     
     lastSaved: timestamp('last_saved').defaultNow().notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),

@@ -1,6 +1,6 @@
-import { db } from '../db/db';
-import { prohibitedAreas } from '../db/schema';
 import { eq } from 'drizzle-orm';
+import { db } from '../db';
+import { prohibitedAreas } from '../schema';
 
 export async function listProhibitedAreas(limit = 100, offset = 0) {
   return db.query.prohibitedAreas.findMany({

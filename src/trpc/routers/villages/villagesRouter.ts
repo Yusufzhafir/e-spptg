@@ -3,7 +3,7 @@ import { z } from 'zod';
 import {
   createVillageSchema,
   updateVillageSchema,
-} from '@/lib/validations';
+} from '@/lib/validation';
 import * as queries from '@/server/db/queries/villages';
 
 export const villagesRouter = router({
@@ -14,26 +14,26 @@ export const villagesRouter = router({
         offset: z.number().int().nonnegative().default(0),
       })
     )
-    .query(async ({ ctx, input }) => {
+    .query(async ({ input }) => {
       return queries.listVillages(input.limit, input.offset);
     }),
 
   search: protectedProcedure
     .input(z.object({ query: z.string() }))
-    .query(async ({ ctx, input }) => {
+    .query(async ({ input }) => {
       return queries.searchVillages(input.query);
     }),
 
   byId: protectedProcedure
     .input(z.object({ id: z.number().int() }))
-    .query(async ({ ctx, input }) => {
+    .query(async ({ input }) => {
       return queries.getVillageById(input.id);
     }),
 
   create: adminProcedure
     .input(createVillageSchema)
-    .mutation(async ({ ctx, input }) => {
-      return queries.createVillage(input as any);
+    .mutation(async ({ input }) => {
+      return queries.createVillage(input);
     }),
 
   update: adminProcedure
@@ -43,13 +43,13 @@ export const villagesRouter = router({
         data: updateVillageSchema,
       })
     )
-    .mutation(async ({ ctx, input }) => {
-      return queries.updateVillage(input.id, input.data as any);
+    .mutation(async ({ input }) => {
+      return queries.updateVillage(input.id, input.data);
     }),
 
   delete: adminProcedure
     .input(z.object({ id: z.number().int() }))
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ input }) => {
       return queries.deleteVillage(input.id);
     }),
 });

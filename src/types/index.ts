@@ -1,6 +1,9 @@
-import { type users } from "@/server/db/schema";
+import { submissions, submissions_documents, type users } from "@/server/db/schema";
 
-export type StatusSPPTG = 'SPPTG terdaftar' | 'SPPTG terdata' | 'SPPTG ditolak' | 'SPPTG ditinjau ulang';
+export type StatusSPPTG = ((typeof submissions.$inferSelect)["status"])
+
+export type DocumentCategoryEnum = (typeof submissions_documents.$inferSelect)['category']
+
 
 export interface Submission {
   id: string;
@@ -187,7 +190,6 @@ export interface SubmissionDraft {
   
   coordinateSystem: CoordinateSystem;
   coordinatesGeografis: GeographicCoordinate[];
-  coordinatesUTM: UTMCoordinate[];
   
   fotoLahan: UploadedDocument[];
   dokumenBeritaAcara?: UploadedDocument;

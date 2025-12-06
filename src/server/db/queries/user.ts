@@ -15,9 +15,11 @@ export async function getUserByClerkId(clerkUserId: string, tx?: DBTransaction) 
 
 export async function getUserById(id: number, tx?: DBTransaction) {
   const queryDb = tx || db;
-  return queryDb.select().from(users).where(eq(
-    users.id, id
-  ))
+  return queryDb.query.users.findFirst(
+    {
+      where : eq(users.id, id)
+    }
+  );
 }
 
 export async function createUser(data: {

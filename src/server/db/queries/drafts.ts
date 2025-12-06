@@ -43,7 +43,7 @@ export async function saveDraftStep(
   draftId: number,
   userId: number,
   currentStep: number,
-  payloadUpdate: any,
+  payloadUpdate: object,
   tx?: DBTransaction
 ) {
   const queryDb = tx || db;
@@ -56,7 +56,7 @@ export async function saveDraftStep(
 
   // Merge payload
   const updatedPayload = {
-    ...(draft.payload as {}),
+    ...draft.payload,
     ...payloadUpdate,
     currentStep,
   };

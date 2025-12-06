@@ -6,6 +6,7 @@ import {
     overlapResults,
     statusHistory
 } from '../schema';
+import { FeedbackData, StatusSPPTG } from '@/types';
 
 /**
  * Get submission by ID
@@ -31,7 +32,7 @@ export async function listSubmissions(filters: {
     const queryDb = tx || db
     const { search, status, limit = 50, offset = 0 } = filters;
 
-    const conditions: any[] = [];
+    const conditions = [];
 
     if (search) {
         conditions.push(
@@ -44,7 +45,7 @@ export async function listSubmissions(filters: {
     }
 
     if (status && status !== 'all') {
-        conditions.push(eq(submissions.status, status as any));
+        conditions.push(eq(submissions.status, status as StatusSPPTG));
     }
 
     const items = await queryDb.query.submissions.findMany({
@@ -78,10 +79,10 @@ export async function createSubmission(
 
 export async function updateSubmissionStatus(
     id: number,
-    newStatus: string,
+    newStatus: StatusSPPTG,
     verifikator: number,
     alasan?: string,
-    feedback?: any,
+    feedback?: FeedbackData,
     tx?: DBTransaction
 ) {
     const queryDb = tx || db;
@@ -89,7 +90,7 @@ export async function updateSubmissionStatus(
     const result = await queryDb
         .update(submissions)
         .set({
-            status: newStatus as any,
+            status: newStatus,
             verifikator,
             updatedAt: new Date(),
         })
@@ -100,8 +101,8 @@ export async function updateSubmissionStatus(
         // Insert into status_history
         await queryDb.insert(statusHistory).values({
             submissionId: id,
-            statusBefore: (result[0] as any).status,
-            statusAfter: newStatus as any,
+            statusBefore: (result[0]).status,
+            statusAfter: newStatus,
             petugas: verifikator,
             alasan,
             feedback,

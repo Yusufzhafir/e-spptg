@@ -1,3 +1,4 @@
+import { DocumentCategoryEnum } from '@/types';
 import { db, DBTransaction } from '../db';
 import { submissions_documents } from '../schema';
 import { eq, and } from 'drizzle-orm';
@@ -49,7 +50,7 @@ export async function updateDocumentSubmissionId(
 }
 
 export async function listAllDocuments(filters: {
-  category?: string;
+  category?: DocumentCategoryEnum;
   isTemporary?: boolean;
   limit?: number;
   offset?: number;
@@ -57,10 +58,10 @@ export async function listAllDocuments(filters: {
   const queryDb = tx || db;
 
   const { category, isTemporary, limit = 50, offset = 0 } = filters;
-  const conditions: any[] = [];
+  const conditions = [];
 
   if (category) {
-    conditions.push(eq(submissions_documents.category, category as any));
+    conditions.push(eq(submissions_documents.category, category));
   }
 
   if (isTemporary !== undefined) {
