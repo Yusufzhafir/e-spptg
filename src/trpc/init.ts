@@ -1,8 +1,4 @@
 import { initTRPC, TRPCError } from '@trpc/server';
-import { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
-import { auth, clerkClient, createClerkClient } from '@clerk/nextjs/server';
-import { getUserByClerkId } from '@/server/db/queries/user';
-import { db } from '@/server/db/db';
 import { Context } from './context';
 
 

@@ -8,7 +8,7 @@ import {
 import * as submissionQueries from '@/server/db/queries/submissions';
 import * as draftQueries from '@/server/db/queries/drafts';
 import * as documentQueries from '@/server/db/queries/documents';
-import { insertSubmissionWithGeometry, computeOverlaps } from '@/server/postgis';
+import { computeOverlaps } from '@/server/postgis';
 import { sql } from 'drizzle-orm';
 
 export const submissionsRouter = router({

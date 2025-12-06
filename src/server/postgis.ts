@@ -1,5 +1,4 @@
 import { db } from './db/db';
-import { overlapResults } from './db/schema';
 import { sql } from 'drizzle-orm';
 
 /**

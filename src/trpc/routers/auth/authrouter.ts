@@ -1,5 +1,4 @@
 import { protectedProcedure, router } from '@/trpc/init';
-import { TRPCError } from '@trpc/server';
 
 export const authRouter = router({
   me: protectedProcedure.query(async ({ ctx }) => {
