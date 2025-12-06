@@ -4,39 +4,39 @@
 /**
  * Convert GeoJSON (Polygon) to PostGIS geometry and insert submission
  */
- export async function insertSubmissionWithGeometry(submissionData: any, geoJsonPolygon: any,tx?:DBTransaction) {
-   const queryDb = tx || db
-   const geomWKT = geojsonToWKT(geoJsonPolygon);
+//  export async function insertSubmissionWithGeometry(submissionData: any, geoJsonPolygon: any,tx?:DBTransaction) {
+//    const queryDb = tx || db
+//   //  const geomWKT = geojsonToWKT(geoJsonPolygon);
 
-   return queryDb.execute(
-     sql`
-       INSERT INTO submissions (
-         nama_pemilik, nik, alamat, nomor_hp, email,
-         village_id, kecamatan, kabupaten, luas, penggunaan_lahan,
-         catatan, geom, geo_json, status, tanggal_pengajuan, verifikator, riwayat
-       ) VALUES (
-         ${submissionData.namaPemilik},
-         ${submissionData.nik},
-         ${submissionData.alamat},
-         ${submissionData.nomorHP},
-         ${submissionData.email},
-         ${submissionData.villageId},
-         ${submissionData.kecamatan},
-         ${submissionData.kabupaten},
-         ${submissionData.luas},
-         ${submissionData.penggunaanLahan},
-         ${submissionData.catatan || null},
-         ST_GeomFromGeoJSON(${JSON.stringify(geoJsonPolygon)})::geometry(Polygon, 4326),
-         ${JSON.stringify(geoJsonPolygon)},
-         ${submissionData.status},
-         ${submissionData.tanggalPengajuan},
-         ${submissionData.verifikator},
-         ${JSON.stringify(submissionData.riwayat)}
-       )
-       RETURNING id;
-     `
-   );
- }
+//    return queryDb.execute(
+//      sql`
+//        INSERT INTO submissions (
+//          nama_pemilik, nik, alamat, nomor_hp, email,
+//          village_id, kecamatan, kabupaten, luas, penggunaan_lahan,
+//          catatan, geom, geo_json, status, tanggal_pengajuan, verifikator, riwayat
+//        ) VALUES (
+//          ${submissionData.namaPemilik},
+//          ${submissionData.nik},
+//          ${submissionData.alamat},
+//          ${submissionData.nomorHP},
+//          ${submissionData.email},
+//          ${submissionData.villageId},
+//          ${submissionData.kecamatan},
+//          ${submissionData.kabupaten},
+//          ${submissionData.luas},
+//          ${submissionData.penggunaanLahan},
+//          ${submissionData.catatan || null},
+//          ST_GeomFromGeoJSON(${JSON.stringify(geoJsonPolygon)})::geometry(Polygon, 4326),
+//          ${JSON.stringify(geoJsonPolygon)},
+//          ${submissionData.status},
+//          ${submissionData.tanggalPengajuan},
+//          ${submissionData.verifikator},
+//          ${JSON.stringify(submissionData.riwayat)}
+//        )
+//        RETURNING id;
+//      `
+//    );
+//  }
 
  /**
   * Find overlapping prohibited areas and insert into overlap_results
@@ -69,12 +69,12 @@
    return result;
  }
 
- function geojsonToWKT(geojson: any): string {
-   if (geojson.type === 'Polygon') {
-     const coords = geojson.coordinates[0]
-       .map((coord: number[]) => `${coord[0]} ${coord[1]}`)
-       .join(', ');
-     return `POLYGON((${coords}))`;
-   }
-   throw new Error('Unsupported GeoJSON type');
- }
+//  function geojsonToWKT(geojson: any): string {
+//    if (geojson.type === 'Polygon') {
+//      const coords = geojson.coordinates[0]
+//        .map((coord: number[]) => `${coord[0]} ${coord[1]}`)
+//        .join(', ');
+//      return `POLYGON((${coords}))`;
+//    }
+//    throw new Error('Unsupported GeoJSON type');
+//  }

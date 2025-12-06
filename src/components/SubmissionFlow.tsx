@@ -41,7 +41,6 @@ export function SubmissionFlow({ submissionId, onCancel, onComplete }: Submissio
     saksiList: [],
     coordinateSystem: 'geografis',
     coordinatesGeografis: [],
-    coordinatesUTM: [],
     fotoLahan: [],
     overlapResults: [],
   });
@@ -75,7 +74,7 @@ export function SubmissionFlow({ submissionId, onCancel, onComplete }: Submissio
     }
 
     if (currentStep === 2) {
-      if (draft.coordinatesGeografis.length < 3 && draft.coordinatesUTM.length < 3) {
+      if (draft.coordinatesGeografis.length < 3) {
         toast.error('Minimal 3 titik koordinat diperlukan untuk membentuk polygon');
         return;
       }

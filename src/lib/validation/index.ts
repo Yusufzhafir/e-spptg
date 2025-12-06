@@ -80,8 +80,8 @@ export const updateSubmissionStatusSchema = z.object({
   newStatus: z.enum([
     'SPPTG terdata',
     'SPPTG terdaftar',
-    'Ditolak',
-    'Ditinjau Ulang',
+    'SPPTG ditolak',
+    'SPPTG ditinjau ulang',
     'Terbit SPPTG',
   ]),
   alasan: z.string().optional(),

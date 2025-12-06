@@ -28,9 +28,9 @@ export function StatusBadge({ status }: StatusBadgeProps) {
       className: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100 border-yellow-200',
       icon: RefreshCw,
     },
-  };
+  } as const
 
-  const { className, icon: Icon } = config[status];
+  const { className, icon: Icon } = config[status as Exclude<StatusSPPTG,"Terbit SPPTG">];
 
   return (
     <Badge className={className}>
