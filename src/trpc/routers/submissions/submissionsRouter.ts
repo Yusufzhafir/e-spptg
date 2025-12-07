@@ -1,12 +1,16 @@
+import { protectedProcedure, verifikatorProcedure, router } from '../init';
 import { z } from 'zod';
+import {
+  createSubmissionFromDraftSchema,
+  updateSubmissionStatusSchema,
+  listSubmissionsSchema,
+} from '@/lib/validation';
 import * as submissionQueries from '@/server/db/queries/submissions';
 import * as draftQueries from '@/server/db/queries/drafts';
 import * as documentQueries from '@/server/db/queries/documents';
-import * as userQueries from '@/server/db/queries/user';
 import { computeOverlaps } from '@/server/postgis';
 import { sql } from 'drizzle-orm';
-import { protectedProcedure, router, verifikatorProcedure } from '@/trpc/init';
-import { createSubmissionFromDraftSchema, listSubmissionsSchema, submissionDraftPayloadSchema, updateSubmissionStatusSchema } from '@/lib/validation';
+import { TRPCError } from '@trpc/server';
 
 export const submissionsRouter = router({
     /**
@@ -16,51 +20,53 @@ export const submissionsRouter = router({
     submitDraft: protectedProcedure
         .input(createSubmissionFromDraftSchema)
         .mutation(async ({ ctx, input }) => {
-            // Start a transaction
-            const result = await ctx.db.transaction(async (tx) => {
-                // All operations use tx instead of db
+            try {
                 const draft = await draftQueries.getDraftById(
                     input.draftId,
-                    ctx.appUser!.id,
-                    tx
+                    ctx.appUser!.id
                 );
 
                 if (!draft) {
-                    throw new Error('Draft not found');
-                }
-                const user = await userQueries.getUserById(draft.userId)
-
-                if (user === undefined) {
-                    throw new Error("no such user")
-                }
-                const payload = draft.payload;
-
-                const { data: payloadParsed, error } = submissionDraftPayloadSchema.safeParse(payload)
-
-                if (error) {
-                    throw error
+                    throw new TRPCError({
+                        code: 'NOT_FOUND',
+                        message: 'Draft tidak ditemukan',
+                    });
                 }
 
-                if (!payloadParsed.namaPemohon || !payloadParsed.nik) {
-                    throw new Error('Missing required fields');
+                const payload = draft.payload as any;
+
+                // Validate required fields
+                if (!payload.namaPemohon || !payload.nik) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'Nama dan NIK pemohon diperlukan',
+                    });
+                }
+
+                if (!payload.coordinatesGeografis || payload.coordinatesGeografis.length < 3) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'Minimal 3 titik koordinat diperlukan',
+                    });
                 }
 
                 // Build submission data
                 const submissionData = {
-                    namaPemilik: payloadParsed.namaPemohon,
-                    nik: payloadParsed.nik,
-                    nomorHP: payloadParsed.juruUkur?.nomorHP || '',
-                    email: user.email || '',
-                    alamat: "",
-                    villageId: 10,
-                    kecamatan: '',
-                    kabupaten: 'Cirebon',
-                    luas: payloadParsed.luasLahan || 0,
-                    penggunaanLahan: '',
-                    catatan: null,
+                    namaPemilik: payload.namaPemohon,
+                    nik: payload.nik,
+                    alamat: payload.alamat || '',
+                    nomorHP: payload.juruUkur?.nomorHP || '',
+                    email: payload.email || '',
+                    villageId: payload.villageId || 1, // Default to first village
+                    kecamatan: payload.kecamatan || '',
+                    kabupaten: payload.kabupaten || 'Cirebon',
+                    luas: payload.luasLahan || 0,
+                    penggunaanLahan: payload.penggunaanLahan || '',
+                    catatan: payload.catatan ?? null,
                     status: 'SPPTG terdata' as const,
                     tanggalPengajuan: new Date(),
-                    verifikator: payloadParsed.verifikator,
+                    verifikator: null,
+                    geoJSON: buildGeometryFromCoordinates(payload),
                     riwayat: [
                         {
                             tanggal: new Date().toISOString(),
@@ -71,71 +77,83 @@ export const submissionsRouter = router({
                     ],
                 };
 
-                // Get geometry from coordinates
-                const geoJson = buildGeometryFromCoordinates(payloadParsed.coordinatesGeografis);
-
+                // Get GeoJSON
+                const geoJson = submissionData.geoJSON;
                 if (!geoJson) {
-                    throw new Error('No valid coordinates provided');
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'Koordinat tidak valid',
+                    });
                 }
 
-                // Insert submission with geometry (within transaction)
+                // Insert submission with geometry
                 const { submissions: submissionsTable } = await import(
                     '@/server/db/schema'
                 );
-
-                const submissionResult = await tx
+                const submissionResult = await ctx.db
                     .insert(submissionsTable)
                     .values({
                         ...submissionData,
                         geom: sql`ST_GeomFromGeoJSON(${JSON.stringify(geoJson)})::geometry(Polygon, 4326)`,
-                        geoJSON: geoJson,
                     })
                     .returning();
 
                 const submissionId = submissionResult[0]?.id;
-
                 if (!submissionId) {
-                    throw new Error('Failed to create submission');
+                    throw new TRPCError({
+                        code: 'INTERNAL_SERVER_ERROR',
+                        message: 'Gagal membuat submission',
+                    });
                 }
 
-                // Compute overlaps (still need to use raw SQL or a dedicated method)
-                // For now, assume computeOverlaps accepts tx as well
-                await computeOverlaps(submissionId, tx);
+                // Compute overlaps
+                await computeOverlaps(submissionId);
 
                 // Move documents from draft to submission
                 const draftDocuments = await documentQueries.listDocumentsByDraft(
-                    input.draftId,
-                    tx
+                    input.draftId
                 );
-
                 for (const doc of draftDocuments) {
                     await documentQueries.updateDocumentSubmissionId(
                         doc.id,
-                        submissionId,
-                        tx
+                        submissionId
                     );
                 }
 
-                // Get overlaps to return
-                const overlaps = await submissionQueries.getSubmissionOverlaps(
-                    submissionId,
-                    tx
-                );
-
+                // Get overlaps
+                const overlaps = await submissionQueries.getSubmissionOverlaps(submissionId);
                 return {
                     submissionId,
                     status: submissionData.status,
-                    overlaps,
+                    overlaps: overlaps.map((o) => ({
+                        kawasanId: o.prohibitedAreaId,
+                        namaKawasan: o.namaKawasan,
+                        jenisKawasan: o.jenisKawasan,
+                        luasOverlap: o.luasOverlap,
+                        percentageOverlap: o.percentageOverlap,
+                    })),
                 };
-            });
-
-            return result;
+            } catch (error) {
+                if (error instanceof TRPCError) throw error;
+                console.error('Error submitting draft:', error);
+                throw new TRPCError({
+                    code: 'INTERNAL_SERVER_ERROR',
+                    message: 'Gagal menyimpan pengajuan',
+                });
+            }
         }),
 
     byId: protectedProcedure
         .input(z.object({ id: z.number().int() }))
         .query(async ({ input }) => {
-            return submissionQueries.getSubmissionById(input.id);
+            const submission = await submissionQueries.getSubmissionById(input.id);
+            if (!submission) {
+                throw new TRPCError({
+                    code: 'NOT_FOUND',
+                    message: 'Pengajuan tidak ditemukan',
+                });
+            }
+            return submission;
         }),
 
     list: protectedProcedure
@@ -152,64 +170,75 @@ export const submissionsRouter = router({
     getOverlaps: protectedProcedure
         .input(z.object({ submissionId: z.number().int() }))
         .query(async ({ input }) => {
-            return submissionQueries.getSubmissionOverlaps(input.submissionId);
+            const overlaps = await submissionQueries.getSubmissionOverlaps(
+                input.submissionId
+            );
+            return overlaps.map((o) => ({
+                kawasanId: o.prohibitedAreaId,
+                namaKawasan: o.namaKawasan,
+                jenisKawasan: o.jenisKawasan,
+                luasOverlap: o.luasOverlap,
+                percentageOverlap: o.percentageOverlap,
+            }));
         }),
 
     updateStatus: verifikatorProcedure
         .input(updateSubmissionStatusSchema)
         .mutation(async ({ ctx, input }) => {
-            const result = await submissionQueries.updateSubmissionStatus(
-                input.submissionId,
-                input.newStatus,
-                ctx.appUser!.id,
-                input.alasan,
-                input.feedback
-            );
-
-            return result;
+            try {
+                const result = await submissionQueries.updateSubmissionStatus(
+                    input.submissionId,
+                    input.newStatus,
+                    ctx.appUser!.id,
+                    input.alasan,
+                    input.feedback
+                );
+                return {
+                    success: true,
+                    submission: result,
+                };
+            } catch (error) {
+                throw new TRPCError({
+                    code: 'INTERNAL_SERVER_ERROR',
+                    message: 'Gagal memperbarui status',
+                });
+            }
         }),
 
-    kpi: protectedProcedure.query(async () => {
+    kpi: protectedProcedure.query(async ({ ctx }) => {
         const data = await submissionQueries.getKPIData();
-
         const kpi = {
             'SPPTG terdata': 0,
             'SPPTG terdaftar': 0,
             'Ditolak': 0,
             'Ditinjau Ulang': 0,
-            'Terbit SPPTG': 0,
+            total: 0,
         };
 
-        let total = 0;
-
-        data.forEach((item) => {
+        data.forEach((item: any) => {
             if (item.status in kpi) {
                 kpi[item.status as keyof typeof kpi] = item.count;
-                total += item.count;
+                kpi.total += item.count;
             }
         });
 
-        return { ...kpi, total };
+        return kpi;
     }),
 
-    monthlyStats: protectedProcedure.query(async () => {
+    monthlyStats: protectedProcedure.query(async ({ ctx }) => {
         return submissionQueries.getMonthlyStats();
     }),
 });
 
-function buildGeometryFromCoordinates(payload: {
-    latitude: number;
-    longitude: number;
-}[]) {
-    const coordinates = payload || []
-
+function buildGeometryFromCoordinates(payload: any): any {
+    const coordinates = payload.coordinatesGeografis || [];
     if (coordinates.length < 3) {
         return null;
     }
 
-    const coords = coordinates.map((c) => [
-        c.longitude,
-        c.latitude,
+    const coords = coordinates.map((c: any) => [
+        c.longitude || c.longitude,
+        c.latitude || c.latitude,
     ]);
 
     const closedCoords = [...coords, coords[0]];

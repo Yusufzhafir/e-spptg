@@ -15,6 +15,13 @@ export async function createDocument(
   return result[0];
 }
 
+export async function getDocumentById(id: number, tx?: DBTransaction) {
+  const queryDb = tx || db;
+  return queryDb.query.submissions_documents.findFirst({
+    where: eq(submissions_documents.id, id),
+  });
+}
+
 export async function listDocumentsByDraft(draftId: number, tx?: DBTransaction) {
   const queryDb = tx || db;
 

@@ -1,19 +1,10 @@
 import { initTRPC, TRPCError } from '@trpc/server';
-import { Context } from './context';
+import { TRPCContext } from './context';
 
+const t = initTRPC.context<TRPCContext>().create();
 
-// Avoid exporting the entire t-object
-// since it's not very descriptive.
-// For instance, the use of a t variable
-// is common in i18n libraries.
-
-const t = initTRPC.context<Context>().create({
-  /**
-   * @see https://trpc.io/docs/server/data-transformers
-   */
-  // transformer: superjson,
-});
-// Base router and procedure helpers
+export const router = t.router;
+export const createCallerFactory = t.createCallerFactory;
 
 const isAuthed = t.middleware(({ ctx, next }) => {
   if (!ctx.userId || !ctx.appUser) {
@@ -36,17 +27,13 @@ const hasRole = (allowed: string[]) =>
     return next();
   });
 
-export const router = t.router;
-
-export const createCallerFactory = t.createCallerFactory;
-
-export const baseProcedure = t.procedure;
-
 export const publicProcedure = t.procedure;
 
 export const protectedProcedure = t.procedure.use(isAuthed);
 
-export const adminProcedure = protectedProcedure.use(hasRole(['Superadmin', 'Admin']));
+export const adminProcedure = protectedProcedure.use(
+  hasRole(['Superadmin', 'Admin'])
+);
 
 export const verifikatorProcedure = protectedProcedure.use(
   hasRole(['Superadmin', 'Admin', 'Verifikator'])

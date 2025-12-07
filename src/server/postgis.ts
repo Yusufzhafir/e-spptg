@@ -41,33 +41,39 @@
  /**
   * Find overlapping prohibited areas and insert into overlap_results
   */
- export async function computeOverlaps(submissionId: number,tx?:DBTransaction) {
-   const queryDb = tx || db
+export async function computeOverlaps(submissionId: number, tx?:DBTransaction) {
+  const queryDb = tx || db
+  try {
+    await queryDb.execute(
+      sql`
+        INSERT INTO overlap_results (
+          submission_id, prohibited_area_id, luas_overlap, 
+          percentage_overlap, nama_kawasan, jenis_kawasan, 
+          intersection_geom, created_at, updated_at
+        )
+        SELECT 
+          ${submissionId},
+          pa.id,
+          ST_Area(ST_Intersection(s.geom, pa.geom))::double precision,
+          (ST_Area(ST_Intersection(s.geom, pa.geom)) / NULLIF(ST_Area(s.geom), 0) * 100)::double precision,
+          pa.nama_kawasan,
+          pa.jenis_kawasan,
+          ST_Intersection(s.geom, pa.geom),
+          NOW(),
+          NOW()
+        FROM submissions s
+        JOIN prohibited_areas pa ON ST_Intersects(s.geom, pa.geom)
+        WHERE s.id = ${submissionId}
+          AND pa.aktif_di_validasi = true;
+      `
+    );
 
-   const result = await queryDb.execute(
-     sql`
-       INSERT INTO overlap_results (
-         submission_id, prohibited_area_id, luas_overlap, 
-         percentage_overlap, nama_kawasan, jenis_kawasan, 
-         intersection_geom
-       )
-       SELECT 
-         ${submissionId},
-         pa.id,
-         ST_Area(ST_Intersection(s.geom, pa.geom))::double precision,
-         (ST_Area(ST_Intersection(s.geom, pa.geom)) / ST_Area(s.geom) * 100)::double precision,
-         pa.nama_kawasan,
-         pa.jenis_kawasan,
-         ST_Intersection(s.geom, pa.geom)
-       FROM submissions s
-       JOIN prohibited_areas pa ON ST_Intersects(s.geom, pa.geom)
-       WHERE s.id = ${submissionId}
-       AND pa.aktif_di_validasi = true;
-     `
-   );
-
-   return result;
- }
+    return true;
+  } catch (error) {
+    console.error('Error computing overlaps:', error);
+    return false;
+  }
+}
 
 //  function geojsonToWKT(geojson: any): string {
 //    if (geojson.type === 'Polygon') {

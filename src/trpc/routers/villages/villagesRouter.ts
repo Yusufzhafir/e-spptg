@@ -5,6 +5,7 @@ import {
   updateVillageSchema,
 } from '@/lib/validation';
 import * as queries from '@/server/db/queries/villages';
+import { TRPCError } from '@trpc/server';
 
 export const villagesRouter = router({
   list: protectedProcedure
@@ -19,15 +20,22 @@ export const villagesRouter = router({
     }),
 
   search: protectedProcedure
-    .input(z.object({ query: z.string() }))
-    .query(async ({ input }) => {
+    .input(z.object({ query: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
       return queries.searchVillages(input.query);
     }),
 
   byId: protectedProcedure
     .input(z.object({ id: z.number().int() }))
-    .query(async ({ input }) => {
-      return queries.getVillageById(input.id);
+    .query(async ({ ctx, input }) => {
+      const village = await queries.getVillageById(input.id);
+      if (!village) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Desa tidak ditemukan',
+        });
+      }
+      return village;
     }),
 
   create: adminProcedure

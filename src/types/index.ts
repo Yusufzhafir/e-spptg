@@ -1,12 +1,13 @@
 import { submissions, submissions_documents, type users } from "@/server/db/schema";
 
+export * from "@/lib/validation/submission-draft";
+
 export type StatusSPPTG = ((typeof submissions.$inferSelect)["status"])
 
 export type DocumentCategoryEnum = (typeof submissions_documents.$inferSelect)['category']
 
-
 export interface Submission {
-  id: string;
+  id: number;
   // Data Pemilik
   namaPemilik: string;
   nik: string;
@@ -15,29 +16,30 @@ export interface Submission {
   email: string;
   
   // Data Lahan
-  desa: string;
+  villageId: number;
   kecamatan: string;
   kabupaten: string;
   luas: number; // m²
   penggunaanLahan: string;
-  catatan?: string;
+  catatan: string | null;
   
   // Peta & Dokumen
-  /* eslint-disable @typescript-eslint/no-empty-object-type */
-  geoJSON?: string | {}; 
-  coordinates?: [number, number][];
-  dokumen?: File | string;
+  geoJSON?: any;
   
   // Status
   status: StatusSPPTG;
-  tanggalPengajuan: string;
-  verifikator?: string;
+  tanggalPengajuan: Date;
+  verifikator: number | null;
   
   // Riwayat
   riwayat: StatusHistory[];
   
   // Feedback
-  feedback?: FeedbackData;
+  feedback: FeedbackData | null;
+  
+  // Metadata
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface StatusHistory {
@@ -59,10 +61,10 @@ export interface FeedbackData {
 }
 
 export interface KPIData {
-  terdaftar: number;
-  terdata: number;
-  ditolak: number;
-  ditinjauUlang: number;
+  'SPPTG terdata': number;
+  'SPPTG terdaftar': number;
+  'Ditolak': number;
+  'Ditinjau Ulang': number;
   total: number;
 }
 
@@ -70,18 +72,19 @@ export type UserRole = (typeof users.$inferInsert)["peran"]
 export type UserStatus = 'Aktif' | 'Nonaktif';
 
 export interface User {
-  id: string;
+  id: number;
+  clerkUserId: string;
   nama: string;
   nipNik: string;
   email: string;
   peran: UserRole;
   status: UserStatus;
-  nomorHP?: string;
-  terakhirMasuk?: string;
+  nomorHP: string | null;
+  terakhirMasuk: Date | null;
 }
 
 export interface Village {
-  id: string;
+  id: number;
   kodeDesa: string; // BPS code
   namaDesa: string;
   kecamatan: string;
@@ -105,20 +108,18 @@ export type ProhibitedAreaType =
 export type ValidationStatus = 'Lolos' | 'Perlu Perbaikan';
 
 export interface ProhibitedArea {
-  id: string;
+  id: number;
   namaKawasan: string;
   jenisKawasan: ProhibitedAreaType;
   sumberData: string;
-  dasarHukum?: string;
-  tanggalEfektif: string;
-  tanggalUnggah: string;
-  diunggahOleh: string;
+  dasarHukum: string | null;
+  tanggalEfektif: Date;
+  tanggalUnggah: Date;
+  diunggahOleh: number;
   statusValidasi: ValidationStatus;
   aktifDiValidasi: boolean;
   warna: string;
-  catatan?: string;
-  coordinates?: [number, number][];
-  fileUrl?: string;
+  catatan: string | null;
 }
 
 // Submission Flow Types
@@ -130,6 +131,7 @@ export interface UploadedDocument {
   size: number;
   url?: string;
   uploadedAt?: string;
+  documentId?: number;
 }
 
 export interface ResearchTeamMember {
@@ -160,14 +162,15 @@ export interface UTMCoordinate {
 }
 
 export interface OverlapResult {
-  kawasanId: string;
+  kawasanId: number;
   namaKawasan: string;
   jenisKawasan: string;
   luasOverlap: number; // m²
+  percentageOverlap?: number;
 }
 
 export interface SubmissionDraft {
-  id?: string;
+  id?: number;
   currentStep: number;
   lastSaved?: string;
   
@@ -204,7 +207,7 @@ export interface SubmissionDraft {
   // Step 3: Results
   status?: StatusSPPTG;
   alasanStatus?: string;
-  verifikator?: string;
+  verifikator?: number;
   tanggalKeputusan?: string;
   feedback?: FeedbackData;
   
@@ -212,4 +215,18 @@ export interface SubmissionDraft {
   dokumenSPPTG?: UploadedDocument;
   nomorSPPTG?: string;
   tanggalTerbit?: string;
+}
+
+export interface SubmissionDocument {
+  id: number;
+  filename: string;
+  fileType: string;
+  size: number;
+  url: string;
+  category: DocumentCategoryEnum;
+  submissionId: number | null;
+  draftId: number | null;
+  uploadedBy: number;
+  isTemporary: boolean;
+  uploadedAt: Date;
 }

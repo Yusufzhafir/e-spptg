@@ -157,13 +157,47 @@ export const documentsRouter = router({
       }));
     }),
 
+  getById: protectedProcedure
+    .input(z.object({ documentId: z.number().int() }))
+    .query(async ({ ctx, input }) => {
+      const document = await queries.getDocumentById(input.documentId);
+      if (!document) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Dokumen tidak ditemukan',
+        });
+      }
+      return document;
+    }),
+
   /**
    * Delete a document (and optionally delete from S3)
    */
   delete: protectedProcedure
     .input(z.object({ documentId: z.number().int() }))
-    .mutation(async ({ input }) => {
-      // TODO: Add ownership verification
+    .mutation(async ({ ctx, input }) => {
+      const document = await queries.getDocumentById(input.documentId);
+      if (!document) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Dokumen tidak ditemukan',
+        });
+      }
+
+      // Verify ownership (if draft, check user)
+      if (document.draftId) {
+        const draft = await draftQueries.getDraftById(
+          document.draftId,
+          ctx.appUser!.id
+        );
+        if (!draft) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Anda tidak memiliki akses ke dokumen ini',
+          });
+        }
+      }
+
       await queries.deleteDocument(input.documentId);
 
       return {

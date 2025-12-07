@@ -7,6 +7,7 @@ import {
 import * as queries from '@/server/db/queries/prohibitedAreas';
 import { sql } from 'drizzle-orm';
 import { prohibitedAreas } from '@/server/db/schema';
+import { TRPCError } from '@trpc/server';
 
 export const prohibitedAreasRouter = router({
   list: protectedProcedure
@@ -22,8 +23,15 @@ export const prohibitedAreasRouter = router({
 
   byId: protectedProcedure
     .input(z.object({ id: z.number().int() }))
-    .query(async ({ input }) => {
-      return queries.getProhibitedAreaById(input.id);
+    .query(async ({ ctx, input }) => {
+      const area = await queries.getProhibitedAreaById(input.id);
+      if (!area) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Kawasan tidak ditemukan',
+        });
+      }
+      return area;
     }),
 
   create: adminProcedure
