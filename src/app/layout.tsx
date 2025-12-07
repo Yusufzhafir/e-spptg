@@ -6,7 +6,6 @@ import { Sidebar } from '@/components/Sidebar';
 import { Header } from '@/components/Header';
 import { Toaster } from '@/components/ui/sonner';
 import {
-  monthlyData,
   // mockUsers,
   // mockVillages,
   // mockProhibitedAreas,
@@ -37,7 +36,6 @@ export type AppStateContextValue = {
 
 import { createContext, useContext } from 'react';
 import { TRPCProvider } from '@/trpc/client';
-import { da } from 'zod/v4/locales';
 
 const AppStateContext = createContext<AppStateContextValue | null>(null);
 

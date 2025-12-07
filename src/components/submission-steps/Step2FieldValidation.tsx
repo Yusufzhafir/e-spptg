@@ -6,7 +6,6 @@ import {
   BoundaryWitness,
   GeographicCoordinate,
   BoundaryDirection,
-  OverlapResult,
   UploadedDocument,
 } from '../../types';
 import { trpc } from '@/trpc/client';

@@ -1,4 +1,4 @@
-import { Submission, KPIData, User, Village, ProhibitedArea } from '../types';
+import { Submission, KPIData } from '../types';
 
 // export const mockSubmissions: Submission[] = [
 //   {

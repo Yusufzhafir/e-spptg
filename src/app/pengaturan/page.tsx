@@ -1,7 +1,5 @@
 'use client';
 
-import { Settings } from '@/components/Settings';
-import { useAppState } from '../layout';
 
 export default function PengaturanPage() {
   // const {
