@@ -95,13 +95,15 @@ export function UsersTab({ users, onUpdateUsers }: UsersTabProps) {
     }
 
     const newUser: User = {
-      id: `USR-${String(users.length + 1).padStart(3, '0')}`,
+      id: new Date().getTime(),
       nama: formData.nama,
       nipNik: formData.nipNik,
       email: formData.email,
       peran: formData.peran as UserRole,
       status: (formData.status as UserStatus) || 'Aktif',
-      nomorHP: formData.nomorHP,
+      nomorHP: formData.nomorHP || null,
+      clerkUserId: '',
+      terakhirMasuk: new Date(),
     };
 
     onUpdateUsers([...users, newUser]);
@@ -260,7 +262,7 @@ export function UsersTab({ users, onUpdateUsers }: UsersTabProps) {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-gray-600 text-sm">
-                    {user.terakhirMasuk || '-'}
+                    {user.terakhirMasuk?.toLocaleDateString() || '-'}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">

@@ -100,7 +100,7 @@ export function VillagesTab({ villages, onUpdateVillages }: VillagesTabProps) {
     }
 
     const newVillage: Village = {
-      id: `VLG-${String(villages.length + 1).padStart(3, '0')}`,
+      id: new Date().getTime(),
       kodeDesa: formData.kodeDesa,
       namaDesa: formData.namaDesa,
       kecamatan: formData.kecamatan,

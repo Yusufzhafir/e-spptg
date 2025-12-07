@@ -6,7 +6,6 @@ import {
   BoundaryWitness,
   GeographicCoordinate,
   BoundaryDirection,
-  OverlapResult,
   UploadedDocument,
 } from '../../types';
 import { trpc } from '@/trpc/client';
@@ -243,6 +242,7 @@ function DocumentUploadField({
 }) {
   const [isUploading, setIsUploading] = useState(false);
   const createUploadUrlMutation = trpc.documents.createUploadUrl.useMutation();
+  const uploadFileMutation = trpc.documents.uploadFile.useMutation();
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -265,7 +265,8 @@ function DocumentUploadField({
 
     setIsUploading(true);
     try {
-      const { uploadUrl, publicUrl, documentId } = await createUploadUrlMutation.mutateAsync({
+      // Step 1: Create document record and get s3Key
+      const { documentId, publicUrl, s3Key } = await createUploadUrlMutation.mutateAsync({
         draftId,
         category,
         filename: file.name,
@@ -273,33 +274,27 @@ function DocumentUploadField({
         mimeType: 'application/pdf',
       });
 
-      // Upload file to S3
-      // Note: Only set Content-Type header to avoid CORS preflight issues
-      // The presigned URL should handle authentication
-      let uploadResponse: Response;
-      try {
-        uploadResponse = await fetch(uploadUrl, {
-          method: 'PUT',
-          body: file,
-          headers: { 'Content-Type': 'application/pdf' },
-        });
-      } catch (fetchError: any) {
-        // Check for CORS or network errors
-        if (fetchError.name === 'TypeError' || fetchError.message?.includes('Failed to fetch') || fetchError.message?.includes('CORS')) {
-          throw new Error('Gagal mengunggah file: Masalah koneksi atau konfigurasi server (CORS). Silakan hubungi administrator.');
-        }
-        throw fetchError;
-      }
+      // Step 2: Convert file to base64
+      const fileBuffer = await file.arrayBuffer();
+      const base64String = btoa(
+        new Uint8Array(fileBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+      );
 
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text().catch(() => 'Unknown error');
-        throw new Error(`Gagal mengunggah file ke server: ${uploadResponse.status} ${uploadResponse.statusText}`);
-      }
+      // Step 3: Upload file via server-side tRPC mutation
+      const uploadResult = await uploadFileMutation.mutateAsync({
+        draftId,
+        documentId,
+        s3Key,
+        fileData: base64String,
+        filename: file.name,
+        mimeType: 'application/pdf',
+        size: file.size,
+      });
 
       onChange({
         name: file.name,
         size: file.size,
-        url: publicUrl,
+        url: uploadResult.publicUrl,
         uploadedAt: new Date().toISOString(),
         documentId,
       });
@@ -307,9 +302,7 @@ function DocumentUploadField({
     } catch (error: any) {
       console.error('Upload error:', error);
       // Provide user-friendly error messages
-      if (error.message?.includes('CORS') || error.message?.includes('koneksi')) {
-        toast.error(error.message);
-      } else if (error.message) {
+      if (error.message) {
         toast.error(error.message);
       } else {
         toast.error('Gagal mengunggah dokumen. Silakan coba lagi atau hubungi administrator jika masalah berlanjut.');

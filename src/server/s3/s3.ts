@@ -15,12 +15,15 @@ const s3Client = new S3Client({
   endpoint: process.env.S3_ENDPOINT,
 });
 
+/**
+ * Generate S3 key and public URL for a file
+ * No longer generates presigned URLs - uploads are handled server-side via tRPC
+ */
 export async function generateUploadUrl(
   filename: string,
   mimeType: string,
   category: string
 ): Promise<{
-  uploadUrl: string;
   publicUrl: string;
   s3Key: string;
 }> {
@@ -29,23 +32,45 @@ export async function generateUploadUrl(
   const randomId = crypto.randomBytes(8).toString('hex');
   const s3Key = `submissions/${category}/${timestamp}-${randomId}-${filename}`;
 
-  const command = new PutObjectCommand({
-    Bucket: process.env.S3_BUCKET_NAME!,
-    Key: s3Key,
-    ContentType: mimeType,
-  });
-
-  const uploadUrl = await getSignedUrl(s3Client, command, {
-    expiresIn: 3600, // 1 hour
-  });
-
   const publicUrl = `${process.env.S3_PUBLIC_URL || process.env.S3_ENDPOINT}/${process.env.S3_BUCKET_NAME}/${s3Key}`;
 
   return {
-    uploadUrl,
     publicUrl,
     s3Key,
   };
+}
+
+/**
+ * Upload file buffer directly to S3 (server-side)
+ */
+export async function uploadFileToS3(
+  fileBuffer: Buffer,
+  s3Key: string,
+  contentType: string
+): Promise<{
+  success: boolean;
+  publicUrl: string;
+}> {
+  try {
+    const command = new PutObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME!,
+      Key: s3Key,
+      Body: fileBuffer,
+      ContentType: contentType,
+    });
+
+    await s3Client.send(command);
+
+    const publicUrl = `${process.env.S3_PUBLIC_URL || process.env.S3_ENDPOINT}/${process.env.S3_BUCKET_NAME}/${s3Key}`;
+
+    return {
+      success: true,
+      publicUrl,
+    };
+  } catch (error) {
+    console.error('Error uploading file to S3:', error);
+    throw new Error(`Failed to upload file to S3: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 export async function getDownloadUrl(s3Key: string) {

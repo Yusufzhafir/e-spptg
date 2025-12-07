@@ -14,7 +14,7 @@ import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
 interface DetailPageProps {
   submission: Submission;
   onBack: () => void;
-  onStatusChange: (id: string, status: StatusSPPTG, alasan: string) => void;
+  onStatusChange: (id: number, status: StatusSPPTG, alasan: string) => void;
 }
 
 export function DetailPage({ submission, onBack, onStatusChange }: DetailPageProps) {
@@ -72,7 +72,7 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
               submissions={[submission]}
               selectedSubmission={submission}
               height="500px"
-              center={submission.coordinates?.[0] as [number,number]}
+              center={submission.geoJSON?.coordinates?.[0] as [number,number]}
               zoom={15}
             />
 
@@ -90,12 +90,12 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
                 <div>
                   <p className="text-gray-600">Lokasi</p>
                   <p>
-                    {submission.desa}, {submission.kecamatan}
+                    {submission.villageId}, {submission.kecamatan}
                   </p>
                 </div>
                 <div>
                   <p className="text-gray-600">Tanggal Pengajuan</p>
-                  <p>{submission.tanggalPengajuan}</p>
+                  <p>{submission.tanggalPengajuan.toLocaleDateString()}</p>
                 </div>
               </div>
             </div>
@@ -207,7 +207,7 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
                   <div className="space-y-3">
                     <div>
                       <p className="text-sm text-gray-600">Desa</p>
-                      <p>{submission.desa}</p>
+                      <p>{submission.villageId}</p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Kecamatan</p>

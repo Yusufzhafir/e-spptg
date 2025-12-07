@@ -118,6 +118,18 @@ export const createUploadUrlSchema = z.object({
     .or(z.string()),
 });
 
+export const uploadFileSchema = z.object({
+  draftId: z.number().int('Draft ID harus integer'),
+  documentId: z.number().int('Document ID harus integer'),
+  s3Key: z.string().min(1, 'S3 key diperlukan'),
+  fileData: z.string().min(1, 'Data file diperlukan'), // base64 string
+  filename: z.string().min(1, 'Nama file diperlukan'),
+  mimeType: z
+    .enum(['application/pdf', 'image/jpeg', 'image/png', 'image/webp'])
+    .or(z.string()),
+  size: z.number().int().positive('Ukuran file tidak valid'),
+});
+
 // ============================================================================
 // Query Schemas
 // ============================================================================
