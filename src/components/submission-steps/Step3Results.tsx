@@ -191,7 +191,7 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
           detailFeedback,
           tanggalTenggat: tanggalTenggat || undefined,
           lampiranFeedback,
-          timestamp: new Date().toLocaleString('id-ID'),
+          timestamp: new Date().toISOString().split('T')[0],
           pemberi: 'Bambang Supriyanto', // Mock current user
         }
       : undefined;
