@@ -6,6 +6,7 @@ import { Checkbox } from '../ui/checkbox';
 import { Button } from '../ui/button';
 import { Upload, File, X, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { trpc } from '@/trpc/client';
 
 interface Step1Props {
   draft: SubmissionDraft;
@@ -20,6 +21,8 @@ interface FileUploadFieldProps {
   onChange: (doc?: UploadedDocument) => void;
   required?: boolean;
   helpText?: string;
+  category: 'KTP' | 'KK' | 'Kwitansi' | 'Permohonan' | 'SK Kepala Desa';
+  draftId?: number;
 }
 
 function FileUploadField({
@@ -30,10 +33,13 @@ function FileUploadField({
   onChange,
   required = true,
   helpText,
+  category,
+  draftId,
 }: FileUploadFieldProps) {
   const [isUploading, setIsUploading] = useState(false);
+  const createUploadUrlMutation = trpc.documents.createUploadUrl.useMutation();
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -52,18 +58,71 @@ function FileUploadField({
       return;
     }
 
-    // Simulate upload
+    if (!draftId) {
+      toast.error('Draf belum dimuat. Silakan tunggu sebentar.');
+      return;
+    }
+
     setIsUploading(true);
-    setTimeout(() => {
+
+    try {
+      // Get presigned URL from backend
+      const { uploadUrl, publicUrl, documentId } = await createUploadUrlMutation.mutateAsync({
+        draftId,
+        category,
+        filename: file.name,
+        size: file.size,
+        mimeType: file.type || (fileExt === 'pdf' ? 'application/pdf' : `image/${fileExt}`),
+      });
+
+      // Upload file to S3
+      // Note: Only set Content-Type header to avoid CORS preflight issues
+      // The presigned URL should handle authentication
+      let uploadResponse: Response;
+      try {
+        uploadResponse = await fetch(uploadUrl, {
+          method: 'PUT',
+          body: file,
+          headers: {
+            'Content-Type': file.type || (fileExt === 'pdf' ? 'application/pdf' : `image/${fileExt}`),
+          },
+        });
+      } catch (fetchError: any) {
+        // Check for CORS or network errors
+        if (fetchError.name === 'TypeError' || fetchError.message?.includes('Failed to fetch') || fetchError.message?.includes('CORS')) {
+          throw new Error('Gagal mengunggah file: Masalah koneksi atau konfigurasi server (CORS). Silakan hubungi administrator.');
+        }
+        throw fetchError;
+      }
+
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text().catch(() => 'Unknown error');
+        throw new Error(`Gagal mengunggah file ke server: ${uploadResponse.status} ${uploadResponse.statusText}`);
+      }
+
+      // Update draft with document info
       onChange({
         name: file.name,
         size: file.size,
-        url: URL.createObjectURL(file),
-        uploadedAt: new Date().toLocaleString('id-ID'),
+        url: publicUrl,
+        uploadedAt: new Date().toISOString(),
+        documentId,
       });
-      setIsUploading(false);
+
       toast.success('Dokumen berhasil diunggah.');
-    }, 1000);
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      // Provide user-friendly error messages
+      if (error.message?.includes('CORS') || error.message?.includes('koneksi')) {
+        toast.error(error.message);
+      } else if (error.message) {
+        toast.error(error.message);
+      } else {
+        toast.error('Gagal mengunggah dokumen. Silakan coba lagi atau hubungi administrator jika masalah berlanjut.');
+      }
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleRemove = () => {
@@ -219,6 +278,8 @@ export function Step1DocumentUpload({ draft, onUpdateDraft }: Step1Props) {
             value={draft.dokumenKTP}
             onChange={(doc) => onUpdateDraft({ dokumenKTP: doc })}
             helpText="Contoh: KTP_NamaPemohon_2025.pdf"
+            category="KTP"
+            draftId={draft.id}
           />
 
           <FileUploadField
@@ -228,6 +289,8 @@ export function Step1DocumentUpload({ draft, onUpdateDraft }: Step1Props) {
             value={draft.dokumenKK}
             onChange={(doc) => onUpdateDraft({ dokumenKK: doc })}
             helpText="Contoh: KK_NamaPemohon_2025.pdf"
+            category="KK"
+            draftId={draft.id}
           />
 
           <FileUploadField
@@ -236,6 +299,8 @@ export function Step1DocumentUpload({ draft, onUpdateDraft }: Step1Props) {
             maxSize={10}
             value={draft.dokumenKwitansi}
             onChange={(doc) => onUpdateDraft({ dokumenKwitansi: doc })}
+            category="Kwitansi"
+            draftId={draft.id}
           />
 
           <FileUploadField
@@ -244,6 +309,8 @@ export function Step1DocumentUpload({ draft, onUpdateDraft }: Step1Props) {
             maxSize={10}
             value={draft.dokumenPermohonan}
             onChange={(doc) => onUpdateDraft({ dokumenPermohonan: doc })}
+            category="Permohonan"
+            draftId={draft.id}
           />
 
           <FileUploadField
@@ -252,6 +319,8 @@ export function Step1DocumentUpload({ draft, onUpdateDraft }: Step1Props) {
             maxSize={10}
             value={draft.dokumenSKKepalaDesa}
             onChange={(doc) => onUpdateDraft({ dokumenSKKepalaDesa: doc })}
+            category="SK Kepala Desa"
+            draftId={draft.id}
           />
         </div>
       </div>

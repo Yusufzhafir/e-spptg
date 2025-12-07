@@ -165,7 +165,7 @@ export const step3HasilSchema = z.object(z.object({
       verifikator: z.number().int('Verifikator harus ditentukan'),
     })).or(
       z.object({
-      status: z.enum(['Ditolak', 'Ditinjau Ulang']),
+      status: z.enum(['SPPTG ditolak', 'SPPTG ditinjau ulang']),
       alasanStatus: z
         .string()
         .min(10, 'Alasan penolakan minimal 10 karakter')
@@ -239,7 +239,7 @@ export const submissionDraftPayloadSchema = z.object({
 
   // Step 3 data
   status: z
-    .enum(['SPPTG terdata', 'SPPTG terdaftar', 'Ditolak', 'Ditinjau Ulang'])
+    .enum(['SPPTG terdata', 'SPPTG terdaftar', 'SPPTG ditolak', 'SPPTG ditinjau ulang'])
     .optional(),
   alasanStatus: z.string().optional(),
   verifikator: z.number().int(),

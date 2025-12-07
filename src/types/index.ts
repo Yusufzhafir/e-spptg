@@ -63,8 +63,8 @@ export interface FeedbackData {
 export interface KPIData {
   'SPPTG terdata': number;
   'SPPTG terdaftar': number;
-  'Ditolak': number;
-  'Ditinjau Ulang': number;
+  'SPPTG ditolak': number;
+  'SPPTG ditinjau ulang': number;
   total: number;
 }
 
@@ -162,7 +162,7 @@ export interface UTMCoordinate {
 }
 
 export interface OverlapResult {
-  kawasanId: number;
+  kawasanId: number | string; // Can be number from DB or string from mock
   namaKawasan: string;
   jenisKawasan: string;
   luasOverlap: number; // m²

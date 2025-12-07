@@ -1,4 +1,4 @@
-import { protectedProcedure, verifikatorProcedure, router } from '../init';
+import { protectedProcedure, verifikatorProcedure, router } from '../../init';
 import { z } from 'zod';
 import {
   createSubmissionFromDraftSchema,
@@ -65,7 +65,7 @@ export const submissionsRouter = router({
                     catatan: payload.catatan ?? null,
                     status: 'SPPTG terdata' as const,
                     tanggalPengajuan: new Date(),
-                    verifikator: null,
+                    verifikator: ctx.appUser!.id,
                     geoJSON: buildGeometryFromCoordinates(payload),
                     riwayat: [
                         {
@@ -182,6 +182,56 @@ export const submissionsRouter = router({
             }));
         }),
 
+    checkOverlapsFromCoordinates: protectedProcedure
+        .input(z.object({
+            coordinates: z.array(z.object({
+                latitude: z.number(),
+                longitude: z.number(),
+            })).min(3),
+        }))
+        .mutation(async ({ ctx, input }) => {
+            // Build GeoJSON polygon from coordinates
+            const coords = input.coordinates.map((c) => [c.longitude, c.latitude]);
+            const closedCoords = [...coords, coords[0]];
+            const geoJson = {
+                type: 'Polygon' as const,
+                coordinates: [closedCoords],
+            };
+
+            // Query prohibited areas that intersect with this polygon
+            const { prohibitedAreas } = await import('@/server/db/schema');
+            const result = await ctx.db.execute(
+                sql`
+                    SELECT 
+                        pa.id,
+                        pa.nama_kawasan,
+                        pa.jenis_kawasan,
+                        ST_Area(ST_Intersection(
+                            ST_GeomFromGeoJSON(${JSON.stringify(geoJson)})::geometry(Polygon, 4326),
+                            pa.geom
+                        ))::double precision as luas_overlap,
+                        (ST_Area(ST_Intersection(
+                            ST_GeomFromGeoJSON(${JSON.stringify(geoJson)})::geometry(Polygon, 4326),
+                            pa.geom
+                        )) / NULLIF(ST_Area(ST_GeomFromGeoJSON(${JSON.stringify(geoJson)})::geometry(Polygon, 4326)), 0) * 100)::double precision as percentage_overlap
+                    FROM prohibited_areas pa
+                    WHERE ST_Intersects(
+                        ST_GeomFromGeoJSON(${JSON.stringify(geoJson)})::geometry(Polygon, 4326),
+                        pa.geom
+                    )
+                    AND pa.aktif_di_validasi = true;
+                `
+            );
+
+            return (result.rows || []).map((row: any) => ({
+                kawasanId: row.id,
+                namaKawasan: row.nama_kawasan,
+                jenisKawasan: row.jenis_kawasan,
+                luasOverlap: parseFloat(row.luas_overlap) || 0,
+                percentageOverlap: row.percentage_overlap ? parseFloat(row.percentage_overlap) : undefined,
+            }));
+        }),
+
     updateStatus: verifikatorProcedure
         .input(updateSubmissionStatusSchema)
         .mutation(async ({ ctx, input }) => {
@@ -210,8 +260,8 @@ export const submissionsRouter = router({
         const kpi = {
             'SPPTG terdata': 0,
             'SPPTG terdaftar': 0,
-            'Ditolak': 0,
-            'Ditinjau Ulang': 0,
+            'SPPTG ditolak': 0,
+            'SPPTG ditinjau ulang': 0,
             total: 0,
         };
 
@@ -237,8 +287,8 @@ function buildGeometryFromCoordinates(payload: any): any {
     }
 
     const coords = coordinates.map((c: any) => [
-        c.longitude || c.longitude,
-        c.latitude || c.latitude,
+        c.longitude,
+        c.latitude,
     ]);
 
     const closedCoords = [...coords, coords[0]];

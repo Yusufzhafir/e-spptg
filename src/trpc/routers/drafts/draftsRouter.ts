@@ -1,4 +1,4 @@
-import { protectedProcedure, router } from '../init';
+import { protectedProcedure, router } from '../../init';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import * as queries from '@/server/db/queries/drafts';

@@ -35,28 +35,28 @@ export function Dashboard({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <KPICard
           title="SPPTG terdaftar"
-          value={kpiData.terdaftar}
+          value={kpiData['SPPTG terdaftar']}
           icon={Check}
           colorClass="text-green-700"
           bgColorClass="bg-green-100"
         />
         <KPICard
           title="SPPTG terdata"
-          value={kpiData.terdata}
+          value={kpiData['SPPTG terdata']}
           icon={Database}
           colorClass="text-blue-700"
           bgColorClass="bg-blue-100"
         />
         <KPICard
           title="SPPTG ditolak"
-          value={kpiData.ditolak}
+          value={kpiData['SPPTG ditolak']}
           icon={X}
           colorClass="text-red-700"
           bgColorClass="bg-red-100"
         />
         <KPICard
           title="SPPTG ditinjau ulang"
-          value={kpiData.ditinjauUlang}
+          value={kpiData['SPPTG ditinjau ulang']}
           icon={RefreshCw}
           colorClass="text-yellow-700"
           bgColorClass="bg-yellow-100"

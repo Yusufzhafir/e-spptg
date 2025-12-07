@@ -13,6 +13,7 @@ import {
 } from '../ui/dialog';
 import { Upload, File, X, CheckCircle2, Download, Printer, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
+import { trpc } from '@/trpc/client';
 
 interface Step4Props {
   draft: SubmissionDraft;
@@ -23,7 +24,9 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
   const [isSuccessDialogOpen, setIsSuccessDialogOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const createUploadUrlMutation = trpc.documents.createUploadUrl.useMutation();
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -40,20 +43,67 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
       return;
     }
 
-    // Simulate upload
+    if (!draft.id) {
+      toast.error('Draf belum dimuat');
+      return;
+    }
+
     setIsUploading(true);
-    setTimeout(() => {
+    try {
+      const { uploadUrl, publicUrl, documentId } = await createUploadUrlMutation.mutateAsync({
+        draftId: draft.id,
+        category: 'SPPG',
+        filename: file.name,
+        size: file.size,
+        mimeType: 'application/pdf',
+      });
+
+      // Upload file to S3
+      // Note: Only set Content-Type header to avoid CORS preflight issues
+      // The presigned URL should handle authentication
+      let uploadResponse: Response;
+      try {
+        uploadResponse = await fetch(uploadUrl, {
+          method: 'PUT',
+          body: file,
+          headers: { 'Content-Type': 'application/pdf' },
+        });
+      } catch (fetchError: any) {
+        // Check for CORS or network errors
+        if (fetchError.name === 'TypeError' || fetchError.message?.includes('Failed to fetch') || fetchError.message?.includes('CORS')) {
+          throw new Error('Gagal mengunggah file: Masalah koneksi atau konfigurasi server (CORS). Silakan hubungi administrator.');
+        }
+        throw fetchError;
+      }
+
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text().catch(() => 'Unknown error');
+        throw new Error(`Gagal mengunggah file ke server: ${uploadResponse.status} ${uploadResponse.statusText}`);
+      }
+
       onUpdateDraft({
         dokumenSPPTG: {
           name: file.name,
           size: file.size,
-          url: URL.createObjectURL(file),
-          uploadedAt: new Date().toLocaleString('id-ID'),
+          url: publicUrl,
+          uploadedAt: new Date().toISOString(),
+          documentId,
         },
       });
-      setIsUploading(false);
       toast.success('Dokumen SPPTG berhasil diunggah.');
-    }, 1000);
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      // Provide user-friendly error messages
+      if (error.message?.includes('CORS') || error.message?.includes('koneksi')) {
+        toast.error(error.message);
+      } else if (error.message) {
+        toast.error(error.message);
+      } else {
+        toast.error('Gagal mengunggah dokumen. Silakan coba lagi atau hubungi administrator jika masalah berlanjut.');
+      }
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleRemoveFile = () => {
