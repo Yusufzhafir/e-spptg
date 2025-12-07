@@ -82,6 +82,23 @@ export async function listAllDocuments(filters: {
   });
 }
 
+export async function updateDocument(
+  documentId: number,
+  data: Partial<typeof submissions_documents.$inferInsert>,
+  tx?: DBTransaction
+) {
+  const queryDb = tx || db;
+  const result = await queryDb
+    .update(submissions_documents)
+    .set({
+      ...data,
+      updatedAt: new Date(),
+    })
+    .where(eq(submissions_documents.id, documentId))
+    .returning();
+  return result[0];
+}
+
 export async function deleteDocument(documentId: number, tx?: DBTransaction) {
   const queryDb = tx || db;
 

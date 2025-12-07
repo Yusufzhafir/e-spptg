@@ -3,19 +3,35 @@
 import { useParams, useRouter } from 'next/navigation';
 import { DetailPage } from '@/components/DetailPage';
 import { useAppState } from '@/app/layout';
+import { trpc } from '@/trpc/client';
+import { useMemo } from 'react';
+import { FeedbackData, StatusHistory } from '@/types';
+
 
 export default function SubmissionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { submissions, handleStatusChange } = useAppState();
+  const { handleStatusChange } = useAppState();
 
-  const submission = submissions.find((s) => s.id === id);
-
+  const {data: submission} = trpc.submissions.byId.useQuery({ id: Number(id) });
+  const mappedData = useMemo(() => {
+    if (!submission) {
+      return null;
+    }
+    return {
+     ...submission,
+     tanggalPengajuan: new Date(submission?.tanggalPengajuan),
+     riwayat: submission?.riwayat as StatusHistory[],
+     feedback: submission?.feedback as FeedbackData | null,
+     createdAt: new Date(submission?.createdAt),
+     updatedAt: new Date(submission?.updatedAt),
+    };
+  }, [submission]);
   const handleBackToDashboard = () => {
     router.push('/');
   };
 
-  if (!submission) {
+  if (!mappedData) {
     return (
       <div className="text-gray-600">
         Pengajuan dengan ID {id} tidak ditemukan.
@@ -25,7 +41,7 @@ export default function SubmissionDetailPage() {
 
   return (
     <DetailPage
-      submission={submission}
+      submission={mappedData}
       onBack={handleBackToDashboard}
       onStatusChange={handleStatusChange}
     />

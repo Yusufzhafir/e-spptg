@@ -27,27 +27,26 @@ export default function DashboardPage() {
 
   // Transform submissions data
   const submissions = (submissionsData?.items || []).map((s: any) => ({
-    id: s.id.toString(),
+    id: s.id, // Keep as number, not string
     namaPemilik: s.namaPemilik,
     nik: s.nik,
     alamat: s.alamat,
     nomorHP: s.nomorHP,
     email: s.email,
     villageId: s.villageId,
-    desa: '', // Will need to join with villages table
     kecamatan: s.kecamatan,
     kabupaten: s.kabupaten,
     luas: s.luas,
     penggunaanLahan: s.penggunaanLahan,
     catatan: s.catatan,
-    coordinates: s.geoJSON?.coordinates?.[0]?.map(([lng, lat]: [number, number]) => [lat, lng]) || [],
+    geoJSON: s.geoJSON, // Use geoJSON instead of coordinates
     status: s.status,
-    tanggalPengajuan: new Date(s.tanggalPengajuan).toLocaleDateString('id-ID'),
+    tanggalPengajuan: new Date(s.tanggalPengajuan), // Keep as Date, not string
     verifikator: s.verifikator,
     riwayat: s.riwayat || [],
     feedback: s.feedback,
-    createdAt: s.createdAt,
-    updatedAt: s.updatedAt,
+    createdAt: new Date(s.createdAt),
+    updatedAt: new Date(s.updatedAt),
   }));
 
   // Use KPI data directly (no transformation needed)

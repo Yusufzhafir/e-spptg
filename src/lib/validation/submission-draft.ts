@@ -29,9 +29,9 @@ export const researchTeamMemberSchema = z.object({
 export type ResearchTeamMember = z.infer<typeof researchTeamMemberSchema>;
 
 export const boundaryWitnessSchema = z.object({
-  id: z.string().uuid().optional(), // Client-generated
+  id: z.string().optional(), // Client-generated
   nama: z.string().min(2, 'Nama minimal 2 karakter'),
-  sisi: z.enum(['Utara', 'Timur', 'Selatan', 'Barat'],{
+  sisi: z.enum(['Utara', 'Timur', 'Selatan', 'Barat'], {
     error: (e) => ({ message: `value :${e.input} causes: ${e.message}` }),
   }),
 });
@@ -39,7 +39,7 @@ export const boundaryWitnessSchema = z.object({
 export type BoundaryWitness = z.infer<typeof boundaryWitnessSchema>;
 
 export const geographicCoordinateSchema = z.object({
-  id: z.string().uuid().optional(),
+  id: z.string().optional(),
   latitude: z
     .number()
     .min(-90, 'Latitude minimal -90')
@@ -90,10 +90,10 @@ export type Step1Berkas = z.infer<typeof step1BerkasSchema>;
 
 export const step2LapanganSchema = z.object({
   // Team members
+  pihakBPD: researchTeamMemberSchema.omit({ instansi: true }).optional(),
   juruUkur: researchTeamMemberSchema.optional(),
-  pihakBPD: researchTeamMemberSchema.optional(),
-  kepalaDusun: researchTeamMemberSchema.optional(),
-  rtSetempat: researchTeamMemberSchema.optional(),
+  kepalaDusun: researchTeamMemberSchema.omit({ instansi: true, jabatan: true }).optional(),
+  rtSetempat: researchTeamMemberSchema.omit({ instansi: true, jabatan: true }).optional(),
 
   // Witnesses
   saksiList: z
@@ -125,10 +125,10 @@ export const step2LapanganSchema = z.object({
   dokumenTidakSengketa: uploadedDocumentSchema.optional(),
 
   // Photos
-  fotoLahan: z
-    .array(uploadedDocumentSchema)
-    .min(1, 'Minimal 1 foto lapangan diperlukan')
-    .max(10, 'Maksimal 10 foto'),
+  // fotoLahan: z
+  //   .array(uploadedDocumentSchema)
+  //   .min(1, 'Minimal 1 foto lapangan diperlukan')
+  //   .max(10, 'Maksimal 10 foto'),
 });
 
 export type Step2Lapangan = z.infer<typeof step2LapanganSchema>;
@@ -160,29 +160,17 @@ export const feedbackDataSchema = z.object({
 
 export type FeedbackData = z.infer<typeof feedbackDataSchema>;
 
-export const step3HasilSchema = z.object(z.object({
-      status: z.enum(['SPPTG terdata', 'SPPTG terdaftar']),
-      verifikator: z.number().int('Verifikator harus ditentukan'),
-    })).or(
-      z.object({
-      status: z.enum(['SPPTG ditolak', 'SPPTG ditinjau ulang']),
-      alasanStatus: z
-        .string()
-        .min(10, 'Alasan penolakan minimal 10 karakter')
-        .max(1000, 'Alasan penolakan maksimal 1000 karakter'),
-      feedback: feedbackDataSchema,
-      verifikator: z.number().int('Verifikator harus ditentukan'),
-    }),
-    )
-  .refine(
-    (data) => {
-      // Ensure verifikator is present (from context, not in this schema)
-      return true;
-    },
-    {
-      message: 'Verifikator harus ditentukan',
-    }
-  )
+export const step3HasilSchema = z.discriminatedUnion('status', [
+  z.object({
+    status: z.enum(['SPPTG terdata', 'SPPTG terdaftar']),
+    verifikator: z.number().int('Verifikator harus ditentukan'),
+  }),
+  z.object({
+    status: z.enum(['SPPTG ditolak', 'SPPTG ditinjau ulang']),
+    feedback: feedbackDataSchema,
+    verifikator: z.number().int('Verifikator harus ditentukan'),
+  }),
+]);
 
 export type Step3Hasil = z.infer<typeof step3HasilSchema>;
 
@@ -199,7 +187,7 @@ export const step4IssuanceSchema = z.object({
     .max(50, 'Nomor SPPTG maksimal 50 karakter')
     .optional(),
 
-  tanggalTerbit: z.string().datetime().optional(),
+  tanggalTerbit: z.iso.date(),
 });
 
 export type Step4Issuance = z.infer<typeof step4IssuanceSchema>;

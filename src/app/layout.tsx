@@ -6,12 +6,11 @@ import { Sidebar } from '@/components/Sidebar';
 import { Header } from '@/components/Header';
 import { Toaster } from '@/components/ui/sonner';
 import {
-  mockSubmissions,
-  calculateKPIData,
   monthlyData,
-  mockUsers,
-  mockVillages,
-  mockProhibitedAreas,
+  // mockUsers,
+  // mockVillages,
+  // mockProhibitedAreas,
+  calculateKPIData
 } from '@/data/mockData';
 import {
   Submission,
@@ -28,30 +27,17 @@ import { toast } from 'sonner';
 import { usePathname, useRouter } from 'next/navigation';
 
 export type AppStateContextValue = {
-  submissions: Submission[];
-  setSubmissions: React.Dispatch<React.SetStateAction<Submission[]>>;
-  users: User[];
-  setUsers: React.Dispatch<React.SetStateAction<User[]>>;
-  villages: Village[];
-  setVillages: React.Dispatch<React.SetStateAction<Village[]>>;
-  prohibitedAreas: ProhibitedArea[];
-  setProhibitedAreas: React.Dispatch<
-    React.SetStateAction<ProhibitedArea[]>
-  >;
-  searchQuery: string;
   setSearchQuery: (q: string) => void;
-  statusFilter: string;
   setStatusFilter: (s: string) => void;
-  kpiData: ReturnType<typeof calculateKPIData>;
-  monthlyData: typeof monthlyData;
   handleNewSubmission: () => void;
   handleSubmitForm: (data: Partial<Submission>) => void;
-  handleStatusChange: (id: string, status: StatusSPPTG, alasan: string) => void;
+  handleStatusChange: (id: number, status: StatusSPPTG, alasan: string) => void;
   handleCompleteSubmission: (draft: SubmissionDraft) => void;
 };
 
 import { createContext, useContext } from 'react';
 import { TRPCProvider } from '@/trpc/client';
+import { da } from 'zod/v4/locales';
 
 const AppStateContext = createContext<AppStateContextValue | null>(null);
 
@@ -65,11 +51,11 @@ export function useAppState() {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   const [submissions, setSubmissions] =
-    useState<Submission[]>(mockSubmissions);
-  const [users, setUsers] = useState<User[]>(mockUsers);
-  const [villages, setVillages] = useState<Village[]>(mockVillages);
+    useState<Submission[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [villages, setVillages] = useState<Village[]>([]);
   const [prohibitedAreas, setProhibitedAreas] =
-    useState<ProhibitedArea[]>(mockProhibitedAreas);
+    useState<ProhibitedArea[]>([]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -94,7 +80,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         (s) =>
           s.namaPemilik.toLowerCase().includes(query) ||
           s.nik.includes(query) ||
-          s.desa.toLowerCase().includes(query) ||
           s.kecamatan.toLowerCase().includes(query)
       );
     }
@@ -119,28 +104,31 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
   const handleSubmitForm = (data: Partial<Submission>) => {
     const newSubmission: Submission = {
-      id: `2025-01-${String(submissions.length + 1).padStart(4, '0')}`,
+      id: 0, // Will be replaced by database
       namaPemilik: data.namaPemilik || '',
       nik: data.nik || '',
       alamat: data.alamat || '',
       nomorHP: data.nomorHP || '',
       email: data.email || '',
-      desa: data.desa || '',
+      villageId: data.villageId || 0,
       kecamatan: data.kecamatan || '',
       kabupaten: data.kabupaten || 'Cirebon',
       luas: data.luas || 0,
       penggunaanLahan: data.penggunaanLahan || '',
-      catatan: data.catatan,
-      coordinates: data.coordinates || [],
+      catatan: data.catatan || null,
       status: 'SPPTG terdata',
-      tanggalPengajuan: new Date().toLocaleDateString('id-ID'),
+      tanggalPengajuan: new Date(),
+      verifikator: null, // Should come from authenticated user
       riwayat: [
         {
-          tanggal: new Date().toLocaleString('id-ID'),
+          tanggal: new Date().toISOString(),
           status: 'SPPTG terdata',
           petugas: 'Sistem',
         },
       ],
+      feedback: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
 
     setSubmissions((prev) => [newSubmission, ...prev]);
@@ -148,7 +136,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   };
 
   const handleStatusChange = (
-    id: string,
+    id: number, // Changed from string to number
     status: StatusSPPTG,
     alasan: string
   ) => {
@@ -158,13 +146,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           ? {
             ...s,
             status,
-            verifikator: 'Bambang Supriyanto',
+            verifikator: null, // Should be number from authenticated user, not string
             riwayat: [
               ...s.riwayat,
               {
-                tanggal: new Date().toLocaleString('id-ID'),
+                tanggal: new Date().toISOString(),
                 status,
-                petugas: 'Bambang Supriyanto',
+                petugas: 'Bambang Supriyanto', // This is just for display
                 alasan: alasan || undefined,
               },
             ],
@@ -176,34 +164,32 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
   const handleCompleteSubmission = (draft: SubmissionDraft) => {
     const newSubmission: Submission = {
-      id:
-        draft.id ||
-        `2025-01-${String(submissions.length + 1).padStart(4, '0')}`,
+      id: 0, // Will be replaced by database
       namaPemilik: draft.namaPemohon,
       nik: draft.nik,
       alamat: '',
       nomorHP: draft.juruUkur?.nomorHP || '',
       email: '',
-      desa: '',
+      villageId: 0, // Need to get this from draft
       kecamatan: '',
       kabupaten: 'Cirebon',
       luas: draft.luasLahan || 0,
       penggunaanLahan: '',
-      coordinates: draft.coordinatesGeografis.map((c) => [
-        c.latitude,
-        c.longitude,
-      ]),
+      catatan: null,
       status: draft.status || 'SPPTG terdata',
-      tanggalPengajuan: new Date().toLocaleDateString('id-ID'),
-      verifikator: draft.verifikator,
+      tanggalPengajuan: new Date(), // Changed from string to Date
+      verifikator: draft.verifikator || null,
       riwayat: [
         {
-          tanggal: new Date().toLocaleString('id-ID'),
+          tanggal: new Date().toISOString(),
           status: draft.status || 'SPPTG terdata',
-          petugas: draft.verifikator || 'Sistem',
+          petugas: 'Sistem', // Should come from authenticated user
           alasan: draft.alasanStatus,
         },
       ],
+      feedback: draft.feedback || null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
 
     setSubmissions((prev) => [newSubmission, ...prev]);
@@ -212,20 +198,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   };
 
   const contextValue: AppStateContextValue = {
-    submissions: filteredSubmissions, // note: filtered here
-    setSubmissions,
-    users,
-    setUsers,
-    villages,
-    setVillages,
-    prohibitedAreas,
-    setProhibitedAreas,
-    searchQuery,
     setSearchQuery,
-    statusFilter,
     setStatusFilter,
-    kpiData,
-    monthlyData,
     handleNewSubmission,
     handleSubmitForm,
     handleStatusChange,

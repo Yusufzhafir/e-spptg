@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { createUploadUrlSchema, listDocumentsSchema } from '@/lib/validation/index';
+import { createUploadUrlSchema, listDocumentsSchema, uploadFileSchema } from '@/lib/validation/index';
 import * as queries from '@/server/db/queries/documents';
 import * as draftQueries from '@/server/db/queries/drafts';
-import { generateUploadUrl } from '@/server/s3/s3';
+import { generateUploadUrl, uploadFileToS3 } from '@/server/s3/s3';
 import { TRPCError } from '@trpc/server';
 import { adminProcedure, protectedProcedure, router } from '@/trpc/init';
 
@@ -50,8 +50,8 @@ export const documentsRouter = router({
         });
       }
 
-      // Generate S3 upload URL
-      const { uploadUrl, publicUrl } = await generateUploadUrl(
+      // Generate S3 key and public URL (no presigned URL - uploads handled server-side)
+      const { publicUrl, s3Key } = await generateUploadUrl(
         input.filename,
         input.mimeType,
         input.category
@@ -71,8 +71,95 @@ export const documentsRouter = router({
 
       return {
         documentId: document.id,
-        uploadUrl, // Presigned URL for client to upload to
+        s3Key, // S3 key for server-side upload
         publicUrl, // Final public URL after upload
+      };
+    }),
+
+  /**
+   * Upload file to S3 via server-side proxy (avoids CORS issues)
+   */
+  uploadFile: protectedProcedure
+    .input(uploadFileSchema)
+    .mutation(async ({ ctx, input }) => {
+      // Validate file size
+      if (input.size > MAX_FILE_SIZE) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Ukuran file maksimal ${MAX_FILE_SIZE / 1024 / 1024}MB`,
+        });
+      }
+
+      // Validate mime type
+      if (!ACCEPTED_MIME_TYPES.includes(input.mimeType)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Tipe file hanya PDF dan gambar (JPEG, PNG, WebP)',
+        });
+      }
+
+      // Verify draft belongs to user
+      const draft = await draftQueries.getDraftById(
+        input.draftId,
+        ctx.appUser!.id
+      );
+
+      if (!draft) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Draft tidak ditemukan',
+        });
+      }
+
+      // Verify document exists and belongs to draft
+      const document = await queries.getDocumentById(input.documentId);
+      if (!document || document.draftId !== input.draftId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Dokumen tidak ditemukan atau tidak sesuai dengan draft',
+        });
+      }
+
+      // Convert base64 to buffer
+      let fileBuffer: Buffer;
+      try {
+        // Remove data URL prefix if present (e.g., "data:image/png;base64,")
+        const base64Data = input.fileData.includes(',') 
+          ? input.fileData.split(',')[1] 
+          : input.fileData;
+        fileBuffer = Buffer.from(base64Data, 'base64');
+      } catch (error) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Format file data tidak valid (harus base64)',
+        });
+      }
+
+      // Validate buffer size matches reported size
+      if (fileBuffer.length !== input.size) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Ukuran file tidak sesuai dengan data yang dikirim',
+        });
+      }
+
+      // Upload file to S3 using the provided s3Key
+      const { publicUrl } = await uploadFileToS3(
+        fileBuffer,
+        input.s3Key,
+        input.mimeType
+      );
+
+      // Update document record with final URL
+      await queries.updateDocument(input.documentId, {
+        url: publicUrl,
+        size: input.size,
+      });
+
+      return {
+        success: true,
+        publicUrl,
+        message: 'File berhasil diunggah',
       };
     }),
 

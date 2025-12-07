@@ -150,7 +150,6 @@ export function SubmissionFlow({ submissionId, onCancel, onComplete }: Submissio
     
     // Ensure currentStep is a valid literal type
     const step = draft.currentStep as 1 | 2 | 3 | 4;
-    
     saveDraftMutation.mutate({
       draftId: draft.id,
       currentStep: step,

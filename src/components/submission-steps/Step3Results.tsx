@@ -199,7 +199,7 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
     onUpdateDraft({
       status: selectedStatus as StatusSPPTG,
       feedback: feedbackData,
-      verifikator: 'Bambang Supriyanto',
+      verifikator: 12312,
       tanggalKeputusan: new Date().toLocaleDateString('id-ID'),
     });
 

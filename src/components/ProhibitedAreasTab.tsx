@@ -126,19 +126,19 @@ export function ProhibitedAreasTab({
     }
 
     const newArea: ProhibitedArea = {
-      id: `PA-${String(prohibitedAreas.length + 1).padStart(3, '0')}`,
+      id: new Date().getTime(),
       namaKawasan: formData.namaKawasan,
       jenisKawasan: formData.jenisKawasan as ProhibitedAreaType,
       sumberData: formData.sumberData,
-      dasarHukum: formData.dasarHukum,
+      dasarHukum: formData.dasarHukum || null,
       tanggalEfektif: formData.tanggalEfektif,
       tanggalUnggah: new Date().toLocaleDateString('id-ID'),
-      diunggahOleh: 'Ahmad Hidayat', // Mock current user
+      diunggahOleh: 0, // TODO change into user who submits
       statusValidasi: (formData.statusValidasi as ValidationStatus) || 'Lolos',
       aktifDiValidasi: formData.aktifDiValidasi ?? true,
       warna: formData.warna || '#3b82f6',
-      catatan: formData.catatan,
-      coordinates: formData.coordinates,
+      catatan: formData.catatan || null,
+      geom: null,
     };
 
     onUpdateProhibitedAreas([...prohibitedAreas, newArea]);
@@ -158,7 +158,7 @@ export function ProhibitedAreasTab({
     setIsEditDialogOpen(false);
     setSelectedArea(null);
     setFormData({});
-    toast.success('Kawasan Non‑SPPTG berhasil diperbarui.');
+    toast.success('Kawasan Non-SPPTG berhasil diperbarui.');
   };
 
   const confirmDelete = () => {
@@ -168,7 +168,7 @@ export function ProhibitedAreasTab({
     onUpdateProhibitedAreas(updatedAreas);
     setIsDeleteDialogOpen(false);
     setSelectedArea(null);
-    toast.success('Kawasan Non‑SPPTG berhasil dihapus.');
+    toast.success('Kawasan Non-SPPTG berhasil dihapus.');
   };
 
   const handleToggleActive = (area: ProhibitedArea) => {

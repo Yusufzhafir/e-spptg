@@ -113,13 +113,14 @@ export interface ProhibitedArea {
   jenisKawasan: ProhibitedAreaType;
   sumberData: string;
   dasarHukum: string | null;
-  tanggalEfektif: Date;
-  tanggalUnggah: Date;
+  tanggalEfektif: string;
+  tanggalUnggah: string;
   diunggahOleh: number;
   statusValidasi: ValidationStatus;
   aktifDiValidasi: boolean;
   warna: string;
   catatan: string | null;
+  geom : string | null
 }
 
 // Submission Flow Types

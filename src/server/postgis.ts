@@ -1,86 +1,159 @@
- import { db, DBTransaction } from './db/db';
- import { sql } from 'drizzle-orm';
+import { db, DBTransaction } from './db/db';
+import { sql } from 'drizzle-orm';
+import { overlapResults } from './db/schema';
 
 /**
- * Convert GeoJSON (Polygon) to PostGIS geometry and insert submission
+ * Interface for overlap calculation result
+ * This is what we work with in JavaScript/TypeScript
  */
-//  export async function insertSubmissionWithGeometry(submissionData: any, geoJsonPolygon: any,tx?:DBTransaction) {
-//    const queryDb = tx || db
-//   //  const geomWKT = geojsonToWKT(geoJsonPolygon);
+export interface OverlapCalculation {
+  prohibitedAreaId: number;
+  namaKawasan: string;
+  jenisKawasan: string;
+  luasOverlap: number;
+  percentageOverlap: number;
+  intersectionGeom: any; // PostGIS geometry
+}
 
-//    return queryDb.execute(
-//      sql`
-//        INSERT INTO submissions (
-//          nama_pemilik, nik, alamat, nomor_hp, email,
-//          village_id, kecamatan, kabupaten, luas, penggunaan_lahan,
-//          catatan, geom, geo_json, status, tanggal_pengajuan, verifikator, riwayat
-//        ) VALUES (
-//          ${submissionData.namaPemilik},
-//          ${submissionData.nik},
-//          ${submissionData.alamat},
-//          ${submissionData.nomorHP},
-//          ${submissionData.email},
-//          ${submissionData.villageId},
-//          ${submissionData.kecamatan},
-//          ${submissionData.kabupaten},
-//          ${submissionData.luas},
-//          ${submissionData.penggunaanLahan},
-//          ${submissionData.catatan || null},
-//          ST_GeomFromGeoJSON(${JSON.stringify(geoJsonPolygon)})::geometry(Polygon, 4326),
-//          ${JSON.stringify(geoJsonPolygon)},
-//          ${submissionData.status},
-//          ${submissionData.tanggalPengajuan},
-//          ${submissionData.verifikator},
-//          ${JSON.stringify(submissionData.riwayat)}
-//        )
-//        RETURNING id;
-//      `
-//    );
-//  }
-
- /**
-  * Find overlapping prohibited areas and insert into overlap_results
-  */
-export async function computeOverlaps(submissionId: number, tx?:DBTransaction) {
-  const queryDb = tx || db
+/**
+ * Find all overlapping prohibited areas and calculate their overlap metrics
+ * Returns an array of overlap calculations that can be used in JavaScript
+ */
+export async function calculateAllOverlaps(
+  submissionId: number,
+  tx?: DBTransaction
+): Promise<OverlapCalculation[]> {
+  const queryDb = tx || db;
+  
   try {
-    await queryDb.execute(
+    // Single query to find overlaps and calculate all metrics
+    const result = await queryDb.execute(
       sql`
-        INSERT INTO overlap_results (
-          submission_id, prohibited_area_id, luas_overlap, 
-          percentage_overlap, nama_kawasan, jenis_kawasan, 
-          intersection_geom, created_at, updated_at
-        )
         SELECT 
-          ${submissionId},
-          pa.id,
-          ST_Area(ST_Intersection(s.geom, pa.geom))::double precision,
-          (ST_Area(ST_Intersection(s.geom, pa.geom)) / NULLIF(ST_Area(s.geom), 0) * 100)::double precision,
+          pa.id AS prohibited_area_id,
           pa.nama_kawasan,
           pa.jenis_kawasan,
-          ST_Intersection(s.geom, pa.geom),
-          NOW(),
-          NOW()
+          ST_Area(ST_Intersection(s.geom, pa.geom))::double precision AS luas_overlap,
+          (ST_Area(ST_Intersection(s.geom, pa.geom)) / NULLIF(ST_Area(s.geom), 0) * 100)::double precision AS percentage_overlap,
+          ST_Intersection(s.geom, pa.geom) AS intersection_geom
         FROM submissions s
         JOIN prohibited_areas pa ON ST_Intersects(s.geom, pa.geom)
         WHERE s.id = ${submissionId}
-          AND pa.aktif_di_validasi = true;
+          AND pa.aktif_di_validasi = true
       `
     );
+
+    // Transform database results into JavaScript objects
+    const overlaps: OverlapCalculation[] = (result.rows || []).map((row: any) => ({
+      prohibitedAreaId: Number(row.prohibited_area_id),
+      namaKawasan: row.nama_kawasan,
+      jenisKawasan: row.jenis_kawasan,
+      luasOverlap: Number(row.luas_overlap ?? 0),
+      percentageOverlap: Number(row.percentage_overlap ?? 0),
+      intersectionGeom: row.intersection_geom,
+    }));
+
+    return overlaps;
+  } catch (error) {
+    console.error('Error calculating overlaps:', error);
+    throw error;
+  }
+}
+
+/**
+ * Clear existing overlap results for a submission
+ */
+export async function clearOverlapResults(
+  submissionId: number,
+  tx?: DBTransaction
+): Promise<void> {
+  const queryDb = tx || db;
+  
+  await queryDb.delete(overlapResults)
+    .where(sql`${overlapResults.submissionId} = ${submissionId}`);
+}
+
+/**
+ * Insert overlap results into the database with explicit column mapping
+ * Takes JavaScript objects from calculateAllOverlaps() and inserts them
+ * This approach is easier to debug and maintain than a giant SQL query
+ * 
+ * For geometry, we use a subquery to get it directly from the original calculation
+ * This ensures the geometry is handled correctly while maintaining explicit column mapping
+ */
+export async function insertOverlapResults(
+  submissionId: number,
+  overlaps: OverlapCalculation[],
+  tx?: DBTransaction
+): Promise<void> {
+  const queryDb = tx || db;
+  
+  if (overlaps.length === 0) {
+    return;
+  }
+
+  // Insert each overlap result with explicit column mapping
+  // This makes it easy to debug and prevents column ordering errors
+  for (const overlap of overlaps) {
+    await queryDb.execute(
+      sql`
+        INSERT INTO overlap_results (
+          "submissionId",
+          "prohibitedAreaId",
+          luas_overlap,
+          percentage_overlap,
+          nama_kawasan,
+          jenis_kawasan,
+          intersection_geom,
+          created_at,
+          updated_at
+        )
+        VALUES (
+          ${submissionId},
+          ${overlap.prohibitedAreaId},
+          ${overlap.luasOverlap},
+          ${overlap.percentageOverlap},
+          ${overlap.namaKawasan},
+          ${overlap.jenisKawasan}::prohibited_area_type,
+          (
+            SELECT ST_Intersection(s.geom, pa.geom)
+            FROM submissions s
+            CROSS JOIN prohibited_areas pa
+            WHERE s.id = ${submissionId}
+              AND pa.id = ${overlap.prohibitedAreaId}
+          ),
+          NOW(),
+          NOW()
+        )
+      `
+    );
+  }
+}
+
+/**
+ * Main function: Find overlapping prohibited areas and insert into overlap_results
+ * This orchestrates the process:
+ * 1. Calculate overlaps into JavaScript objects (easy to debug)
+ * 2. Clear existing results
+ * 3. Insert new results with explicit column mapping
+ * 
+ * This approach makes debugging easier since you can inspect the JavaScript objects
+ * before insertion, and the explicit column mapping prevents ordering errors.
+ */
+export async function computeOverlaps(submissionId: number, tx?: DBTransaction) {
+  try {
+    // Step 1: Calculate all overlaps - returns JavaScript objects we can inspect/debug
+    const overlaps = await calculateAllOverlaps(submissionId, tx);
+    
+    // Step 2: Clear existing overlap results for this submission
+    await clearOverlapResults(submissionId, tx);
+    
+    // Step 3: Insert the calculated overlaps with explicit column mapping
+    await insertOverlapResults(submissionId, overlaps, tx);
 
     return true;
   } catch (error) {
     console.error('Error computing overlaps:', error);
-    return false;
+    throw error; // Re-throw to let the caller handle it properly
   }
 }
-
-//  function geojsonToWKT(geojson: any): string {
-//    if (geojson.type === 'Polygon') {
-//      const coords = geojson.coordinates[0]
-//        .map((coord: number[]) => `${coord[0]} ${coord[1]}`)
-//        .join(', ');
-//      return `POLYGON((${coords}))`;
-//    }
-//    throw new Error('Unsupported GeoJSON type');
-//  }

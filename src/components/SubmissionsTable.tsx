@@ -53,10 +53,10 @@ export function SubmissionsTable({ submissions, onViewDetail, onEdit }: Submissi
                 </div>
               </TableCell>
               <TableCell>
-                {submission.desa}, {submission.kecamatan}
+                {submission.villageId.toString()}, {submission.kecamatan}
               </TableCell>
               <TableCell>{submission.luas.toLocaleString()}</TableCell>
-              <TableCell>{submission.tanggalPengajuan}</TableCell>
+              <TableCell>{submission.tanggalPengajuan.toLocaleDateString()}</TableCell>
               <TableCell>
                 <StatusBadge status={submission.status} />
               </TableCell>

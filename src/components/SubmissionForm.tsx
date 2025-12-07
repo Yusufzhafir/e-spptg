@@ -23,13 +23,13 @@ export function SubmissionForm({ onSubmit, onCancel }: SubmissionFormProps) {
     alamat: '',
     nomorHP: '',
     email: '',
-    desa: '',
+    villageId: 0,
     kecamatan: '',
     kabupaten: 'Cirebon',
     luas: 0,
     penggunaanLahan: '',
     catatan: '',
-    coordinates: [],
+    geoJSON: [],
   });
 
    
@@ -51,7 +51,7 @@ export function SubmissionForm({ onSubmit, onCancel }: SubmissionFormProps) {
 
   const handleSubmit = () => {
     // Validate required fields
-    if (!formData.namaPemilik || !formData.nik || !formData.desa || !formData.luas) {
+    if (!formData.namaPemilik || !formData.nik || !formData.villageId || !formData.luas) {
       toast.error('Mohon lengkapi semua data yang wajib diisi');
       return;
     }
@@ -162,7 +162,7 @@ export function SubmissionForm({ onSubmit, onCancel }: SubmissionFormProps) {
                   <Label htmlFor="desa">Desa *</Label>
                   <Input
                     id="desa"
-                    value={formData.desa}
+                    value={formData.villageId}
                     onChange={(e) => updateField('desa', e.target.value)}
                     placeholder="Nama desa"
                   />
@@ -222,7 +222,7 @@ export function SubmissionForm({ onSubmit, onCancel }: SubmissionFormProps) {
                 <Label htmlFor="catatan">Catatan Tambahan</Label>
                 <Textarea
                   id="catatan"
-                  value={formData.catatan}
+                  value={formData.villageId}
                   onChange={(e) => updateField('catatan', e.target.value)}
                   placeholder="Masukkan catatan jika diperlukan"
                   rows={3}
