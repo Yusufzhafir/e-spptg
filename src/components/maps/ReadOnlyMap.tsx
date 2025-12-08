@@ -208,7 +208,7 @@ export function ReadOnlyMap({
       </APIProvider>
 
       {/* Legend */}
-      <div className="absolute bottom-4 right-4 bg-white p-3 rounded-lg shadow-lg border border-gray-200 z-[1000]">
+      <div className="absolute bottom-4 right-4 bg-white p-3 rounded-lg shadow-lg border border-gray-200 z-1000">
         <p className="text-xs mb-2 font-semibold">Legenda</p>
         <div className="space-y-1">
           <div className="flex items-center gap-2 text-xs">

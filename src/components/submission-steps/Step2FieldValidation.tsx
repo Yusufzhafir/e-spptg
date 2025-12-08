@@ -98,7 +98,7 @@ function InteractiveMap({
           />
         ))}
       </MapContainer> */}
-      <div className="absolute bottom-4 right-4 bg-white rounded-lg shadow-lg p-3 border border-gray-200 z-[1000]">
+      <div className="absolute bottom-4 right-4 bg-white rounded-lg shadow-lg p-3 border border-gray-200 z-1000">
         <p className="text-xs mb-2 font-semibold">Instruksi:</p>
         <p className="text-xs text-gray-600">Klik pada peta untuk menambahkan titik koordinat</p>
         <p className="text-xs text-gray-600">Klik marker untuk menghapus titik</p>
@@ -243,12 +243,12 @@ function DocumentUploadField({
       ) : (
         <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 flex items-center justify-between">
           <div className="flex items-center gap-3 flex-1 min-w-0">
-            <File className="w-5 h-5 text-blue-600 flex-shrink-0" />
+            <File className="w-5 h-5 text-blue-600 shrink-0" />
             <div className="min-w-0 flex-1">
               <p className="text-sm text-gray-900 truncate">{value.name}</p>
               <p className="text-xs text-gray-500">{(value.size / 1024 / 1024).toFixed(2)} MB</p>
             </div>
-            <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+            <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
           </div>
           <Button variant="ghost" size="sm" onClick={() => onChange(undefined)} className="text-red-600">
             <X className="w-4 h-4" />

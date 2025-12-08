@@ -48,7 +48,7 @@ export function MapView({
 
       {/* Info popup for hovered submission */}
       {hoveredSubmission && (
-        <div className="absolute top-4 left-4 bg-white p-4 rounded-lg shadow-lg border border-gray-200 max-w-xs z-[1000]">
+        <div className="absolute top-4 left-4 bg-white p-4 rounded-lg shadow-lg border border-gray-200 max-w-xs z-1000">
           <p className="mb-2 font-semibold">{hoveredSubmission.namaPemilik}</p>
           <p className="text-sm text-gray-600 mb-1">ID: {hoveredSubmission.id}</p>
           <p className="text-sm text-gray-600 mb-1">
