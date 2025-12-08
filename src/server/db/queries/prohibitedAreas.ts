@@ -1,12 +1,13 @@
-import { eq } from 'drizzle-orm';
+import { eq, getTableColumns, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { prohibitedAreas } from '../schema';
 
 export async function listProhibitedAreas(limit = 100, offset = 0) {
-  return db.query.prohibitedAreas.findMany({
-    limit,
-    offset,
-  });
+  const {geom,...rest} = getTableColumns(prohibitedAreas)
+  return await db.select({
+    ...rest,
+    geom: sql`ST_AsGeoJSON(geom)`,
+  }).from(prohibitedAreas).limit(limit).offset(offset)
 }
 
 export async function getProhibitedAreaById(id: number) {
