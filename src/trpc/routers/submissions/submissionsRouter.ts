@@ -330,7 +330,7 @@ export const submissionsRouter = router({
         };
 
         data.forEach((item) => {
-            const count = +item
+            const count = +item.count
             if (item.status in kpi && !Number.isNaN(count)) {
                 kpi[item.status as keyof typeof kpi] = count;
                 kpi.total += count;
