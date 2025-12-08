@@ -16,9 +16,16 @@ export async function getSubmissionById(
     tx?: DBTransaction
 ) {
     const queryDb = tx || db;
-    return queryDb.query.submissions.findFirst({
-        where: eq(submissions.id, id),
-    });
+    const {geom,...rest} = getTableColumns(submissions)
+    const [result] = await queryDb.select(rest).from(submissions).where(
+        eq(submissions.id, id),
+    ).limit(1)
+
+    if (!result){
+        throw new Error("no result")
+    }
+
+    return result
 }
 
 export async function listSubmissions(filters: {
