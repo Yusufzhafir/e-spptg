@@ -5,6 +5,7 @@ import { APIProvider, Map, useApiIsLoaded, useMap } from '@vis.gl/react-google-m
 import { Submission, StatusSPPTG } from '@/types';
 import { geoJSONToLatLng } from '@/lib/map-utils';;
 import { MapPin } from 'lucide-react';
+import { renderToString } from 'react-dom/server';
 
 interface ReadOnlyMapProps {
   submissions: Submission[];
@@ -78,14 +79,12 @@ function ReadOnlyMapInternal({
       polygonsRef.current.push(polygon);
 
       // Create info window content
-      const infoContent = `
-        <div style="padding: 8px; min-width: 200px;">
-          <p style="font-weight: 600; margin-bottom: 4px;">${submission.namaPemilik}</p>
-          <p style="font-size: 12px; color: #666; margin-bottom: 4px;">ID: ${submission.id}</p>
-          <p style="font-size: 12px; color: #666; margin-bottom: 4px;">${submission.kecamatan}</p>
-          <p style="font-size: 12px; color: #666; margin-bottom: 8px;">Luas: ${submission.luas.toLocaleString('id-ID')} m²</p>
-        </div>
-      `;
+      const infoContent = renderToString(<div className='p-2 min-w-52' >
+          <p className='font-semibold mb-1'>${submission.namaPemilik}</p>
+          <p className='text-xs text-[#666] mb-1' >ID: ${submission.id}</p>
+          <p className='text-xs text-[#666] mb-1' >${submission.kecamatan}</p>
+          <p className='text-xs text-[#666] mb-2'>Luas: ${submission.luas.toLocaleString('id-ID')} m²</p>
+        </div>);
 
       const infoWindow = new google.maps.InfoWindow({
         content: infoContent,
