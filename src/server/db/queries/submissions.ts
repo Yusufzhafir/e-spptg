@@ -1,5 +1,5 @@
 
-import { eq, desc, and, sql } from 'drizzle-orm';
+import { eq, desc, and, sql, getTableColumns } from 'drizzle-orm';
 import { db, type DBTransaction } from '../db';
 import {
     submissions,
@@ -47,13 +47,16 @@ export async function listSubmissions(filters: {
     if (status && status !== 'all') {
         conditions.push(eq(submissions.status, status as StatusSPPTG));
     }
-
-    const items = await queryDb.query.submissions.findMany({
-        where: conditions.length > 0 ? and(...conditions) : undefined,
-        limit,
-        offset,
-        orderBy: desc(submissions.tanggalPengajuan),
-    });
+    const {geom,...restOfTheColumn} = getTableColumns(submissions)
+    const items = await queryDb.select(restOfTheColumn)
+        .from(submissions)
+        .where(
+            conditions.length > 0 ? and(...conditions) : undefined
+        ).offset(offset)
+        .limit(limit)
+        .orderBy(
+            desc(submissions.tanggalPengajuan)
+        )
 
     const totalResult = await queryDb
         .select({ count: sql<number>`count(*)` })
@@ -125,7 +128,7 @@ export async function getKPIData(tx?: DBTransaction) {
     const result = await queryDb
         .select({
             status: submissions.status,
-            count: sql<number>`count(*)`,
+            count: sql`count(*)`.mapWith(String),
         })
         .from(submissions)
         .groupBy(submissions.status);

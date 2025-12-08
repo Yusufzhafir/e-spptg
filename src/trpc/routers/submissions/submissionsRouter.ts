@@ -326,13 +326,14 @@ export const submissionsRouter = router({
             'SPPTG terdaftar': 0,
             'SPPTG ditolak': 0,
             'SPPTG ditinjau ulang': 0,
-            total: 0,
+            'total': 0,
         };
 
-        data.forEach((item: any) => {
-            if (item.status in kpi) {
-                kpi[item.status as keyof typeof kpi] = item.count;
-                kpi.total += item.count;
+        data.forEach((item) => {
+            const count = +item.count
+            if (item.status in kpi && !Number.isNaN(count)) {
+                kpi[item.status as keyof typeof kpi] = count;
+                kpi.total += count;
             }
         });
 

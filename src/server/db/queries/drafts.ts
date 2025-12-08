@@ -1,5 +1,5 @@
 import { db, DBTransaction } from '../db';
-import { submissionDrafts, submissions_documents } from '../schema';
+import { submissionDrafts } from '../schema';
 import { eq, desc } from 'drizzle-orm';
 
 export async function getOrCreateDraft(userId: number, tx?: DBTransaction) {
