@@ -47,6 +47,8 @@ export const usersRouter = router({
         nama: input.nama,
         nipNik: input.nipNik,
         peran: input.peran,
+        status: input.status,
+        nomorHP: input.nomorHP,
       });
     }),
 

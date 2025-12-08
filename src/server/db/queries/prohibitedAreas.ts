@@ -11,9 +11,11 @@ export async function listProhibitedAreas(limit = 100, offset = 0) {
 }
 
 export async function getProhibitedAreaById(id: number) {
-  return db.query.prohibitedAreas.findFirst({
-    where: eq(prohibitedAreas.id, id),
-  });
+  const {geom,...rest} = getTableColumns(prohibitedAreas)
+  return await db.select({
+    ...rest,
+    geom: sql`ST_AsGeoJSON(geom)`,
+  }).from(prohibitedAreas).where(eq(prohibitedAreas.id, id)).limit(1)
 }
 
 export async function createProhibitedArea(

@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { UserRole } from '@/types';
+import { UserRole, UserStatus } from '@/types';
 import { db, DBTransaction } from '../db';
 import { users } from '../schema';
 
@@ -28,6 +28,8 @@ export async function createUser(data: {
   nama: string;
   nipNik: string;
   peran?: UserRole
+  nomorHP?: string;
+  status?: UserStatus;
 }, tx?: DBTransaction) {
   const queryDb = tx || db;
 
@@ -39,7 +41,8 @@ export async function createUser(data: {
       nama: data.nama,
       nipNik: data.nipNik,
       peran: data.peran || 'Viewer',
-      status: 'Aktif',
+      status: data.status || 'Aktif',
+      nomorHP: data.nomorHP || null,
     })
     .returning();
 

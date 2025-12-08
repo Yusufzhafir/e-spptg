@@ -59,9 +59,19 @@ export const prohibitedAreasRouter = router({
         });
       }
 
-      const coordinates = input.geomGeoJSON.coordinates[0].map((c) => `${c[0]} ${c[1]}`).join(',')
-      console.log(coordinates)
-      // Use appUser.id from context instead of input.diunggahOleh for security
+            // Explicitly ensure all coordinates are valid numbers
+      const sanitizedCoords = input.geomGeoJSON.coordinates[0].map((c) => {
+        const lon = Number(c[0]);
+        const lat = Number(c[1]);
+        if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Koordinat harus berupa angka yang valid',
+          });
+        }
+        return `${lon} ${lat}`;
+      }).join(',');
+
       try {
         const result = await ctx.db.transaction(async (tx) => {
           return await tx.insert(prohibitedAreas).values({
@@ -75,7 +85,7 @@ export const prohibitedAreasRouter = router({
             aktifDiValidasi: input.aktifDiValidasi ?? true,
             warna: input.warna,
             catatan: input.catatan,
-            geom: sql.raw(`ST_PolygonFromText('POLYGON((${coordinates}))',4326)`),
+            geom: sql.raw(`ST_PolygonFromText('POLYGON((${sanitizedCoords}))',4326)`),
           }).returning({
             id : prohibitedAreas.id,
           })
@@ -128,7 +138,17 @@ export const prohibitedAreasRouter = router({
           });
         }
 
-        const coordinates = input.data.geomGeoJSON.coordinates[0].map((c) => `${c[0]} ${c[1]}`).join(',')
+        const sanitizedCoords = input.data.geomGeoJSON.coordinates[0].map((c) => {
+          const lon = Number(c[0]);
+          const lat = Number(c[1]);
+          if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Koordinat harus berupa angka yang valid',
+            });
+          }
+          return `${lon} ${lat}`;
+        }).join(',');
 
         // Update with geometry conversion
         const result = await ctx.db
@@ -137,7 +157,7 @@ export const prohibitedAreasRouter = router({
             ...Object.fromEntries(
               Object.entries(updateData).filter(([key]) => key !== 'geomGeoJSON')
             ),
-            geom: sql`ST_PolygonFromText('POLYGON((${coordinates}))',4326)`,
+            geom: sql`ST_PolygonFromText('POLYGON((${sanitizedCoords}))',4326)`,
             updatedAt: new Date(),
           })
           .where(eq(prohibitedAreas.id, input.id))
@@ -156,13 +176,3 @@ export const prohibitedAreasRouter = router({
       return queries.deleteProhibitedArea(input.id);
     }),
 });
-
-// function geojsonToWKT(geojson: any): string {
-//   if (geojson.type === 'Polygon') {
-//     const coords = geojson.coordinates[0]
-//       .map((coord: number[]) => `${coord[0]} ${coord[1]}`)
-//       .join(', ');
-//     return `POLYGON((${coords}))`;
-//   }
-//   throw new Error('Unsupported GeoJSON type');
-// }
