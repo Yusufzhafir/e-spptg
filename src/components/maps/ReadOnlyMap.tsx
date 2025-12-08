@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { APIProvider, Map, useApiIsLoaded, useMap } from '@vis.gl/react-google-maps';
+import { APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
 import { Submission, StatusSPPTG } from '@/types';
 import { geoJSONToLatLng } from '@/lib/map-utils';;
 import { MapPin } from 'lucide-react';

@@ -57,13 +57,13 @@ export const createProhibitedAreaSchema = z.object({
   sumberData: z.string().min(2, 'Sumber data minimal 2 karakter'),
   dasarHukum: z.string().optional(),
   tanggalEfektif: z.coerce.date(),
-  diunggahOleh: z.number().int('User ID harus integer'),
+  diunggahOleh: z.number().int('User ID harus integer').optional(), // Optional since we use ctx.appUser.id
   statusValidasi: z.enum(['Lolos', 'Perlu Perbaikan']).optional(),
   aktifDiValidasi: z.boolean().optional(),
   warna: z
     .string()
     .regex(/^#[0-9A-F]{6}$/i, 'Warna harus format hex (contoh: #FF5733)'),
-  catatan: z.string().optional(),
+  catatan: z.string().nullable(),
   geomGeoJSON: geomGeoJSONPolygonSchema
 });
 

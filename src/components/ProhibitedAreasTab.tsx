@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ProhibitedArea, ProhibitedAreaType, ValidationStatus } from '../types';
+import { parseGeospatialFile } from '../lib/kmz-parser';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -28,16 +29,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from './ui/alert-dialog';
+
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
 import {
@@ -53,15 +46,26 @@ import {
   Shield,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { CreateProhibitedAreaInput, UpdateProhibitedAreaInput } from '@/types/prohibitedAreas';
 
 interface ProhibitedAreasTabProps {
   prohibitedAreas: ProhibitedArea[];
   onUpdateProhibitedAreas: (areas: ProhibitedArea[]) => void;
+  onCreateProhibitedArea: (area: CreateProhibitedAreaInput) => void;
+  onUpdateProhibitedArea?: (id: number, data: UpdateProhibitedAreaInput) => void;
+  isCreating?: boolean;
+  isUpdating?: boolean;
+  currentUserId?: number;
 }
 
 export function ProhibitedAreasTab({
   prohibitedAreas,
   onUpdateProhibitedAreas,
+  onCreateProhibitedArea,
+  onUpdateProhibitedArea,
+  isCreating = false,
+  isUpdating = false,
+  currentUserId,
 }: ProhibitedAreasTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [jenisFilter, setJenisFilter] = useState<string>('all');
@@ -72,8 +76,9 @@ export function ProhibitedAreasTab({
   const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false);
   const [isOverlapCheckDialogOpen, setIsOverlapCheckDialogOpen] = useState(false);
   const [selectedArea, setSelectedArea] = useState<ProhibitedArea | null>(null);
-  const [formData, setFormData] = useState<Partial<ProhibitedArea>>({});
+  const [formData, setFormData] = useState<Partial<Omit<ProhibitedArea, 'geomGeoJSON'>> & { geomGeoJSON?: { type: 'Polygon'; coordinates: [[[number, number]]] } | null }>({});
   const [uploadMethod, setUploadMethod] = useState<'upload' | 'draw'>('upload');
+  const [isParsingFile, setIsParsingFile] = useState(false);
 
   // Filter areas
   const filteredAreas = prohibitedAreas.filter((area) => {
@@ -100,13 +105,19 @@ export function ProhibitedAreasTab({
 
   const handleEditArea = (area: ProhibitedArea) => {
     setSelectedArea(area);
-    setFormData(area);
+    // Parse geomGeoJSON from string if it exists
+    const parsedGeoJSON = area.geomGeoJSON 
+      ? (typeof area.geomGeoJSON === 'string' ? JSON.parse(area.geomGeoJSON) : area.geomGeoJSON)
+      : null;
+    setFormData({
+      ...area,
+      geomGeoJSON: parsedGeoJSON,
+    });
     setIsEditDialogOpen(true);
   };
 
   const handleDeleteArea = (area: ProhibitedArea) => {
     setSelectedArea(area);
-    setIsDeleteDialogOpen(true);
   };
 
   const handlePreviewArea = (area: ProhibitedArea) => {
@@ -125,23 +136,35 @@ export function ProhibitedAreasTab({
       return;
     }
 
-    const newArea: ProhibitedArea = {
-      id: new Date().getTime(),
+    if (!formData.geomGeoJSON) {
+      toast.error('Harap unggah file KML/KMZ/GPX untuk menambahkan geometry kawasan');
+      return;
+    }
+
+    // Convert tanggalEfektif string to Date object
+    const tanggalEfektifDate = new Date(formData.tanggalEfektif);
+    if (isNaN(tanggalEfektifDate.getTime())) {
+      toast.error('Tanggal efektif tidak valid');
+      return;
+    }
+
+    // Call onCreateProhibitedArea with the format expected by the mutation
+    // (GeoJSON as object, tanggalEfektif as Date)
+    const createData: CreateProhibitedAreaInput = {
       namaKawasan: formData.namaKawasan,
       jenisKawasan: formData.jenisKawasan as ProhibitedAreaType,
       sumberData: formData.sumberData,
-      dasarHukum: formData.dasarHukum || null,
-      tanggalEfektif: formData.tanggalEfektif,
-      tanggalUnggah: new Date().toLocaleDateString('id-ID'),
-      diunggahOleh: 0, // TODO change into user who submits
+      dasarHukum: formData.dasarHukum || undefined, // Convert null to undefined
+      tanggalEfektif: tanggalEfektifDate, // Date object, not string
+      diunggahOleh: currentUserId ?? 0, // Use currentUserId if available
       statusValidasi: (formData.statusValidasi as ValidationStatus) || 'Lolos',
       aktifDiValidasi: formData.aktifDiValidasi ?? true,
       warna: formData.warna || '#3b82f6',
-      catatan: formData.catatan || null,
-      geom: null,
+      catatan: formData.catatan ?? null,
+      geomGeoJSON: formData.geomGeoJSON,
     };
+    onCreateProhibitedArea(createData);
 
-    onUpdateProhibitedAreas([...prohibitedAreas, newArea]);
     setIsAddDialogOpen(false);
     setFormData({});
     toast.success('Kawasan Non‑SPPTG berhasil ditambahkan.');
@@ -150,11 +173,54 @@ export function ProhibitedAreasTab({
   const handleUpdateArea = () => {
     if (!selectedArea) return;
 
-    const updatedAreas = prohibitedAreas.map((a) =>
-      a.id === selectedArea.id ? { ...a, ...formData } : a
-    );
+    // Convert formData to UpdateProhibitedAreaInput format
+    const updateData: UpdateProhibitedAreaInput = {};
+    
+    if (formData.namaKawasan) updateData.namaKawasan = formData.namaKawasan;
+    if (formData.jenisKawasan) updateData.jenisKawasan = formData.jenisKawasan as ProhibitedAreaType;
+    if (formData.sumberData) updateData.sumberData = formData.sumberData;
+    if (formData.dasarHukum !== undefined) {
+      updateData.dasarHukum = formData.dasarHukum || undefined; // Convert null to undefined
+    }
+    if (formData.tanggalEfektif) {
+      const tanggalEfektifDate = new Date(formData.tanggalEfektif);
+      if (!isNaN(tanggalEfektifDate.getTime())) {
+        updateData.tanggalEfektif = tanggalEfektifDate; // Convert string to Date
+      }
+    }
+    if (formData.statusValidasi) updateData.statusValidasi = formData.statusValidasi as ValidationStatus;
+    if (formData.aktifDiValidasi !== undefined) updateData.aktifDiValidasi = formData.aktifDiValidasi;
+    if (formData.warna) updateData.warna = formData.warna;
+    if (formData.catatan !== undefined) updateData.catatan = formData.catatan ?? null;
+    if (formData.geomGeoJSON) {
+      updateData.geomGeoJSON = formData.geomGeoJSON; // Keep as object, not string
+    }
 
-    onUpdateProhibitedAreas(updatedAreas);
+    if (onUpdateProhibitedArea) {
+      // Use individual update callback if available
+      onUpdateProhibitedArea(selectedArea.id, updateData);
+    } else {
+      // Fallback to bulk update for backward compatibility
+      // Convert updateData back to ProhibitedArea format for local state
+      const updatedArea: ProhibitedArea = {
+        ...selectedArea,
+        ...(updateData.namaKawasan && { namaKawasan: updateData.namaKawasan }),
+        ...(updateData.jenisKawasan && { jenisKawasan: updateData.jenisKawasan }),
+        ...(updateData.sumberData && { sumberData: updateData.sumberData }),
+        ...(updateData.dasarHukum !== undefined && { dasarHukum: updateData.dasarHukum || null }),
+        ...(updateData.tanggalEfektif && { tanggalEfektif: updateData.tanggalEfektif.toISOString().split('T')[0] }),
+        ...(updateData.statusValidasi && { statusValidasi: updateData.statusValidasi }),
+        ...(updateData.aktifDiValidasi !== undefined && { aktifDiValidasi: updateData.aktifDiValidasi }),
+        ...(updateData.warna && { warna: updateData.warna }),
+        ...(updateData.catatan !== undefined && { catatan: updateData.catatan }),
+        ...(updateData.geomGeoJSON && { geomGeoJSON: JSON.stringify(updateData.geomGeoJSON) }),
+      };
+      const updatedAreas = prohibitedAreas.map((a) =>
+        a.id === selectedArea.id ? updatedArea : a
+      );
+      onUpdateProhibitedAreas(updatedAreas);
+    }
+
     setIsEditDialogOpen(false);
     setSelectedArea(null);
     setFormData({});
@@ -185,10 +251,34 @@ export function ProhibitedAreasTab({
     setIsOverlapCheckDialogOpen(true);
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      toast.success(`File ${file.name} berhasil diunggah dan divalidasi.`);
+    if (!file) return;
+
+    setIsParsingFile(true);
+    try {
+      const result = await parseGeospatialFile(file);
+      
+      if (result.success && result.geoJSON) {
+        setFormData((prev) => ({
+          ...prev,
+          geomGeoJSON: result.geoJSON || null,
+        } as typeof formData));
+        toast.success(
+          `File ${file.name} berhasil diunggah dan divalidasi. Ditemukan ${result.coordinates.length} titik koordinat.`
+        );
+      } else {
+        toast.error(result.error || 'Gagal memparse file geospasial');
+      }
+    } catch (error) {
+      console.error('Error parsing file:', error);
+      toast.error(
+        error instanceof Error 
+          ? `Gagal memparse file: ${error.message}` 
+          : 'Gagal memparse file geospasial'
+      );
+    } finally {
+      setIsParsingFile(false);
     }
   };
 
@@ -412,17 +502,26 @@ export function ProhibitedAreasTab({
 
             <TabsContent value="upload" className="space-y-4">
               <div>
-                <Label htmlFor="kml-file">File KML/KMZ</Label>
+                <Label htmlFor="kml-file">File KML/KMZ/GPX</Label>
                 <Input
                   id="kml-file"
                   type="file"
-                  accept=".kml,.kmz"
+                  accept=".kml,.kmz,.gpx"
                   onChange={handleFileUpload}
+                  disabled={isParsingFile}
                   className="mt-2"
                 />
                 <p className="text-xs text-gray-500 mt-2">
                   Maks 50 MB. Geometry: Polygon/MultiPolygon. Koordinat: WGS84 (EPSG:4326)
                 </p>
+                {isParsingFile && (
+                  <p className="text-xs text-blue-600 mt-2">Memproses file...</p>
+                )}
+                {formData.geomGeoJSON && (
+                  <p className="text-xs text-green-600 mt-2">
+                    ✓ File berhasil diparse. Geometry siap digunakan.
+                  </p>
+                )}
               </div>
             </TabsContent>
 
@@ -857,25 +956,6 @@ export function ProhibitedAreasTab({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Hapus Kawasan Non‑SPPTG?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Hapus kawasan {selectedArea?.namaKawasan}? Data ini digunakan untuk cek tumpang
-              tindih pengajuan SKT. Tindakan ini tidak dapat dibatalkan.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Batal</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">
-              Hapus
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
