@@ -19,7 +19,7 @@ export function latLngToCoordinates(
   existingIds?: string[]
 ): GeographicCoordinate[] {
   return latLngs.map((latLng, index) => ({
-    id: existingIds?.[index] || `C-${Date.now()}-${index}`,
+    id: existingIds?.[index] || `C-${crypto.randomUUID()}-${index}`,
     latitude: latLng.lat(),
     longitude: latLng.lng(),
   }));
