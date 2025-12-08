@@ -9,7 +9,10 @@ interface MapViewProps {
   submissions: Submission[];
   selectedSubmission?: Submission | null;
   height?: string;
-  center?: [number, number];
+  center?: {
+    lat: number;
+    lng: number;
+  };
   zoom?: number;
   onPolygonClick?: (submission: Submission) => void;
 }
@@ -18,7 +21,10 @@ export function MapView({
   submissions,
   selectedSubmission,
   height = '400px',
-  center = [-6.7100, 108.5550],
+  center = {
+    lat: -6.7100,
+    lng: 108.5550,
+  },
   zoom = 13,
   onPolygonClick,
 }: MapViewProps) {

@@ -9,7 +9,6 @@ import {
   UploadedDocument,
 } from '../../types';
 import { trpc } from '@/trpc/client';
-import dynamic from 'next/dynamic';
 import { DrawingMap } from '../maps/DrawingMap';
 
 
@@ -24,7 +23,7 @@ function InteractiveMap({
   onCoordinateRemove: (id: string) => void;
 }) {
   const [mounted, setMounted] = useState(false);
-  const mapRef = useRef<Map | null>(null);
+  const mapRef = useRef<google.maps.Map | null>(null);
   const mapIdRef = useRef<string>(`interactive-map-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
   const [center, setCenter] = useState<[number, number]>(
     coordinates.length > 0

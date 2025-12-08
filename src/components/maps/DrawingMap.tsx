@@ -1,14 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { APIProvider, Map, useMap ,useMapsLibrary} from '@vis.gl/react-google-maps';
+import { APIProvider, Map, useApiIsLoaded, useMap ,useMapsLibrary} from '@vis.gl/react-google-maps';
 import { GeographicCoordinate } from '@/types';
 import {
   coordinatesToLatLng,
-  latLngToCoordinates,
   polygonPathToCoordinates,
 } from '@/lib/map-utils';
-import { loadGoogleMapsAPI } from '@/lib/google-maps';
 import { MapPin } from 'lucide-react';
 
 interface DrawingMapProps {
@@ -16,7 +14,7 @@ interface DrawingMapProps {
   onCoordinatesChange: (coords: GeographicCoordinate[]) => void;
   center?: {
     lat: number;
-    lng: number;
+    lng: number;  
   };
   zoom?: number;
 }
@@ -213,7 +211,7 @@ function DrawingMapInternal({
         drawingManager.setMap(null);
       }
     };
-  }, [map]);
+  }, [map, drawing, onCoordinatesChange, coordinates]);
 
   // Sync polygon when coordinates prop changes (from table edits)
   useEffect(() => {
@@ -394,17 +392,8 @@ export function DrawingMap({
   },
   zoom = 18,
 }: DrawingMapProps) {
-  const [isLoaded, setIsLoaded] = useState(true);
+  const isLoaded = useApiIsLoaded()
   const [loadError, setLoadError] = useState<string | null>(null);
-
-  //useEffect(() => {
-    //loadGoogleMapsAPI()
-      //.then(() => setIsLoaded(true))
-      //.catch((error) => {
-        //console.error('Failed to load Google Maps API:', error);
-        //setLoadError(error.message);
-      //});
-  //}, []);
 
   if (loadError) {
     return (

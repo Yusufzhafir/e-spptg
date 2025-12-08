@@ -9,7 +9,9 @@ import { StatusBadge } from './StatusBadge';
 import { ChevronLeft, FileText, Clock, MessageSquare } from 'lucide-react';
 import { StatusSPPTG, Submission } from '@/types';
 import { toast } from 'sonner';
-import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { geomGeoJSONPolygonSchema } from '@/lib/validation';
+import { findCenter } from '@/lib/utils';
 
 interface DetailPageProps {
   submission: Submission;
@@ -72,7 +74,12 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
               submissions={[submission]}
               selectedSubmission={submission}
               height="500px"
-              center={submission.geoJSON?.coordinates?.[0] as [number,number]}
+              center={findCenter(
+                geomGeoJSONPolygonSchema
+                  .parse(submission.geoJSON)
+                  .coordinates[0]
+                  .map(([lng, lat]) => ({ lng, lat }))
+              )}
               zoom={15}
             />
 

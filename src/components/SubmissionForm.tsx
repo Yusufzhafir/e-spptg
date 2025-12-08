@@ -252,7 +252,7 @@ export function SubmissionForm({ onSubmit, onCancel }: SubmissionFormProps) {
                   <MapView
                     submissions={[]}
                     height="350px"
-                    center={[-6.7100, 108.5550]}
+                    center={{ lat: -6.7100, lng: 108.5550 }}
                     zoom={13}
                   />
                 </div>

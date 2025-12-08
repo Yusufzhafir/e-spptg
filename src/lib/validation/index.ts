@@ -1,6 +1,11 @@
 import { z } from 'zod';
 export * from './submission-draft';
 
+
+export const geomGeoJSONPolygonSchema = z.object({
+  type: z.literal('Polygon'),
+  coordinates: z.array(z.array(z.array(z.number()))),
+})
 // ============================================================================
 // User Schemas
 // ============================================================================
@@ -59,10 +64,7 @@ export const createProhibitedAreaSchema = z.object({
     .string()
     .regex(/^#[0-9A-F]{6}$/i, 'Warna harus format hex (contoh: #FF5733)'),
   catatan: z.string().optional(),
-  geomGeoJSON: z.object({
-    type: z.literal('Polygon'),
-    coordinates: z.array(z.array(z.array(z.number()))),
-  }),
+  geomGeoJSON: geomGeoJSONPolygonSchema
 });
 
 export const updateProhibitedAreaSchema = createProhibitedAreaSchema.partial();

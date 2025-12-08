@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
+import { APIProvider, Map, useApiIsLoaded, useMap } from '@vis.gl/react-google-maps';
 import { Submission, StatusSPPTG } from '@/types';
 import { geoJSONToLatLng } from '@/lib/map-utils';;
 import { MapPin } from 'lucide-react';
@@ -10,7 +10,10 @@ interface ReadOnlyMapProps {
   submissions: Submission[];
   selectedSubmission?: Submission | null;
   height?: string;
-  center?: [number, number];
+  center?: {
+    lat: number;
+    lng: number;
+  };
   zoom?: number;
   onPolygonClick?: (submission: Submission) => void;
 }
@@ -136,21 +139,15 @@ export function ReadOnlyMap({
   submissions,
   selectedSubmission,
   height = '400px',
-  center = [-6.7100, 108.5550],
+  center = {
+    lat: -6.7100,
+    lng: 108.5550,
+  },
   zoom = 13,
   onPolygonClick,
 }: ReadOnlyMapProps) {
-  const [isLoaded, setIsLoaded] = useState(true);
+  const isLoaded = useApiIsLoaded()
   const [loadError, setLoadError] = useState<string | null>(null);
-
-  //useEffect(() => {
-    //()
-      //.then(() => setIsLoaded(true))
-      //.catch((error) => {
-        //console.error('Failed to load Google Maps API:', error);
-        //setLoadError(error.message);
-      //});
-  //}, []);
 
   if (loadError) {
     return (
