@@ -9,63 +9,9 @@ import {
   UploadedDocument,
 } from '../../types';
 import { trpc } from '@/trpc/client';
-import dynamic from 'next/dynamic';
-import type { Map } from 'leaflet';
+import { DrawingMap } from '../maps/DrawingMap';
 
-// Dynamically import Leaflet components
-const MapContainer = dynamic(() => import('react-leaflet').then((mod) => mod.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import('react-leaflet').then((mod) => mod.TileLayer), { ssr: false });
-const Polygon = dynamic(() => import('react-leaflet').then((mod) => mod.Polygon), { ssr: false });
-const Marker = dynamic(() => import('react-leaflet').then((mod) => mod.Marker), { ssr: false });
 
-import 'leaflet/dist/leaflet.css';
-
-// Component to capture map instance - must be rendered inside MapContainer
-const MapInstanceCapture = dynamic(
-  () =>
-    import('react-leaflet').then((mod) => {
-      const { useMap } = mod;
-      return function MapInstanceCaptureComponent({
-        mapRef,
-      }: {
-        mapRef: React.MutableRefObject<Map | null>;
-      }) {
-        const map = useMap();
-        useEffect(() => {
-          if (map) {
-            mapRef.current = map;
-          }
-          return () => {
-            mapRef.current = null;
-          };
-        }, [map, mapRef]);
-        return null;
-      };
-    }),
-  { ssr: false }
-);
-
-// Component to handle map click events - must be rendered inside MapContainer
-const MapClickHandler = dynamic(
-  () =>
-    import('react-leaflet').then((mod) => {
-      const { useMapEvents } = mod;
-      return function MapClickHandlerComponent({
-        onCoordinateAdd,
-      }: {
-        onCoordinateAdd: (lat: number, lng: number) => void;
-      }) {
-        useMapEvents({
-          click: (e: any) => {
-            const { lat, lng } = e.latlng;
-            onCoordinateAdd(lat, lng);
-          },
-        });
-        return null;
-      };
-    }),
-  { ssr: false }
-);
 
 function InteractiveMap({
   coordinates,
@@ -77,7 +23,7 @@ function InteractiveMap({
   onCoordinateRemove: (id: string) => void;
 }) {
   const [mounted, setMounted] = useState(false);
-  const mapRef = useRef<Map | null>(null);
+  const mapRef = useRef<google.maps.Map | null>(null);
   const mapIdRef = useRef<string>(`interactive-map-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
   const [center, setCenter] = useState<[number, number]>(
     coordinates.length > 0
@@ -85,34 +31,7 @@ function InteractiveMap({
       : [-6.7100, 108.5550]
   );
 
-  useEffect(() => {
-    setMounted(true);
-    
-    // Fix Leaflet icon configuration on client side only
-    if (typeof window !== 'undefined') {
-      import('leaflet').then((L) => {
-        delete (L.default.Icon.Default.prototype as any)._getIconUrl;
-        L.default.Icon.Default.mergeOptions({
-          iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-          iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-        });
-      });
-    }
-    
-    // Cleanup function to destroy map on unmount
-    return () => {
-      if (mapRef.current) {
-        try {
-          mapRef.current.remove();
-          mapRef.current = null;
-        } catch (error) {
-          // Map might already be destroyed, ignore error
-          console.warn('Error cleaning up map:', error);
-        }
-      }
-    };
-  }, []);
+ 
 
   useEffect(() => {
     if (coordinates.length > 0) {
@@ -179,7 +98,7 @@ function InteractiveMap({
           />
         ))}
       </MapContainer> */}
-      <div className="absolute bottom-4 right-4 bg-white rounded-lg shadow-lg p-3 border border-gray-200 z-[1000]">
+      <div className="absolute bottom-4 right-4 bg-white rounded-lg shadow-lg p-3 border border-gray-200 z-1000">
         <p className="text-xs mb-2 font-semibold">Instruksi:</p>
         <p className="text-xs text-gray-600">Klik pada peta untuk menambahkan titik koordinat</p>
         <p className="text-xs text-gray-600">Klik marker untuk menghapus titik</p>
@@ -324,12 +243,12 @@ function DocumentUploadField({
       ) : (
         <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 flex items-center justify-between">
           <div className="flex items-center gap-3 flex-1 min-w-0">
-            <File className="w-5 h-5 text-blue-600 flex-shrink-0" />
+            <File className="w-5 h-5 text-blue-600 shrink-0" />
             <div className="min-w-0 flex-1">
               <p className="text-sm text-gray-900 truncate">{value.name}</p>
               <p className="text-xs text-gray-500">{(value.size / 1024 / 1024).toFixed(2)} MB</p>
             </div>
-            <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+            <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
           </div>
           <Button variant="ghost" size="sm" onClick={() => onChange(undefined)} className="text-red-600">
             <X className="w-4 h-4" />
@@ -752,21 +671,13 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
           {/* Map Preview */}
           <div className="space-y-3">
             <Label>Pratinjau Peta</Label>
-            <InteractiveMap
+            <DrawingMap
               coordinates={draft.coordinatesGeografis}
-              onCoordinateAdd={(lat, lng) => {
-                const newCoord: GeographicCoordinate = {
-                  id: `C-${Date.now()}`,
-                  latitude: lat,
-                  longitude: lng,
-                };
+              onCoordinatesChange={(coords) => {
+                // This callback is triggered when user draws/edits on the map
+                // The coordinates are already synced, just update the draft
                 onUpdateDraft({
-                  coordinatesGeografis: [...draft.coordinatesGeografis, newCoord],
-                });
-              }}
-              onCoordinateRemove={(id) => {
-                onUpdateDraft({
-                  coordinatesGeografis: draft.coordinatesGeografis.filter((c) => c.id !== id),
+                  coordinatesGeografis: coords,
                 });
               }}
             />

@@ -392,7 +392,7 @@ export function ProhibitedAreasTab({
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Tambah Kawasan Non‑SPPTG</DialogTitle>
+            <DialogTitle>Tambah Kawasan Non-SPPTG</DialogTitle>
             <DialogDescription>
               Tambahkan kawasan yang tidak dapat diterbitkan SPPTG untuk preventive check.
             </DialogDescription>
