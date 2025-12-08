@@ -80,10 +80,10 @@ function ReadOnlyMapInternal({
 
       // Create info window content
       const infoContent = renderToString(<div className='p-2 min-w-52' >
-          <p className='font-semibold mb-1'>${submission.namaPemilik}</p>
-          <p className='text-xs text-[#666] mb-1' >ID: ${submission.id}</p>
-          <p className='text-xs text-[#666] mb-1' >${submission.kecamatan}</p>
-          <p className='text-xs text-[#666] mb-2'>Luas: ${submission.luas.toLocaleString('id-ID')} m²</p>
+          <p className='font-semibold mb-1'>{submission.namaPemilik}</p>
+          <p className='text-xs text-[#666] mb-1' >ID: {submission.id}</p>
+          <p className='text-xs text-[#666] mb-1' >{submission.kecamatan}</p>
+          <p className='text-xs text-[#666] mb-2'>Luas: {submission.luas.toLocaleString('id-ID')} m²</p>
         </div>);
 
       const infoWindow = new google.maps.InfoWindow({
