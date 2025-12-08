@@ -12,14 +12,42 @@ import { UsersTab } from './UsersTab';
 import { VillagesTab } from './VillagesTab';
 import { ProhibitedAreasTab } from './ProhibitedAreasTab';
 import { User, Village, ProhibitedArea } from '../types';
+import { CreateProhibitedAreaInput, UpdateProhibitedAreaInput } from '@/types/prohibitedAreas';
+
+type CreateVillageInput = {
+  kodeDesa: string;
+  namaDesa: string;
+  kecamatan: string;
+  kabupaten: string;
+  provinsi: string;
+};
+
+type UpdateVillageInput = Partial<CreateVillageInput>;
+
+
 
 interface SettingsProps {
   users: User[];
   villages: Village[];
   prohibitedAreas: ProhibitedArea[];
   onUpdateUsers: (users: User[]) => void;
-  onUpdateVillages: (villages: Village[]) => void;
-  onUpdateProhibitedAreas: (areas: ProhibitedArea[]) => void;
+  onUpdateVillages?: (villages: Village[]) => void; // Keep for backward compatibility
+  onUpdateProhibitedAreas: (areas: ProhibitedArea[]) => void; // Changed to ProhibitedArea[] for local state updates
+  // Village mutation callbacks
+  onCreateVillage?: (data: CreateVillageInput) => void;
+  onUpdateVillage?: (id: number, data: UpdateVillageInput) => void;
+  onDeleteVillage?: (id: number) => void;
+  // Prohibited area mutation callbacks
+  onCreateProhibitedArea: (data: CreateProhibitedAreaInput) => void;
+  onUpdateProhibitedArea: (id: number, data: UpdateProhibitedAreaInput) => void;
+  // Loading states
+  isCreatingVillage?: boolean;
+  isUpdatingVillage?: boolean;
+  isDeletingVillage?: boolean;
+  isCreatingProhibitedArea?: boolean;
+  isUpdatingProhibitedArea?: boolean;
+  // Current user ID
+  currentUserId?: number;
 }
 
 export function Settings({
@@ -29,6 +57,17 @@ export function Settings({
   onUpdateUsers,
   onUpdateVillages,
   onUpdateProhibitedAreas,
+  onCreateVillage,
+  onUpdateVillage,
+  onDeleteVillage,
+  onCreateProhibitedArea,
+  onUpdateProhibitedArea,
+  isCreatingVillage = false,
+  isUpdatingVillage = false,
+  isDeletingVillage = false,
+  isCreatingProhibitedArea = false,
+  isUpdatingProhibitedArea = false,
+  currentUserId,
 }: SettingsProps) {
   const [activeTab, setActiveTab] = useState('users');
 
@@ -86,13 +125,27 @@ export function Settings({
         </TabsContent>
 
         <TabsContent value="villages" className="mt-6">
-          <VillagesTab villages={villages} onUpdateVillages={onUpdateVillages} />
+          <VillagesTab 
+            villages={villages} 
+            onUpdateVillages={onUpdateVillages}
+            onCreateVillage={onCreateVillage}
+            onUpdateVillage={onUpdateVillage}
+            onDeleteVillage={onDeleteVillage}
+            isCreating={isCreatingVillage}
+            isUpdating={isUpdatingVillage}
+            isDeleting={isDeletingVillage}
+          />
         </TabsContent>
 
         <TabsContent value="prohibited" className="mt-6">
           <ProhibitedAreasTab
             prohibitedAreas={prohibitedAreas}
             onUpdateProhibitedAreas={onUpdateProhibitedAreas}
+            onCreateProhibitedArea={onCreateProhibitedArea}
+            onUpdateProhibitedArea={onUpdateProhibitedArea}
+            isCreating={isCreatingProhibitedArea}
+            isUpdating={isUpdatingProhibitedArea}
+            currentUserId={currentUserId}
           />
         </TabsContent>
       </Tabs>

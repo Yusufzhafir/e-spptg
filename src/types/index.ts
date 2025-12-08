@@ -120,7 +120,7 @@ export interface ProhibitedArea {
   aktifDiValidasi: boolean;
   warna: string;
   catatan: string | null;
-  geom : string | null
+  geomGeoJSON : string | null
 }
 
 // Submission Flow Types

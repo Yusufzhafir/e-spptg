@@ -21,29 +21,6 @@ const Marker = dynamic(() => import('react-leaflet').then((mod) => mod.Marker), 
 import 'leaflet/dist/leaflet.css';
 
 // Component to capture map instance - must be rendered inside MapContainer
-const MapInstanceCapture = dynamic(
-  () =>
-    import('react-leaflet').then((mod) => {
-      const { useMap } = mod;
-      return function MapInstanceCaptureComponent({
-        mapRef,
-      }: {
-        mapRef: React.MutableRefObject<Map | null>;
-      }) {
-        const map = useMap();
-        useEffect(() => {
-          if (map) {
-            mapRef.current = map;
-          }
-          return () => {
-            mapRef.current = null;
-          };
-        }, [map, mapRef]);
-        return null;
-      };
-    }),
-  { ssr: false }
-);
 
 // Component to handle map click events - must be rendered inside MapContainer
 const MapClickHandler = dynamic(
@@ -141,44 +118,6 @@ function InteractiveMap({
       id={mapIdRef.current}
       className="bg-gray-100 rounded-lg border border-gray-300 h-96 relative"
     >
-      {/* <MapContainer 
-        key={mapIdRef.current}
-        center={center} 
-        zoom={13} 
-        style={{ height: '100%', width: '100%' }} 
-        scrollWheelZoom={true}
-      >
-        <MapInstanceCapture mapRef={mapRef} />
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-        <MapClickHandler onCoordinateAdd={onCoordinateAdd} />
-        {polygonPositions.length >= 3 && (
-          <Polygon
-            positions={polygonPositions}
-            pathOptions={{
-              color: '#3b82f6',
-              fillColor: '#3b82f6',
-              fillOpacity: 0.3,
-              weight: 2,
-            }}
-          />
-        )}
-        {coordinates.map((coord, index) => (
-          <Marker
-            key={coord.id}
-            position={[coord.latitude, coord.longitude]}
-            eventHandlers={{
-              click: () => {
-                if (confirm(`Hapus titik ${index + 1}?`)) {
-                  onCoordinateRemove(coord.id);
-                }
-              },
-            }}
-          />
-        ))}
-      </MapContainer> */}
       <div className="absolute bottom-4 right-4 bg-white rounded-lg shadow-lg p-3 border border-gray-200 z-[1000]">
         <p className="text-xs mb-2 font-semibold">Instruksi:</p>
         <p className="text-xs text-gray-600">Klik pada peta untuk menambahkan titik koordinat</p>

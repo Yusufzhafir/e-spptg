@@ -39,12 +39,37 @@ import {
 import { Search, Plus, Edit, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
+type CreateVillageInput = {
+  kodeDesa: string;
+  namaDesa: string;
+  kecamatan: string;
+  kabupaten: string;
+  provinsi: string;
+};
+
+type UpdateVillageInput = Partial<CreateVillageInput>;
+
 interface VillagesTabProps {
   villages: Village[];
-  onUpdateVillages: (villages: Village[]) => void;
+  onUpdateVillages?: (villages: Village[]) => void; // Keep for backward compatibility
+  onCreateVillage?: (data: CreateVillageInput) => void;
+  onUpdateVillage?: (id: number, data: UpdateVillageInput) => void;
+  onDeleteVillage?: (id: number) => void;
+  isCreating?: boolean;
+  isUpdating?: boolean;
+  isDeleting?: boolean;
 }
 
-export function VillagesTab({ villages, onUpdateVillages }: VillagesTabProps) {
+export function VillagesTab({ 
+  villages, 
+  onUpdateVillages,
+  onCreateVillage,
+  onUpdateVillage,
+  onDeleteVillage,
+  isCreating = false,
+  isUpdating = false,
+  isDeleting = false,
+}: VillagesTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [kecamatanFilter, setKecamatanFilter] = useState<string>('all');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -99,44 +124,90 @@ export function VillagesTab({ villages, onUpdateVillages }: VillagesTabProps) {
       return;
     }
 
-    const newVillage: Village = {
-      id: new Date().getTime(),
-      kodeDesa: formData.kodeDesa,
-      namaDesa: formData.namaDesa,
-      kecamatan: formData.kecamatan,
-      kabupaten: formData.kabupaten,
-      provinsi: formData.provinsi,
-      jumlahPengajuan: 0,
-    };
-
-    onUpdateVillages([...villages, newVillage]);
-    setIsAddDialogOpen(false);
-    setFormData({});
-    toast.success('Desa berhasil ditambahkan.');
+    if (onCreateVillage) {
+      // Use TRPC mutation callback
+      onCreateVillage({
+        kodeDesa: formData.kodeDesa,
+        namaDesa: formData.namaDesa,
+        kecamatan: formData.kecamatan,
+        kabupaten: formData.kabupaten,
+        provinsi: formData.provinsi,
+      });
+      setIsAddDialogOpen(false);
+      setFormData({});
+    } else if (onUpdateVillages) {
+      // Fallback to old behavior for backward compatibility
+      const newVillage: Village = {
+        id: new Date().getTime(),
+        kodeDesa: formData.kodeDesa,
+        namaDesa: formData.namaDesa,
+        kecamatan: formData.kecamatan,
+        kabupaten: formData.kabupaten,
+        provinsi: formData.provinsi,
+        jumlahPengajuan: 0,
+      };
+      onUpdateVillages([...villages, newVillage]);
+      setIsAddDialogOpen(false);
+      setFormData({});
+      toast.success('Desa berhasil ditambahkan.');
+    }
   };
 
   const handleUpdateVillage = () => {
     if (!selectedVillage) return;
 
-    const updatedVillages = villages.map((v) =>
-      v.id === selectedVillage.id ? { ...v, ...formData } : v
-    );
+    if (
+      !formData.kodeDesa ||
+      !formData.namaDesa ||
+      !formData.kecamatan ||
+      !formData.kabupaten ||
+      !formData.provinsi
+    ) {
+      toast.error('Harap lengkapi semua field yang wajib diisi');
+      return;
+    }
 
-    onUpdateVillages(updatedVillages);
-    setIsEditDialogOpen(false);
-    setSelectedVillage(null);
-    setFormData({});
-    toast.success('Desa berhasil diperbarui.');
+    if (onUpdateVillage) {
+      // Use TRPC mutation callback
+      onUpdateVillage(selectedVillage.id, {
+        kodeDesa: formData.kodeDesa,
+        namaDesa: formData.namaDesa,
+        kecamatan: formData.kecamatan,
+        kabupaten: formData.kabupaten,
+        provinsi: formData.provinsi,
+      });
+      setIsEditDialogOpen(false);
+      setSelectedVillage(null);
+      setFormData({});
+    } else if (onUpdateVillages) {
+      // Fallback to old behavior for backward compatibility
+      const updatedVillages = villages.map((v) =>
+        v.id === selectedVillage.id ? { ...v, ...formData } : v
+      );
+      onUpdateVillages(updatedVillages);
+      setIsEditDialogOpen(false);
+      setSelectedVillage(null);
+      setFormData({});
+      toast.success('Desa berhasil diperbarui.');
+    }
   };
 
   const confirmDelete = () => {
     if (!selectedVillage) return;
 
-    const updatedVillages = villages.filter((v) => v.id !== selectedVillage.id);
-    onUpdateVillages(updatedVillages);
-    setIsDeleteDialogOpen(false);
-    setSelectedVillage(null);
-    toast.success('Desa berhasil dihapus.');
+    if (onDeleteVillage) {
+      // Use TRPC mutation callback
+      onDeleteVillage(selectedVillage.id);
+      setIsDeleteDialogOpen(false);
+      setSelectedVillage(null);
+    } else if (onUpdateVillages) {
+      // Fallback to old behavior for backward compatibility
+      const updatedVillages = villages.filter((v) => v.id !== selectedVillage.id);
+      onUpdateVillages(updatedVillages);
+      setIsDeleteDialogOpen(false);
+      setSelectedVillage(null);
+      toast.success('Desa berhasil dihapus.');
+    }
   };
 
   const handleImportCSV = () => {
@@ -328,11 +399,19 @@ export function VillagesTab({ villages, onUpdateVillages }: VillagesTabProps) {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsAddDialogOpen(false)}
+              disabled={isCreating}
+            >
               Batal
             </Button>
-            <Button onClick={handleSaveVillage} className="bg-blue-600 hover:bg-blue-700">
-              Simpan
+            <Button 
+              onClick={handleSaveVillage} 
+              className="bg-blue-600 hover:bg-blue-700"
+              disabled={isCreating}
+            >
+              {isCreating ? 'Menyimpan...' : 'Simpan'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -394,11 +473,19 @@ export function VillagesTab({ villages, onUpdateVillages }: VillagesTabProps) {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsEditDialogOpen(false)}
+              disabled={isUpdating}
+            >
               Batal
             </Button>
-            <Button onClick={handleUpdateVillage} className="bg-blue-600 hover:bg-blue-700">
-              Simpan Perubahan
+            <Button 
+              onClick={handleUpdateVillage} 
+              className="bg-blue-600 hover:bg-blue-700"
+              disabled={isUpdating}
+            >
+              {isUpdating ? 'Menyimpan...' : 'Simpan Perubahan'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -416,12 +503,13 @@ export function VillagesTab({ villages, onUpdateVillages }: VillagesTabProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>Batal</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDelete}
               className="bg-red-600 hover:bg-red-700"
+              disabled={isDeleting}
             >
-              Hapus
+              {isDeleting ? 'Menghapus...' : 'Hapus'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

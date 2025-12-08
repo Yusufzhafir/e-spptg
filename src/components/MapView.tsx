@@ -3,14 +3,6 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { Submission, StatusSPPTG } from '../types';
 import { StatusBadge } from './StatusBadge';
-import dynamic from 'next/dynamic';
-
-// Dynamically import Leaflet to avoid SSR issues
-const MapContainer = dynamic(() => import('react-leaflet').then((mod) => mod.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import('react-leaflet').then((mod) => mod.TileLayer), { ssr: false });
-const Polygon = dynamic(() => import('react-leaflet').then((mod) => mod.Polygon), { ssr: false });
-const Popup = dynamic(() => import('react-leaflet').then((mod) => mod.Popup), { ssr: false });
-const Marker = dynamic(() => import('react-leaflet').then((mod) => mod.Marker), { ssr: false });
 
 // Import Leaflet CSS
 import 'leaflet/dist/leaflet.css';
@@ -24,32 +16,6 @@ interface MapViewProps {
   zoom?: number;
   onPolygonClick?: (submission: Submission) => void;
 }
-
-// Component to capture map instance - must be rendered inside MapContainer
-// This component uses useMap hook which is only available inside MapContainer context
-const MapInstanceCapture = dynamic(
-  () =>
-    import('react-leaflet').then((mod) => {
-      const { useMap } = mod;
-      return function MapInstanceCaptureComponent({
-        mapRef,
-      }: {
-        mapRef: React.MutableRefObject<Map | null>;
-      }) {
-        const map = useMap();
-        useEffect(() => {
-          if (map) {
-            mapRef.current = map;
-          }
-          return () => {
-            mapRef.current = null;
-          };
-        }, [map, mapRef]);
-        return null;
-      };
-    }),
-  { ssr: false }
-);
 
 export function MapView({
   submissions,
