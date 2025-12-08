@@ -146,7 +146,7 @@ export function ReadOnlyMap({
   zoom = 13,
   onPolygonClick,
 }: ReadOnlyMapProps) {
-  const isLoaded = useApiIsLoaded()
+  const isLoaded = true
   const [loadError, setLoadError] = useState<string | null>(null);
 
   if (loadError) {

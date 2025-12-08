@@ -392,9 +392,7 @@ export function DrawingMap({
   },
   zoom = 18,
 }: DrawingMapProps) {
-  const isLoaded = useApiIsLoaded()
   const [loadError, setLoadError] = useState<string | null>(null);
-
   if (loadError) {
     return (
       <div className="bg-gray-100 rounded-lg border border-gray-300 h-96 flex items-center justify-center">
@@ -407,16 +405,6 @@ export function DrawingMap({
     );
   }
 
-  if (!isLoaded) {
-    return (
-      <div className="bg-gray-100 rounded-lg border border-gray-300 h-96 flex items-center justify-center">
-        <div className="text-center text-gray-500">
-          <MapPin className="w-16 h-16 mx-auto mb-3 text-gray-400" />
-          <p>Memuat peta...</p>
-        </div>
-      </div>
-    );
-  }
 
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
