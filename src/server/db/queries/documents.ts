@@ -1,7 +1,7 @@
 import { DocumentCategoryEnum } from '@/types';
 import { db, DBTransaction } from '../db';
 import { submissions_documents } from '../schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, isNull } from 'drizzle-orm';
 
 export async function createDocument(
   data: typeof submissions_documents.$inferInsert,
@@ -107,4 +107,25 @@ export async function deleteDocument(documentId: number, tx?: DBTransaction) {
     .where(eq(submissions_documents.id, documentId))
     .returning();
   return result[0];
+}
+
+/**
+ * Delete all temporary documents for a draft (documents that have draftId but no submissionId)
+ * This should only be used when deleting a draft that hasn't been submitted yet
+ */
+export async function deleteDocumentsByDraft(draftId: number, tx?: DBTransaction) {
+  const queryDb = tx || db;
+  
+  // Only delete documents that don't have submissionId (temporary documents)
+  // Documents with submissionId have been moved to submission and should not be deleted
+  const result = await queryDb
+    .delete(submissions_documents)
+    .where(
+      and(
+        eq(submissions_documents.draftId, draftId),
+        isNull(submissions_documents.submissionId)
+      )
+    )
+    .returning();
+  return result;
 }

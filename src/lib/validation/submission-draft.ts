@@ -149,11 +149,11 @@ export const feedbackDataSchema = z.object({
     .min(10, 'Detail feedback minimal 10 karakter')
     .max(1000, 'Detail feedback maksimal 1000 karakter'),
 
-  tanggalTenggat: z.string().datetime().optional(),
+  tanggalTenggat: z.iso.date().optional(),
 
   lampiranFeedback: uploadedDocumentSchema.optional(),
 
-  timestamp: z.string().datetime().optional(),
+  timestamp: z.iso.date().optional(),
 
   pemberi: z.string().min(2, 'Nama pemberi feedback minimal 2 karakter'),
 });

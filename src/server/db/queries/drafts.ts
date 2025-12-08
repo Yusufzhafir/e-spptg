@@ -92,12 +92,9 @@ export async function deleteDraft(draftId: number, userId: number,tx?: DBTransac
     throw new Error('Draft not found');
   }
 
-  // Also delete associated temporary documents
-  await queryDb
-    .delete(submissions_documents)
-    .where(eq(submissions_documents.draftId, draftId));
-
-  const result = await db
+  // Only delete draft record, NOT documents
+  // Documents may have been moved to submission, so we don't delete them here
+  const result = await queryDb
     .delete(submissionDrafts)
     .where(eq(submissionDrafts.id, draftId))
     .returning();

@@ -55,6 +55,12 @@ export const submissionsRouter = router({
                     }
 
                     // Build submission data
+                    // Use status from draft payload if valid, otherwise default to 'SPPTG terdata'
+                    const validStatuses = ['SPPTG terdata', 'SPPTG terdaftar', 'SPPTG ditolak', 'SPPTG ditinjau ulang'] as const;
+                    const submissionStatus = (payload.status && validStatuses.includes(payload.status as typeof validStatuses[number]))
+                        ? (payload.status as typeof validStatuses[number])
+                        : 'SPPTG terdata' as const;
+
                     const submissionData = {
                         namaPemilik: payload.namaPemohon,
                         nik: payload.nik,
@@ -67,14 +73,14 @@ export const submissionsRouter = router({
                         luas: payload.luasLahan || 0,
                         penggunaanLahan: payload.penggunaanLahan || '',
                         catatan: payload.catatan ?? null,
-                        status: 'SPPTG terdata' as const,
+                        status: submissionStatus,
                         tanggalPengajuan: new Date(),
                         verifikator: ctx.appUser!.id,
                         geoJSON: buildGeometryFromCoordinates(payload),
                         riwayat: [
                             {
                                 tanggal: new Date().toISOString(),
-                                status: 'SPPTG terdata',
+                                status: submissionStatus,
                                 petugas: ctx.appUser!.nama,
                                 alasan: null,
                             },
@@ -132,6 +138,11 @@ export const submissionsRouter = router({
 
                     // Get overlaps (pass transaction)
                     const overlaps = await submissionQueries.getSubmissionOverlaps(submissionId, tx);
+                    
+                    // Delete draft after successful submission
+                    // Documents have already been moved to submission, so only delete the draft record
+                    await draftQueries.deleteDraft(input.draftId, ctx.appUser!.id, tx);
+                    
                     return {
                         submissionId,
                         status: submissionData.status,
