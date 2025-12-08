@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { APIProvider, Map, useApiIsLoaded, useMap ,useMapsLibrary} from '@vis.gl/react-google-maps';
+import { APIProvider, Map, useMap ,useMapsLibrary} from '@vis.gl/react-google-maps';
 import { GeographicCoordinate } from '@/types';
 import {
   coordinatesToLatLng,
