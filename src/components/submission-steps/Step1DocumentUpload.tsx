@@ -304,7 +304,7 @@ export function Step1DocumentUpload({ draft, onUpdateDraft }: Step1Props) {
             draftId={draft.id}
           />
 
-          <FileUploadField
+          {/* <FileUploadField
             label="Surat Keputusan Kepala Desa Mengenai Tim Peneliti"
             accept=".pdf"
             maxSize={10}
@@ -312,7 +312,7 @@ export function Step1DocumentUpload({ draft, onUpdateDraft }: Step1Props) {
             onChange={(doc) => onUpdateDraft({ dokumenSKKepalaDesa: doc })}
             category="SK Kepala Desa"
             draftId={draft.id}
-          />
+          /> */}
         </div>
       </div>
 

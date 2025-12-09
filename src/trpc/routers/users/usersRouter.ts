@@ -6,6 +6,7 @@ import {
 } from '@/lib/validation';
 import * as queries from '@/server/db/queries/user';
 import { TRPCError } from '@trpc/server';
+import { clerkClient } from '@clerk/nextjs/server';
 
 export const usersRouter = router({
   list: protectedProcedure
@@ -62,7 +63,15 @@ export const usersRouter = router({
         }),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input ,ctx}) => {
+      if (input.data.peran) {
+        const client = await clerkClient()
+        client.users.updateUserMetadata(ctx.appUser.clerkUserId, {
+          privateMetadata : {
+            "role" : input.data.peran
+          }
+        });
+      }
       return queries.updateUser(input.id, input.data);
     }),
 
