@@ -6,7 +6,7 @@ import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { MapView } from './MapView';
 import { StatusBadge } from './StatusBadge';
-import { ChevronLeft, FileText, Clock, MessageSquare } from 'lucide-react';
+import { ChevronLeft, FileText, Clock, MessageSquare, File } from 'lucide-react';
 import { StatusSPPTG, Submission } from '@/types';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -38,6 +38,27 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
     toast.success('Perubahan status berhasil disimpan');
     setNewStatus('');
     setAlasan('');
+  };
+
+  const handleDownload = async () => {
+    try {
+      const command = new GetObjectCommand({
+        Bucket: "your-bucket-name",
+        Key: "path/to/dokumen_spptg.pdf",
+      });
+
+      const response = await s3Client.send(command);
+      const blob = await response.Body.transformToByteArray();
+
+      const url = URL.createObjectURL(new Blob([blob]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = "dokumen_spptg.pdf";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Download failed:", error);
+    }
   };
 
   return (
@@ -250,6 +271,17 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
                 <Button variant="link" className="mt-2">
                   Lihat Dokumen
                 </Button>
+
+                <a
+                  href="/E-SPPTG dan Lampiran.pdf"
+                  download
+                  className='w-full bg-white border rounded-2xl border-dashed flex p-4 cursor-pointer'
+                >
+                  <File />
+                  <div className='w-full'>
+                    dokumen spptg
+                  </div>
+                </a>
               </div>
             </TabsContent>
 

@@ -463,10 +463,6 @@ export function SubmissionFlow({ submissionId, onCancel, onComplete }: Submissio
           ) : (
             <Button
               onClick={async () => {
-                if (!draft.nomorSPPTG || !draft.tanggalTerbit || !draft.dokumenSPPTG) {
-                  toast.error('Harap lengkapi semua field penerbitan SPPTG');
-                  return;
-                }
                 if (!draft.id) {
                   toast.error('Draf belum dimuat');
                   return;

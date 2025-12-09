@@ -3,7 +3,6 @@
 import { SubmissionFlow } from '@/components/SubmissionFlow';
 import { useAppState } from '../layout';
 import { useRouter } from 'next/navigation';
-import { Protect } from '@clerk/nextjs';
 
 export default function PengajuanPage() {
   const { handleCompleteSubmission } = useAppState();
