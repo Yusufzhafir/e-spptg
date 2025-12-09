@@ -40,27 +40,6 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
     setAlasan('');
   };
 
-  const handleDownload = async () => {
-    try {
-      const command = new GetObjectCommand({
-        Bucket: "your-bucket-name",
-        Key: "path/to/dokumen_spptg.pdf",
-      });
-
-      const response = await s3Client.send(command);
-      const blob = await response.Body.transformToByteArray();
-
-      const url = URL.createObjectURL(new Blob([blob]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = "dokumen_spptg.pdf";
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Download failed:", error);
-    }
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
