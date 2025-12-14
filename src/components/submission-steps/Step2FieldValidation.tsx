@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import {
   SubmissionDraft,
   ResearchTeamMember,
@@ -13,66 +13,6 @@ import { DrawingMap } from '../maps/DrawingMap';
 
 
 
-function InteractiveMap({
-  coordinates,
-  onCoordinateAdd,
-  onCoordinateRemove,
-}: {
-  coordinates: GeographicCoordinate[];
-  onCoordinateAdd: (lat: number, lng: number) => void;
-  onCoordinateRemove: (id: string) => void;
-}) {
-  const [mounted, setMounted] = useState(false);
-  const mapRef = useRef<google.maps.Map | null>(null);
-  const mapIdRef = useRef<string>(`interactive-map-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
-  const [center, setCenter] = useState<[number, number]>(
-    coordinates.length > 0
-      ? [coordinates[0].latitude, coordinates[0].longitude]
-      : [-6.7100, 108.5550]
-  );
-
- 
-
-  useEffect(() => {
-    if (coordinates.length > 0) {
-      setCenter([coordinates[0].latitude, coordinates[0].longitude]);
-    }
-  }, [coordinates]);
-
-  if (!mounted) {
-    return (
-      <div className="bg-gray-100 rounded-lg border border-gray-300 h-96 flex items-center justify-center">
-        <div className="text-center text-gray-500">
-          <MapPin className="w-16 h-16 mx-auto mb-3 text-gray-400" />
-          <p>Memuat peta...</p>
-        </div>
-      </div>
-    );
-  }
-
-  const polygonPositions: [number, number][] =
-    coordinates.length >= 3
-      ? coordinates.map((c) => [c.latitude, c.longitude] as [number, number])
-      : [];
-
-  return (
-    <div 
-      id={mapIdRef.current}
-      className="bg-gray-100 rounded-lg border border-gray-300 h-96 relative"
-    >
-      <div className="absolute bottom-4 right-4 bg-white rounded-lg shadow-lg p-3 border border-gray-200 z-[1000]">
-        <p className="text-xs mb-2 font-semibold">Instruksi:</p>
-        <p className="text-xs text-gray-600">Klik pada peta untuk menambahkan titik koordinat</p>
-        <p className="text-xs text-gray-600">Klik marker untuk menghapus titik</p>
-        <p className="text-xs text-gray-500 mt-2">
-          {coordinates.length < 3
-            ? `Minimal 3 titik diperlukan (${coordinates.length}/3)`
-            : `${coordinates.length} titik terdeteksi`}
-        </p>
-      </div>
-    </div>
-  );
-}
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
 import {
