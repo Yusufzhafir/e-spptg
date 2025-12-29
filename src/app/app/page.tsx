@@ -4,9 +4,11 @@ import { Dashboard } from '@/components/Dashboard';
 import { useAppState } from './layout';
 import { trpc } from '@/trpc/client';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { KPIData, Submission } from '@/types';
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { handleNewSubmission } = useAppState();
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -65,11 +67,11 @@ export default function DashboardPage() {
   }));
 
   const handleViewDetail = (submission: Submission) => {
-    window.location.href = `/app/pengajuan/${submission.id}`;
+    router.push(`/app/pengajuan/${submission.id}`);
   };
 
   const handleEditSubmission = (submission: Submission) => {
-    window.location.href = `/app/pengajuan/${submission.id}`;
+    router.push(`/app/pengajuan/${submission.id}`);
   };
 
   if (isLoadingSubmissions || isLoadingKPI || isLoadingMonthly) {

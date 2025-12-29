@@ -139,8 +139,8 @@ export function ReadOnlyMap({
   selectedSubmission,
   height = '400px',
   center = {
-    lat: -6.7100,
-    lng: 108.5550,
+    lat: 0.6164979547396072,
+    lng: 117.32086147991855,
   },
   zoom = 13,
   onPolygonClick,
