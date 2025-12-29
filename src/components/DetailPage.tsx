@@ -54,7 +54,7 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
         <CardHeader>
           <div className="flex items-start justify-between">
             <div>
-              <CardTitle>Detail Pengajuan SKT</CardTitle>
+              <CardTitle>Detail Pengajuan SPPTG</CardTitle>
               <p className="text-sm text-gray-600 mt-1">ID: {submission.id}</p>
             </div>
             <StatusBadge status={submission.status} />
@@ -122,10 +122,10 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
                   <SelectValue placeholder="Pilih status baru" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="SKT terdaftar">SKT terdaftar</SelectItem>
-                  <SelectItem value="SKT terdata">SKT terdata</SelectItem>
-                  <SelectItem value="SKT ditolak">SKT ditolak</SelectItem>
-                  <SelectItem value="SKT ditinjau ulang">SKT ditinjau ulang</SelectItem>
+                  <SelectItem value="SKT terdaftar">SPPTG terdaftar</SelectItem>
+                  <SelectItem value="SKT terdata">SPPTG terdata</SelectItem>
+                  <SelectItem value="SKT ditolak">SPPTG ditolak</SelectItem>
+                  <SelectItem value="SKT ditinjau ulang">SPPTG ditinjau ulang</SelectItem>
                 </SelectContent>
               </Select>
             </div>

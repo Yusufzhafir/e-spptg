@@ -16,7 +16,7 @@ export default function PengajuanPage() {
     // The SubmissionFlow component already handles the backend mutation
     // This callback just handles post-completion navigation
     router.push('/app');
-    toast.success('Pengajuan SKT berhasil diselesaikan');
+    toast.success('Pengajuan SPPTG berhasil diselesaikan');
   };
 
   return (

@@ -909,7 +909,7 @@ export function ProhibitedAreasTab({
                     <TableCell>Tanah Pemerintah</TableCell>
                     <TableCell>
                       <Badge className="bg-red-100 text-red-700 hover:bg-red-100">
-                        SKT ditolak
+                        SPPTG ditolak
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
@@ -926,7 +926,7 @@ export function ProhibitedAreasTab({
                     <TableCell>Sempadan Sungai</TableCell>
                     <TableCell>
                       <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-100">
-                        SKT ditinjau ulang
+                        SPPTG ditinjau ulang
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">

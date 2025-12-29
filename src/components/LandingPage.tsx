@@ -85,7 +85,7 @@ export function LandingPage() {
           </h2>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto mb-10">
             Platform digital untuk memudahkan proses pendaftaran, verifikasi, dan pengelolaan 
-            Surat Keterangan Tanah (SKT) bagi masyarakat dan pemerintah daerah.
+            Surat Keterangan Tanah (SPPTG) bagi masyarakat dan pemerintah daerah.
           </p>
           <div className="flex items-center justify-center gap-4">
             <SignedOut>

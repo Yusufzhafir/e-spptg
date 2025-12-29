@@ -57,7 +57,7 @@ export function SubmissionForm({ onSubmit, onCancel }: SubmissionFormProps) {
     }
     
     onSubmit(formData);
-    toast.success('Pengajuan SKT berhasil diajukan');
+    toast.success('Pengajuan SPPTG berhasil diajukan');
   };
 
   return (
