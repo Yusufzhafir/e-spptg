@@ -9,7 +9,7 @@ export default function PengajuanPage() {
   const router = useRouter();
 
   const handleCancelSubmissionFlow = () => {
-    router.push('/');
+    router.push('/app');
   };
 
   return (

@@ -1,96 +1,30 @@
 'use client';
 
-import { Dashboard } from '@/components/Dashboard';
-import { useAppState } from './layout';
-import { trpc } from '@/trpc/client';
-import { useState } from 'react';
-import { KPIData, Submission } from '@/types';
+import { LandingPage } from '@/components/LandingPage';
+import { useAuth } from '@clerk/nextjs';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
-export default function DashboardPage() {
-  const { handleNewSubmission } = useAppState();
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
+export default function HomePage() {
+  const { isSignedIn, isLoaded } = useAuth();
+  const router = useRouter();
 
-  // Fetch submissions from backend
-  const { data: submissionsData, isLoading: isLoadingSubmissions } = trpc.submissions.list.useQuery({
-    status: statusFilter === 'all' ? undefined : statusFilter,
-    search: searchQuery || undefined,
-    limit: 100,
-    offset: 0,
-  });
+  // Redirect authenticated users to dashboard
+  useEffect(() => {
+    if (isLoaded && isSignedIn) {
+      router.push('/app');
+    }
+  }, [isLoaded, isSignedIn, router]);
 
-  // Fetch KPI data
-  const { data: kpiData, isLoading: isLoadingKPI } = trpc.submissions.kpi.useQuery();
-
-  // Fetch monthly stats
-  const { data: monthlyStatsData, isLoading: isLoadingMonthly } = trpc.submissions.monthlyStats.useQuery();
-
-  // Transform submissions data
-  const submissions = (submissionsData?.items || []).map((s: any) => ({
-    id: s.id, // Keep as number, not string
-    namaPemilik: s.namaPemilik,
-    nik: s.nik,
-    alamat: s.alamat,
-    nomorHP: s.nomorHP,
-    email: s.email,
-    villageId: s.villageId,
-    kecamatan: s.kecamatan,
-    kabupaten: s.kabupaten,
-    luas: s.luas,
-    penggunaanLahan: s.penggunaanLahan,
-    catatan: s.catatan,
-    geoJSON: s.geoJSON, // Use geoJSON instead of coordinates
-    status: s.status,
-    tanggalPengajuan: new Date(s.tanggalPengajuan), // Keep as Date, not string
-    verifikator: s.verifikator,
-    riwayat: s.riwayat || [],
-    feedback: s.feedback,
-    createdAt: new Date(s.createdAt),
-    updatedAt: new Date(s.updatedAt),
-  }));
-
-  // Use KPI data directly (no transformation needed)
-  const transformedKpiData: KPIData = {
-    'SPPTG terdata': kpiData?.['SPPTG terdata'] || 0,
-    'SPPTG terdaftar': kpiData?.['SPPTG terdaftar'] || 0,
-    'SPPTG ditolak': kpiData?.['SPPTG ditolak'] || 0,
-    'SPPTG ditinjau ulang': kpiData?.['SPPTG ditinjau ulang'] || 0,
-    total: kpiData?.total || 0,
-  };
-
-  // Transform monthly data
-  const monthlyData = (monthlyStatsData || []).map((stat: any) => ({
-    bulan: stat.month,
-    pengajuan: stat.count,
-  }));
-
-  const handleViewDetail = (submission: Submission) => {
-    window.location.href = `/pengajuan/${submission.id}`;
-  };
-
-  const handleEditSubmission = (submission: Submission) => {
-    window.location.href = `/pengajuan/${submission.id}`;
-  };
-
-  if (isLoadingSubmissions || isLoadingKPI || isLoadingMonthly) {
+  // Show loading while checking auth state
+  if (!isLoaded) {
     return (
-      <div className="flex items-center justify-center py-12">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        <span className="ml-3 text-gray-600">Memuat data...</span>
       </div>
     );
   }
 
-  return (
-    <Dashboard
-      submissions={submissions}
-      kpiData={transformedKpiData}
-      monthlyData={monthlyData}
-      statusFilter={statusFilter}
-      onStatusFilterChange={setStatusFilter}
-      onNewSubmission={handleNewSubmission}
-      onViewDetail={handleViewDetail}
-      onEdit={handleEditSubmission}
-    />
-  );
+  // Show landing page for unauthenticated users
+  return <LandingPage />;
 }
