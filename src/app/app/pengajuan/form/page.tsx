@@ -1,7 +1,7 @@
 'use client';
 
 import { SubmissionForm } from '@/components/SubmissionForm';
-import { useAppState } from '@/app/layout';
+import { useAppState } from '@/app/app/layout';
 import { useRouter } from 'next/navigation';
 
 export default function SubmissionFormPage() {
@@ -9,7 +9,7 @@ export default function SubmissionFormPage() {
   const router = useRouter();
 
   const handleCancelForm = () => {
-    router.push('/');
+    router.push('/app');
   };
 
   return (

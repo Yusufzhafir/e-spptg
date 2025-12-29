@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import { DetailPage } from '@/components/DetailPage';
-import { useAppState } from '@/app/layout';
+import { useAppState } from '@/app/app/layout';
 import { trpc } from '@/trpc/client';
 import { useMemo } from 'react';
 import { FeedbackData, StatusHistory } from '@/types';
@@ -28,7 +28,7 @@ export default function SubmissionDetailPage() {
     };
   }, [submission]);
   const handleBackToDashboard = () => {
-    router.push('/');
+    router.push('/app');
   };
 
   if (!mappedData) {
