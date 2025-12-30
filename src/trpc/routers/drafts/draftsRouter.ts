@@ -18,6 +18,11 @@ export const draftsRouter = router({
     };
   }),
 
+  create: protectedProcedure.mutation(async ({ ctx }) => {
+    const draft = await queries.createDraft(ctx.appUser!.id);
+    return { id: draft.id };
+  }),
+
   getById: protectedProcedure
     .input(z.object({ draftId: z.number().int() }))
     .query(async ({ ctx, input }) => {
@@ -87,6 +92,8 @@ export const draftsRouter = router({
       lastSaved: d.lastSaved,
       createdAt: d.createdAt,
       updatedAt: d.updatedAt,
+      namaPemohon: d.namaPemohon || null,
+      nik: d.nik || null,
     }));
   }),
 
