@@ -33,10 +33,6 @@ const steps = [
 ];
 
 export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlowProps) {
-  if (!draftId) {
-    throw new Error('draftId is required');
-  }
-
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
   const [lastSaved, setLastSaved] = useState<string>('');
