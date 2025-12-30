@@ -18,6 +18,11 @@ export const draftsRouter = router({
     };
   }),
 
+  create: protectedProcedure.mutation(async ({ ctx }) => {
+    const draft = await queries.createDraft(ctx.appUser!.id);
+    return { id: draft.id };
+  }),
+
   getById: protectedProcedure
     .input(z.object({ draftId: z.number().int() }))
     .query(async ({ ctx, input }) => {
@@ -79,16 +84,38 @@ export const draftsRouter = router({
       return result;
     }),
 
-  listMy: protectedProcedure.query(async ({ ctx }) => {
-    const drafts = await queries.listUserDrafts(ctx.appUser!.id);
-    return drafts.map((d) => ({
-      id: d.id,
-      currentStep: d.currentStep,
-      lastSaved: d.lastSaved,
-      createdAt: d.createdAt,
-      updatedAt: d.updatedAt,
-    }));
-  }),
+  listMy: protectedProcedure
+    .output(
+      z.array(
+        z.object({
+          id: z.number(),
+          currentStep: z.number().int().min(1).max(4),
+          lastSaved: z.date(),
+          createdAt: z.date(),
+          updatedAt: z.date(),
+          namaPemohon: z.preprocess(
+            (val) => (typeof val === 'string' ? val : null),
+            z.string().nullable()
+          ),
+          nik: z.preprocess(
+            (val) => (typeof val === 'string' ? val : null),
+            z.string().nullable()
+          ),
+        })
+      )
+    )
+    .query(async ({ ctx }) => {
+      const drafts = await queries.listUserDrafts(ctx.appUser!.id);
+      return drafts.map((d) => ({
+        id: d.id,
+        currentStep: d.currentStep,
+        lastSaved: d.lastSaved,
+        createdAt: d.createdAt,
+        updatedAt: d.updatedAt,
+        namaPemohon: d.namaPemohon || null,
+        nik: d.nik || null,
+      }));
+    }),
 
   delete: protectedProcedure
     .input(z.object({ draftId: z.number().int() }))

@@ -1,6 +1,6 @@
 import { db, DBTransaction } from '../db';
 import { submissionDrafts } from '../schema';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, sql } from 'drizzle-orm';
 
 export async function getOrCreateDraft(userId: number, tx?: DBTransaction) {
   const queryDb = tx || db;
@@ -24,6 +24,19 @@ export async function getOrCreateDraft(userId: number, tx?: DBTransaction) {
   }
 
   return draft;
+}
+
+export async function createDraft(userId: number, tx?: DBTransaction) {
+  const queryDb = tx || db;
+  const created = await queryDb
+    .insert(submissionDrafts)
+    .values({
+      userId,
+      currentStep: 1,
+      payload: {},
+    })
+    .returning();
+  return created[0];
 }
 
 export async function getDraftById(id: number, userId: number,tx?: DBTransaction) {
@@ -75,13 +88,23 @@ export async function saveDraftStep(
   return result[0];
 }
 
-export async function listUserDrafts(userId: number,tx?: DBTransaction) {
+export async function listUserDrafts(userId: number, tx?: DBTransaction) {
   const queryDb = tx || db;
 
-  return queryDb.query.submissionDrafts.findMany({
-    where: eq(submissionDrafts.userId, userId),
-    orderBy: desc(submissionDrafts.updatedAt),
-  });
+  return queryDb
+    .select({
+      id: submissionDrafts.id,
+      currentStep: submissionDrafts.currentStep,
+      lastSaved: submissionDrafts.lastSaved,
+      createdAt: submissionDrafts.createdAt,
+      updatedAt: submissionDrafts.updatedAt,
+      // Extract specific fields from JSONB
+      namaPemohon: sql<string | null>`${submissionDrafts.payload}->>'namaPemohon'`,
+      nik: sql<string | null>`${submissionDrafts.payload}->>'nik'`,
+    })
+    .from(submissionDrafts)
+    .where(eq(submissionDrafts.userId, userId))
+    .orderBy(desc(submissionDrafts.updatedAt));
 }
 
 export async function deleteDraft(draftId: number, userId: number,tx?: DBTransaction) {

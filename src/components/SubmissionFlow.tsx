@@ -20,7 +20,7 @@ import { trpc } from '@/trpc/client';
 import { useRouter } from 'next/navigation';
 
 interface SubmissionFlowProps {
-  submissionId?: string;
+  draftId: number;
   onCancel: () => void;
   onComplete: (draft: SubmissionDraft) => void;
 }
@@ -32,13 +32,13 @@ const steps = [
   { id: 4, label: 'Terbitkan SPPTG', icon: Award },
 ];
 
-export function SubmissionFlow({ submissionId, onCancel, onComplete }: SubmissionFlowProps) {
+export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlowProps) {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
   const [lastSaved, setLastSaved] = useState<string>('');
 
   // Load draft from backend
-  const { data: draftData, isLoading: isLoadingDraft, error: draftError } = trpc.drafts.getOrCreateCurrent.useQuery();
+  const { data: draftData, isLoading: isLoadingDraft, error: draftError } = trpc.drafts.getById.useQuery({ draftId });
   
   // Save draft mutation
   const saveDraftMutation = trpc.drafts.saveStep.useMutation({
@@ -56,7 +56,7 @@ export function SubmissionFlow({ submissionId, onCancel, onComplete }: Submissio
   const submitDraftMutation = trpc.submissions.submitDraft.useMutation({
     onSuccess: (data) => {
       toast.success('Pengajuan berhasil disimpan');
-      router.push(`/pengajuan/${data.submissionId}`);
+      router.push(`/app/pengajuan`);
     },
     onError: (error) => {
       toast.error(`Gagal menyimpan pengajuan: ${error.message}`);
@@ -297,19 +297,19 @@ export function SubmissionFlow({ submissionId, onCancel, onComplete }: Submissio
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink href="#" className="text-gray-600 hover:text-gray-900">
+              <BreadcrumbLink href="/" className="text-gray-600 hover:text-gray-900">
                 Beranda
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbLink href="#" className="text-gray-600 hover:text-gray-900">
+              <BreadcrumbLink href="/app/pengajuan" className="text-gray-600 hover:text-gray-900">
                 Pengajuan
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>{submissionId || 'Baru'}</BreadcrumbPage>
+              <BreadcrumbPage>Draft #{draftId}</BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
@@ -317,9 +317,7 @@ export function SubmissionFlow({ submissionId, onCancel, onComplete }: Submissio
         <div className="mt-4 flex items-center justify-between">
           <div>
             <h1 className="text-gray-900">Pengajuan SPPTG</h1>
-            {submissionId && (
-              <p className="text-gray-600 mt-1">ID Pengajuan: {submissionId}</p>
-            )}
+            <p className="text-gray-600 mt-1">Draft ID: {draftId}</p>
           </div>
           {lastSaved && (
             <p className="text-sm text-gray-500">
