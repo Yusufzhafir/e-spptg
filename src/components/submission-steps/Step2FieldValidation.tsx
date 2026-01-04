@@ -282,7 +282,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
         onUpdateDraft({ luasLahan: calculatedArea });
       }
     }
-  }, [draft.coordinatesGeografis,calculateArea,onUpdateDraft]);
+  }, [draft.coordinatesGeografis]);
 
   return (
     <div className="space-y-6">
