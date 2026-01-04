@@ -125,7 +125,7 @@ export interface ProhibitedArea {
 
 // Submission Flow Types
 export type CoordinateSystem = 'geografis' | 'utm';
-export type BoundaryDirection = 'Utara' | 'Timur' | 'Selatan' | 'Barat';
+export type BoundaryDirection = 'Utara' | 'Timur' | 'Selatan' | 'Barat' | 'Timur Laut' | 'Tenggara'| 'Barat Daya' | 'Barat Laut';
 
 export interface UploadedDocument {
   name: string;

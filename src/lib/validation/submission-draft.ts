@@ -31,7 +31,7 @@ export type ResearchTeamMember = z.infer<typeof researchTeamMemberSchema>;
 export const boundaryWitnessSchema = z.object({
   id: z.string().optional(), // Client-generated
   nama: z.string().min(2, 'Nama minimal 2 karakter'),
-  sisi: z.enum(['Utara', 'Timur', 'Selatan', 'Barat'], {
+  sisi: z.enum(['Utara', 'Timur', 'Selatan', 'Barat', 'Timur Laut', 'Tenggara', 'Barat Daya', 'Barat Laut'], {
     error: (e) => ({ message: `value :${e.input} causes: ${e.message}` }),
   }),
 });

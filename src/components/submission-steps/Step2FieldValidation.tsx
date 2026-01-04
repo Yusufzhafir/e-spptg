@@ -166,14 +166,19 @@ function DocumentUploadField({
     </div>
   );
 }
-
+type NewWitness = { nama?: string, sisi?: BoundaryDirection };
 export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
   const [isOverlapDialogOpen, setIsOverlapDialogOpen] = useState(false);
-  const [newWitness, setNewWitness] = useState({ nama: '', sisi: 'Utara' as BoundaryDirection });
+  const [newWitness, setNewWitness] = useState<NewWitness>({ nama: '', sisi: '' as BoundaryDirection });
 
   const handleAddWitness = () => {
     if (!newWitness.nama) {
       toast.error('Nama saksi harus diisi');
+      return;
+    }
+
+    if (!newWitness.sisi) {
+      toast.error('Sisi batas harus dipilih');
       return;
     }
 
@@ -184,7 +189,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
     };
 
     onUpdateDraft({ saksiList: [...draft.saksiList, witness] });
-    setNewWitness({ nama: '', sisi: 'Utara' });
+    setNewWitness({ nama: '', sisi: '' as BoundaryDirection  });
     toast.success('Saksi berhasil ditambahkan');
   };
 
@@ -432,9 +437,13 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="Utara">Utara</SelectItem>
+              <SelectItem value="Timur Laut">Timur Laut</SelectItem>
               <SelectItem value="Timur">Timur</SelectItem>
+              <SelectItem value="Tenggara">Tenggara</SelectItem>
               <SelectItem value="Selatan">Selatan</SelectItem>
+              <SelectItem value="Barat Daya">Barat Daya</SelectItem>
               <SelectItem value="Barat">Barat</SelectItem>
+              <SelectItem value="Barat Laut">Barat Laut</SelectItem>
             </SelectContent>
           </Select>
           <Button onClick={handleAddWitness}>
