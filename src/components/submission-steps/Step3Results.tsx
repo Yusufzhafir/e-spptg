@@ -275,18 +275,6 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
                 <span className="text-gray-600">Juru Ukur:</span>{' '}
                 <span className="text-gray-900">{draft.juruUkur?.nama || '-'}</span>
               </div>
-              <div>
-                <span className="text-gray-600">Pihak BPD:</span>{' '}
-                <span className="text-gray-900">{draft.pihakBPD?.nama || '-'}</span>
-              </div>
-              <div>
-                <span className="text-gray-600">Kepala Dusun:</span>{' '}
-                <span className="text-gray-900">{draft.kepalaDusun?.nama || '-'}</span>
-              </div>
-              <div>
-                <span className="text-gray-600">RT Setempat:</span>{' '}
-                <span className="text-gray-900">{draft.rtSetempat?.nama || '-'}</span>
-              </div>
             </div>
           </div>
 
