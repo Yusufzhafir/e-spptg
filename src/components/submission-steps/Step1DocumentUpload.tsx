@@ -21,7 +21,7 @@ interface FileUploadFieldProps {
   onChange: (doc?: UploadedDocument) => void;
   required?: boolean;
   helpText?: string;
-  category: 'KTP' | 'KK' | 'Kwitansi' | 'Permohonan' | 'SK Kepala Desa';
+  category: 'KTP' | 'KK' | 'Kwitansi' | 'Permohonan' | 'SK Kepala Desa' | 'Pernyataan Jual Beli' | 'Asal Usul' | 'Tidak Sengketa';
   draftId?: number;
 }
 
@@ -302,6 +302,17 @@ export function Step1DocumentUpload({ draft, onUpdateDraft }: Step1Props) {
             onChange={(doc) => onUpdateDraft({ dokumenPermohonan: doc })}
             category="Permohonan"
             draftId={draft.id}
+          />
+
+          <FileUploadField
+            label="Surat Pernyataan Tidak Sengketa"
+            accept=".pdf"
+            maxSize={10}
+            value={draft.dokumenTidakSengketa}
+            onChange={(doc) => onUpdateDraft({ dokumenTidakSengketa: doc })}
+            category="Tidak Sengketa"
+            draftId={draft.id}
+            required={false}
           />
 
           {/* <FileUploadField
