@@ -297,7 +297,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
       <div className="space-y-4">
         <h3 className="text-gray-900">Tim Peneliti</h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="max-w-3xl">
           <div className="space-y-3 p-4 border border-gray-200 rounded-lg">
             <h4 className="text-sm text-gray-900">Juru Ukur</h4>
             <Input
@@ -333,81 +333,6 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
               onChange={(e) =>
                 onUpdateDraft({
                   juruUkur: { ...draft.juruUkur, nomorHP: e.target.value } as ResearchTeamMember,
-                })
-              }
-            />
-          </div>
-
-          <div className="space-y-3 p-4 border border-gray-200 rounded-lg">
-            <h4 className="text-sm text-gray-900">Pihak BPD</h4>
-            <Input
-              placeholder="Nama"
-              value={draft.pihakBPD?.nama || ''}
-              onChange={(e) =>
-                onUpdateDraft({
-                  pihakBPD: { ...draft.pihakBPD, nama: e.target.value } as ResearchTeamMember,
-                })
-              }
-            />
-            <Input
-              placeholder="Jabatan"
-              value={draft.pihakBPD?.jabatan || ''}
-              onChange={(e) =>
-                onUpdateDraft({
-                  pihakBPD: { ...draft.pihakBPD, jabatan: e.target.value } as ResearchTeamMember,
-                })
-              }
-            />
-            <Input
-              placeholder="Nomor HP"
-              value={draft.pihakBPD?.nomorHP || ''}
-              onChange={(e) =>
-                onUpdateDraft({
-                  pihakBPD: { ...draft.pihakBPD, nomorHP: e.target.value } as ResearchTeamMember,
-                })
-              }
-            />
-          </div>
-
-          <div className="space-y-3 p-4 border border-gray-200 rounded-lg">
-            <h4 className="text-sm text-gray-900">Kepala Dusun Setempat</h4>
-            <Input
-              placeholder="Nama"
-              value={draft.kepalaDusun?.nama || ''}
-              onChange={(e) =>
-                onUpdateDraft({
-                  kepalaDusun: { ...draft.kepalaDusun, nama: e.target.value } as ResearchTeamMember,
-                })
-              }
-            />
-            <Input
-              placeholder="Nomor HP"
-              value={draft.kepalaDusun?.nomorHP || ''}
-              onChange={(e) =>
-                onUpdateDraft({
-                  kepalaDusun: { ...draft.kepalaDusun, nomorHP: e.target.value } as ResearchTeamMember,
-                })
-              }
-            />
-          </div>
-
-          <div className="space-y-3 p-4 border border-gray-200 rounded-lg">
-            <h4 className="text-sm text-gray-900">RT Setempat</h4>
-            <Input
-              placeholder="Nama"
-              value={draft.rtSetempat?.nama || ''}
-              onChange={(e) =>
-                onUpdateDraft({
-                  rtSetempat: { ...draft.rtSetempat, nama: e.target.value } as ResearchTeamMember,
-                })
-              }
-            />
-            <Input
-              placeholder="Nomor HP"
-              value={draft.rtSetempat?.nomorHP || ''}
-              onChange={(e) =>
-                onUpdateDraft({
-                  rtSetempat: { ...draft.rtSetempat, nomorHP: e.target.value } as ResearchTeamMember,
                 })
               }
             />
