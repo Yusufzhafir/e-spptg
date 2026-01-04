@@ -81,6 +81,10 @@ export const boundaryDirectionEnum = pgEnum('boundary_direction', [
   'Timur',
   'Selatan',
   'Barat',
+  'Timur Laut',
+  'Tenggara',
+  'Barat Daya',
+  'Barat Laut'
 ]);
 
 // ============================================================================

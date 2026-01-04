@@ -169,7 +169,7 @@ function DocumentUploadField({
 type NewWitness = { nama?: string, sisi?: BoundaryDirection };
 export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
   const [isOverlapDialogOpen, setIsOverlapDialogOpen] = useState(false);
-  const [newWitness, setNewWitness] = useState<NewWitness>({ nama: undefined, sisi: undefined});
+  const [newWitness, setNewWitness] = useState<NewWitness>({ nama: '', sisi: '' as BoundaryDirection });
 
   const handleAddWitness = () => {
     if (!newWitness.nama) {
@@ -189,7 +189,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
     };
 
     onUpdateDraft({ saksiList: [...draft.saksiList, witness] });
-    setNewWitness({ nama: undefined, sisi: undefined });
+    setNewWitness({ nama: '', sisi: '' as BoundaryDirection  });
     toast.success('Saksi berhasil ditambahkan');
   };
 

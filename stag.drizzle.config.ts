@@ -7,6 +7,7 @@ if (!process.env.DATABASE_URL_DDL) {
   throw new Error("DATABASE_URL is missing");
 }
 
+console.log('DATABASE_URL_DDL\n\n\n', process.env.DATABASE_URL_DDL,'\n\n\n');
 export default {
   schema: "./src/server/db/schema.ts",
   out: "./drizzle-stag",
