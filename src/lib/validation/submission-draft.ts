@@ -73,6 +73,9 @@ export const step1BerkasSchema = z.object({
   dokumenKK: uploadedDocumentSchema.optional(),
   dokumenKwitansi: uploadedDocumentSchema.optional(),
   dokumenPermohonan: uploadedDocumentSchema.optional(),
+  dokumenPernyataanJualBeli: uploadedDocumentSchema.optional(),
+  dokumenAsalUsul: uploadedDocumentSchema.optional(),
+  dokumenTidakSengketa: uploadedDocumentSchema.optional(),
 
   // Consent
   persetujuanData: z.boolean({
@@ -120,9 +123,6 @@ export const step2LapanganSchema = z.object({
 
   // Documents
   dokumenBeritaAcara: uploadedDocumentSchema.optional(),
-  dokumenAsalUsul: uploadedDocumentSchema.optional(),
-  dokumenPernyataanJualBeli: uploadedDocumentSchema.optional(),
-  dokumenTidakSengketa: uploadedDocumentSchema.optional(),
 
   // Photos
   // fotoLahan: z

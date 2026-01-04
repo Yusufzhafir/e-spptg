@@ -58,7 +58,7 @@ function DocumentUploadField({
   label: string;
   value?: UploadedDocument;
   onChange: (doc?: UploadedDocument) => void;
-  category: 'Berita Acara' | 'Pernyataan Jual Beli' | 'Asal Usul' | 'Tidak Sengketa';
+  category: 'Berita Acara';
   draftId?: number;
 }) {
   const [isUploading, setIsUploading] = useState(false);
@@ -543,27 +543,6 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
           value={draft.dokumenBeritaAcara}
           onChange={(doc) => onUpdateDraft({ dokumenBeritaAcara: doc })}
           category="Berita Acara"
-          draftId={draft.id}
-        />
-        <DocumentUploadField
-          label="Surat Pernyataan Jual Beli Lahan"
-          value={draft.dokumenPernyataanJualBeli}
-          onChange={(doc) => onUpdateDraft({ dokumenPernyataanJualBeli: doc })}
-          category="Pernyataan Jual Beli"
-          draftId={draft.id}
-        />
-        <DocumentUploadField
-          label="Surat Pernyataan Asal Usul Tanah"
-          value={draft.dokumenAsalUsul}
-          onChange={(doc) => onUpdateDraft({ dokumenAsalUsul: doc })}
-          category="Asal Usul"
-          draftId={draft.id}
-        />
-        <DocumentUploadField
-          label="Surat Pernyataan Tidak Sengketa"
-          value={draft.dokumenTidakSengketa}
-          onChange={(doc) => onUpdateDraft({ dokumenTidakSengketa: doc })}
-          category="Tidak Sengketa"
           draftId={draft.id}
         />
       </div>
