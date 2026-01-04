@@ -6,12 +6,9 @@ import {
   BoundaryWitness,
   GeographicCoordinate,
   BoundaryDirection,
-  UploadedDocument,
 } from '../../types';
 import { trpc } from '@/trpc/client';
 import { DrawingMap } from '../maps/DrawingMap';
-
-
 
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
@@ -38,134 +35,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog';
-import { Plus, Trash2, Upload, MapPin, AlertTriangle, File, X, CheckCircle2 } from 'lucide-react';
+import { Plus, Trash2, MapPin, AlertTriangle } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { toast } from 'sonner';
-import { Button } from '../ui/button';
+import { Button } from '@/components/ui/button';
+import { FileUploadField } from '@/components/FileUploadField';
 
 interface Step2Props {
   draft: SubmissionDraft;
   onUpdateDraft: (updates: Partial<SubmissionDraft>) => void;
 }
 
-function DocumentUploadField({
-  label,
-  value,
-  onChange,
-  category,
-  draftId,
-}: {
-  label: string;
-  value?: UploadedDocument;
-  onChange: (doc?: UploadedDocument) => void;
-  category: 'Berita Acara';
-  draftId?: number;
-}) {
-  const [isUploading, setIsUploading] = useState(false);
-  const createUploadUrlMutation = trpc.documents.createUploadUrl.useMutation();
-  const uploadFileMutation = trpc.documents.uploadFile.useMutation();
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('Ukuran file maksimal 10 MB');
-      return;
-    }
-
-    if (file.type !== 'application/pdf') {
-      toast.error('Format file harus PDF');
-      return;
-    }
-
-    if (!draftId) {
-      toast.error('Draf belum dimuat');
-      return;
-    }
-
-    setIsUploading(true);
-    try {
-      // Step 1: Create document record and get s3Key
-      const { documentId, publicUrl, s3Key } = await createUploadUrlMutation.mutateAsync({
-        draftId,
-        category,
-        filename: file.name,
-        size: file.size,
-        mimeType: 'application/pdf',
-      });
-
-      // Step 2: Convert file to base64
-      const fileBuffer = await file.arrayBuffer();
-      const base64String = btoa(
-        new Uint8Array(fileBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-      );
-
-      // Step 3: Upload file via server-side tRPC mutation
-      const uploadResult = await uploadFileMutation.mutateAsync({
-        draftId,
-        documentId,
-        s3Key,
-        fileData: base64String,
-        filename: file.name,
-        mimeType: 'application/pdf',
-        size: file.size,
-      });
-
-      onChange({
-        name: file.name,
-        size: file.size,
-        url: uploadResult.publicUrl,
-        uploadedAt: new Date().toISOString(),
-        documentId,
-      });
-      toast.success('Dokumen berhasil diunggah');
-    } catch (error: any) {
-      console.error('Upload error:', error);
-      // Provide user-friendly error messages
-      if (error.message) {
-        toast.error(error.message);
-      } else {
-        toast.error('Gagal mengunggah dokumen. Silakan coba lagi atau hubungi administrator jika masalah berlanjut.');
-      }
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  return (
-    <div className="text-sm space-y-2">
-      <Label>{label}</Label>
-      {!value ? (
-        <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
-          <Upload className="w-8 h-8 text-gray-400 mb-2" />
-          <p className="text-xs text-gray-600">Klik atau seret file PDF</p>
-          <input type="file" className="hidden" accept=".pdf" onChange={handleFileChange} disabled={isUploading} />
-        </label>
-      ) : (
-        <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 flex items-center justify-between">
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <File className="w-5 h-5 text-blue-600 shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-gray-900 truncate">{value.name}</p>
-              <p className="text-xs text-gray-500">{(value.size / 1024 / 1024).toFixed(2)} MB</p>
-            </div>
-            <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
-          </div>
-          <Button variant="ghost" size="sm" onClick={() => onChange(undefined)} className="text-red-600">
-            <X className="w-4 h-4" />
-          </Button>
-        </div>
-      )}
-      {isUploading && (
-        <div className="flex items-center gap-2 text-xs text-gray-600">
-          <div className="animate-spin rounded-full h-3 w-3 border-2 border-gray-300 border-t-blue-600" />
-          <span>Mengunggah...</span>
-        </div>
-      )}
-    </div>
-  );
-}
 type NewWitness = { nama?: string, sisi?: BoundaryDirection };
 export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
   const [isOverlapDialogOpen, setIsOverlapDialogOpen] = useState(false);
@@ -538,12 +418,14 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
           Unggah dokumen hasil validasi lapangan (format PDF, maks. 10 MB)
         </p>
 
-        <DocumentUploadField
+        <FileUploadField
           label="Berita Acara Validasi Lapangan"
           value={draft.dokumenBeritaAcara}
           onChange={(doc) => onUpdateDraft({ dokumenBeritaAcara: doc })}
           category="Berita Acara"
           draftId={draft.id}
+          accept=".pdf"
+          maxSize={10 * 1024 * 1024}
         />
       </div>
 

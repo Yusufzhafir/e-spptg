@@ -83,3 +83,29 @@ export async function getDownloadUrl(s3Key: string) {
     expiresIn: 3600,
   });
 }
+
+/**
+ * Generate a signed URL for a template document
+ * Templates are stored at list-dokumen/template-documents/
+ * Signed URL expires in 1 week (604800 seconds)
+ */
+export async function getTemplateSignedUrl(templateType: string): Promise<string> {
+  // Dynamic import to avoid circular dependencies
+  const { TEMPLATE_FILENAME_MAP } = await import('@/lib/templates');
+  const filename = templateType//TEMPLATE_FILENAME_MAP[templateType as keyof typeof TEMPLATE_FILENAME_MAP];
+  if (!filename) {
+    throw new Error(`Template type tidak valid: ${templateType}`);
+  }
+  const s3Key = `template-documents/${filename}`;
+  const command = new GetObjectCommand({
+    Bucket: process.env.S3_BUCKET_NAME!,
+    Key: s3Key,
+  });
+
+  const signedUrl = await getSignedUrl(s3Client, command, {
+    expiresIn: 604800, // 1 week
+  });
+  console.log('signedUrl\n\n\n', signedUrl,'\n\n\n');
+
+  return signedUrl;
+}

@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { createUploadUrlSchema, listDocumentsSchema, uploadFileSchema } from '@/lib/validation/index';
+import { createUploadUrlSchema, listDocumentsSchema, uploadFileSchema, getTemplateUrlSchema } from '@/lib/validation/index';
 import * as queries from '@/server/db/queries/documents';
 import * as draftQueries from '@/server/db/queries/drafts';
-import { generateUploadUrl, uploadFileToS3 } from '@/server/s3/s3';
+import { generateUploadUrl, uploadFileToS3, getTemplateSignedUrl } from '@/server/s3/s3';
 import { TRPCError } from '@trpc/server';
 import { adminProcedure, protectedProcedure, router } from '@/trpc/init';
 
@@ -291,5 +291,16 @@ export const documentsRouter = router({
         success: true,
         message: 'Dokumen berhasil dihapus',
       };
+    }),
+
+  /**
+   * Get a signed URL for a template document
+   * Signed URL expires in 1 week
+   */
+  getTemplateUrl: protectedProcedure
+    .input(getTemplateUrlSchema)
+    .mutation(async ({ input }) => {
+      const signedUrl = await getTemplateSignedUrl(input.templateType);
+      return { signedUrl };
     }),
 });
