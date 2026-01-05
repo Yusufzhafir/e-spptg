@@ -155,11 +155,10 @@ export const listDocumentsSchema = z.object({
 // ============================================================================
 
 export const getTemplateUrlSchema = z.object({
-  templateType: z.enum([
-    'surat_pernyataan_permohonan.pdf',
-    'surat_pernyataan_tidak_sengketa.pdf',
-    'berita_acara_validasi_lapangan.pdf',
-  ], {
-    errorMap: () => ({ message: 'Jenis template tidak valid' }),
-  }),
-});
+  templateType: z.enum(
+     [
+      'surat_pernyataan_permohonan.pdf',
+      'surat_pernyataan_tidak_sengketa.pdf',
+      'berita_acara_validasi_lapangan.pdf',
+    ],
+  )});

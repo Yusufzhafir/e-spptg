@@ -423,9 +423,10 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
           value={draft.dokumenBeritaAcara}
           onChange={(doc) => onUpdateDraft({ dokumenBeritaAcara: doc })}
           category="Berita Acara"
+          templateType="berita_acara_validasi_lapangan.pdf"
           draftId={draft.id}
           accept=".pdf"
-          maxSize={10 * 1024 * 1024}
+          maxSize={10}
         />
       </div>
 

@@ -7,7 +7,7 @@ export const ALLOWED_TEMPLATES = [
 export type TemplateType = (typeof ALLOWED_TEMPLATES)[number];
 
 export const TEMPLATE_FILENAME_MAP: Record<TemplateType, string> = {
-  surat_pernyataan_permohonan: 'Surat Pernyataan Permohonan.pdf',
-  surat_pernyataan_tidak_sengketa: 'Surat Pernyataan Tidak Sengketa.pdf',
-  berita_acara_validasi_lapangan: 'Berita Acara Validasi Lapangan.pdf',
+  'surat_pernyataan_permohonan.pdf': 'Surat Pernyataan Permohonan.pdf',
+  "surat_pernyataan_tidak_sengketa.pdf": 'Surat Pernyataan Tidak Sengketa.pdf',
+  "berita_acara_validasi_lapangan.pdf": 'Berita Acara Validasi Lapangan.pdf',
 };

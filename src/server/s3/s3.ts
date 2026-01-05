@@ -90,9 +90,7 @@ export async function getDownloadUrl(s3Key: string) {
  * Signed URL expires in 1 week (604800 seconds)
  */
 export async function getTemplateSignedUrl(templateType: string): Promise<string> {
-  // Dynamic import to avoid circular dependencies
-  const { TEMPLATE_FILENAME_MAP } = await import('@/lib/templates');
-  const filename = templateType//TEMPLATE_FILENAME_MAP[templateType as keyof typeof TEMPLATE_FILENAME_MAP];
+  const filename = templateType
   if (!filename) {
     throw new Error(`Template type tidak valid: ${templateType}`);
   }
@@ -105,7 +103,6 @@ export async function getTemplateSignedUrl(templateType: string): Promise<string
   const signedUrl = await getSignedUrl(s3Client, command, {
     expiresIn: 604800, // 1 week
   });
-  console.log('signedUrl\n\n\n', signedUrl,'\n\n\n');
 
   return signedUrl;
 }
