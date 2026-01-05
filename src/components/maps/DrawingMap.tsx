@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { APIProvider, Map, useMap ,useMapsLibrary} from '@vis.gl/react-google-maps';
 import { GeographicCoordinate } from '@/types';
 import {
@@ -38,6 +38,21 @@ function DrawingMapInternal({
     null
   );
   const drawing = useMapsLibrary('drawing');
+
+  // Centralized cleanup function for polygon and its listeners
+  const cleanupPolygon = useCallback(() => {
+    if (polygonRef.current) {
+      const listeners = (polygonRef.current as any).__listeners;
+      if (listeners) {
+        listeners.forEach((listener: google.maps.MapsEventListener) => {
+          google.maps.event.removeListener(listener);
+        });
+      }
+      polygonRef.current.setMap(null);
+      polygonRef.current = null;
+    }
+  }, []);
+
   // Initialize drawing manager and polygon
   useEffect(() => {
     if (!map || !drawing) return;
@@ -74,17 +89,7 @@ function DrawingMapInternal({
       (event: google.maps.drawing.OverlayCompleteEvent) => {
         if (event.type === google.maps.drawing.OverlayType.POLYGON) {
           // Before creating new polygon, remove existing one
-          if (polygonRef.current) {
-            // Clean up listeners
-            const listeners = (polygonRef.current as any).__listeners;
-            if (listeners) {
-              listeners.forEach((listener: google.maps.MapsEventListener) => {
-                google.maps.event.removeListener(listener);
-              });
-            }
-            polygonRef.current.setMap(null);
-            polygonRef.current = null;
-          }
+          cleanupPolygon();
 
           const polygon = event.overlay as google.maps.Polygon;
           polygonRef.current = polygon;
@@ -169,7 +174,7 @@ function DrawingMapInternal({
 
           // Listen for path changes
           const path = newPolygon.getPath();
-          google.maps.event.addListener(path, 'set_at', () => {
+          const setAtListener = google.maps.event.addListener(path, 'set_at', () => {
             if (!isUpdatingFromPropsRef.current) {
               isUpdatingFromMapRef.current = true;
               const updatedCoords = polygonPathToCoordinates(
@@ -181,7 +186,7 @@ function DrawingMapInternal({
             }
           });
 
-          google.maps.event.addListener(path, 'insert_at', () => {
+          const insertAtListener = google.maps.event.addListener(path, 'insert_at', () => {
             if (!isUpdatingFromPropsRef.current) {
               isUpdatingFromMapRef.current = true;
               const updatedCoords = polygonPathToCoordinates(
@@ -193,7 +198,7 @@ function DrawingMapInternal({
             }
           });
 
-          google.maps.event.addListener(path, 'remove_at', () => {
+          const removeAtListener = google.maps.event.addListener(path, 'remove_at', () => {
             if (!isUpdatingFromPropsRef.current) {
               isUpdatingFromMapRef.current = true;
               const updatedCoords = polygonPathToCoordinates(
@@ -204,6 +209,9 @@ function DrawingMapInternal({
               isUpdatingFromMapRef.current = false;
             }
           });
+
+          // Store listeners for cleanup
+          (newPolygon as any).__listeners = [setAtListener, insertAtListener, removeAtListener];
         } else {
           // Add point to existing polygon
           const path = polygonRef.current.getPath();
@@ -224,11 +232,12 @@ function DrawingMapInternal({
 
     return () => {
       google.maps.event.removeListener(clickListener);
+      cleanupPolygon();
       if (drawingManager) {
         drawingManager.setMap(null);
       }
     };
-  }, [map, drawing, onCoordinatesChange, coordinates]);
+  }, [map, drawing, onCoordinatesChange, coordinates, cleanupPolygon]);
 
   // Sync polygon when coordinates prop changes (from table edits)
   useEffect(() => {
@@ -243,17 +252,7 @@ function DrawingMapInternal({
 
     if (coordinates.length === 0) {
       // Remove polygon if no coordinates
-      if (polygonRef.current) {
-        // Clean up listeners
-        const listeners = (polygonRef.current as any).__listeners;
-        if (listeners) {
-          listeners.forEach((listener: google.maps.MapsEventListener) => {
-            google.maps.event.removeListener(listener);
-          });
-        }
-        polygonRef.current.setMap(null);
-        polygonRef.current = null;
-      }
+      cleanupPolygon();
       // Re-enable drawing control when polygon is cleared
       if (drawingManagerRef.current) {
         drawingManagerRef.current.setOptions({ drawingControl: true });
@@ -263,17 +262,7 @@ function DrawingMapInternal({
 
     if (coordinates.length < 3) {
       // Show markers for points but no polygon yet
-      if (polygonRef.current) {
-        // Clean up listeners
-        const listeners = (polygonRef.current as any).__listeners;
-        if (listeners) {
-          listeners.forEach((listener: google.maps.MapsEventListener) => {
-            google.maps.event.removeListener(listener);
-          });
-        }
-        polygonRef.current.setMap(null);
-        polygonRef.current = null;
-      }
+      cleanupPolygon();
 
       coordinates.forEach((coord) => {
         const marker = new google.maps.Marker({
@@ -398,7 +387,12 @@ function DrawingMapInternal({
       
       isUpdatingFromPropsRef.current = false;
     }
-  }, [coordinates, map, onCoordinatesChange]);
+
+    // Cleanup on unmount
+    return () => {
+      cleanupPolygon();
+    };
+  }, [coordinates, map, onCoordinatesChange, cleanupPolygon]);
 
   return null;
 }
