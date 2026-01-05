@@ -35,7 +35,7 @@ export function AuthRoleProvider({ children }: { children: ReactNode }) {
   );
 
   const isLoading = !clerkLoaded || (isSignedIn && userLoading);
-  const isAuthenticated = isSignedIn && !!userData && !error;
+  const isAuthenticated = !!(isSignedIn && !!userData && !error);
   const user = userData && !error ? userData : null;
 
   const hasRole = (role: UserRole): boolean => {

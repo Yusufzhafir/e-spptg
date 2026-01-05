@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -13,6 +13,7 @@ import { VillagesTab } from './VillagesTab';
 import { ProhibitedAreasTab } from './ProhibitedAreasTab';
 import { User, Village, ProhibitedArea } from '../types';
 import { CreateProhibitedAreaInput, UpdateProhibitedAreaInput } from '@/types/prohibitedAreas';
+import { useAuthRole } from './AuthRoleProvider';
 
 type CreateVillageInput = {
   kodeDesa: string;
@@ -70,6 +71,16 @@ export function Settings({
   currentUserId,
 }: SettingsProps) {
   const [activeTab, setActiveTab] = useState('users');
+  const { hasRole } = useAuthRole();
+  const isSuperadmin = hasRole('Superadmin');
+
+  // Handle tab state when user role changes or unauthorized tab access
+  useEffect(() => {
+    // If active tab is "villages" and user doesn't have Superadmin role, switch to "users" tab
+    if (activeTab === 'villages' && !isSuperadmin) {
+      setActiveTab('users');
+    }
+  }, [activeTab, isSuperadmin]);
 
   return (
     <div className="space-y-6">
@@ -106,12 +117,14 @@ export function Settings({
           >
             Pengguna
           </TabsTrigger>
-          <TabsTrigger
-            value="villages"
-            className="data-[state=active]:border-b-2 data-[state=active]:border-blue-600 data-[state=active]:text-blue-600 rounded-none px-6 py-3"
-          >
-            Desa
-          </TabsTrigger>
+          {isSuperadmin && (
+            <TabsTrigger
+              value="villages"
+              className="data-[state=active]:border-b-2 data-[state=active]:border-blue-600 data-[state=active]:text-blue-600 rounded-none px-6 py-3"
+            >
+              Desa
+            </TabsTrigger>
+          )}
           <TabsTrigger
             value="prohibited"
             className="data-[state=active]:border-b-2 data-[state=active]:border-blue-600 data-[state=active]:text-blue-600 rounded-none px-6 py-3"
@@ -124,18 +137,20 @@ export function Settings({
           <UsersTab users={users} onUpdateUsers={onUpdateUsers} />
         </TabsContent>
 
-        <TabsContent value="villages" className="mt-6">
-          <VillagesTab 
-            villages={villages} 
-            onUpdateVillages={onUpdateVillages}
-            onCreateVillage={onCreateVillage}
-            onUpdateVillage={onUpdateVillage}
-            onDeleteVillage={onDeleteVillage}
-            isCreating={isCreatingVillage}
-            isUpdating={isUpdatingVillage}
-            isDeleting={isDeletingVillage}
-          />
-        </TabsContent>
+        {isSuperadmin && (
+          <TabsContent value="villages" className="mt-6">
+            <VillagesTab 
+              villages={villages} 
+              onUpdateVillages={onUpdateVillages}
+              onCreateVillage={onCreateVillage}
+              onUpdateVillage={onUpdateVillage}
+              onDeleteVillage={onDeleteVillage}
+              isCreating={isCreatingVillage}
+              isUpdating={isUpdatingVillage}
+              isDeleting={isDeletingVillage}
+            />
+          </TabsContent>
+        )}
 
         <TabsContent value="prohibited" className="mt-6">
           <ProhibitedAreasTab
