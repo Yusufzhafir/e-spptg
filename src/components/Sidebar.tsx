@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils';
 import { Home, FileText, CheckSquare, Map, BarChart3, Settings } from 'lucide-react';
+import { useAuthRole } from './AuthRoleProvider';
 
 interface SidebarProps {
   currentPage: string;
@@ -16,6 +17,17 @@ const menuItems = [
 ];
 
 export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
+  const { hasRole } = useAuthRole();
+  const isViewer = hasRole('Viewer');
+
+  // Filter out Settings menu item for Viewer role
+  const filteredMenuItems = menuItems.filter((item) => {
+    if (item.id === 'pengaturan' && isViewer) {
+      return false;
+    }
+    return true;
+  });
+
   return (
     <aside className="w-64 bg-white border-r border-gray-200 min-h-screen">
       <div className="p-6">
@@ -30,7 +42,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
         </div>
 
         <nav className="space-y-1">
-          {menuItems.map((item) => {
+          {filteredMenuItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentPage === item.id;
             

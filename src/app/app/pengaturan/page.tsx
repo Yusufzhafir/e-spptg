@@ -1,6 +1,7 @@
 'use client';
 
 import { Settings } from '@/components/Settings';
+import { RequireRole } from '@/components/RequireRole';
 import { trpc } from '@/trpc/client';
 import { User, Village, ProhibitedArea } from '@/types';
 import { useMemo, useRef } from 'react';
@@ -376,24 +377,30 @@ export default function PengaturanPage() {
   };
 
   return (
-    <Settings
-      users={users}
-      villages={villages}
-      prohibitedAreas={prohibitedAreas}
-      onUpdateUsers={handleUpdateUsers}
-      onUpdateVillages={handleUpdateVillages}
-      onUpdateProhibitedAreas={handleUpdateProhibitedAreas}
-      onCreateVillage={handleCreateVillage}
-      onUpdateVillage={handleUpdateVillage}
-      onDeleteVillage={handleDeleteVillage}
-      onCreateProhibitedArea={handleCreateProhibitedArea}
-      onUpdateProhibitedArea={handleUpdateProhibitedArea}
-      isCreatingVillage={createVillageMutation.isPending}
-      isUpdatingVillage={updateVillageMutation.isPending}
-      isDeletingVillage={deleteVillageMutation.isPending}
-      isCreatingProhibitedArea={createProhibitedAreaMutation.isPending}
-      isUpdatingProhibitedArea={updateProhibitedAreaMutation.isPending}
-      currentUserId={currentUser?.id}
-    />
+    <RequireRole
+      allowedRoles={['Superadmin', 'Admin', 'Verifikator']}
+      showError={true}
+      redirectTo="/app"
+    >
+      <Settings
+        users={users}
+        villages={villages}
+        prohibitedAreas={prohibitedAreas}
+        onUpdateUsers={handleUpdateUsers}
+        onUpdateVillages={handleUpdateVillages}
+        onUpdateProhibitedAreas={handleUpdateProhibitedAreas}
+        onCreateVillage={handleCreateVillage}
+        onUpdateVillage={handleUpdateVillage}
+        onDeleteVillage={handleDeleteVillage}
+        onCreateProhibitedArea={handleCreateProhibitedArea}
+        onUpdateProhibitedArea={handleUpdateProhibitedArea}
+        isCreatingVillage={createVillageMutation.isPending}
+        isUpdatingVillage={updateVillageMutation.isPending}
+        isDeletingVillage={deleteVillageMutation.isPending}
+        isCreatingProhibitedArea={createProhibitedAreaMutation.isPending}
+        isUpdatingProhibitedArea={updateProhibitedAreaMutation.isPending}
+        currentUserId={currentUser?.id}
+      />
+    </RequireRole>
   );
 }
