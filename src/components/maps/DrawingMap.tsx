@@ -73,11 +73,25 @@ function DrawingMapInternal({
       'overlaycomplete',
       (event: google.maps.drawing.OverlayCompleteEvent) => {
         if (event.type === google.maps.drawing.OverlayType.POLYGON) {
+          // Before creating new polygon, remove existing one
+          if (polygonRef.current) {
+            // Clean up listeners
+            const listeners = (polygonRef.current as any).__listeners;
+            if (listeners) {
+              listeners.forEach((listener: google.maps.MapsEventListener) => {
+                google.maps.event.removeListener(listener);
+              });
+            }
+            polygonRef.current.setMap(null);
+            polygonRef.current = null;
+          }
+
           const polygon = event.overlay as google.maps.Polygon;
           polygonRef.current = polygon;
 
-          // Disable drawing mode
+          // Disable drawing mode and control
           drawingManager.setDrawingMode(null);
+          drawingManager.setOptions({ drawingControl: false });
 
           // Get coordinates from polygon
           const path = polygon.getPath();
@@ -90,7 +104,7 @@ function DrawingMapInternal({
           isUpdatingFromMapRef.current = false;
 
           // Listen for path changes (editing)
-          google.maps.event.addListener(path, 'set_at', () => {
+          const setAtListener = google.maps.event.addListener(path, 'set_at', () => {
             if (!isUpdatingFromPropsRef.current) {
               isUpdatingFromMapRef.current = true;
               const updatedCoords = polygonPathToCoordinates(
@@ -102,7 +116,7 @@ function DrawingMapInternal({
             }
           });
 
-          google.maps.event.addListener(path, 'insert_at', () => {
+          const insertAtListener = google.maps.event.addListener(path, 'insert_at', () => {
             if (!isUpdatingFromPropsRef.current) {
               isUpdatingFromMapRef.current = true;
               const updatedCoords = polygonPathToCoordinates(
@@ -114,7 +128,7 @@ function DrawingMapInternal({
             }
           });
 
-          google.maps.event.addListener(path, 'remove_at', () => {
+          const removeAtListener = google.maps.event.addListener(path, 'remove_at', () => {
             if (!isUpdatingFromPropsRef.current) {
               isUpdatingFromMapRef.current = true;
               const updatedCoords = polygonPathToCoordinates(
@@ -125,6 +139,9 @@ function DrawingMapInternal({
               isUpdatingFromMapRef.current = false;
             }
           });
+
+          // Store listeners for cleanup
+          (polygon as any).__listeners = [setAtListener, insertAtListener, removeAtListener];
         }
       }
     );
@@ -236,6 +253,10 @@ function DrawingMapInternal({
         }
         polygonRef.current.setMap(null);
         polygonRef.current = null;
+      }
+      // Re-enable drawing control when polygon is cleared
+      if (drawingManagerRef.current) {
+        drawingManagerRef.current.setOptions({ drawingControl: true });
       }
       return;
     }
