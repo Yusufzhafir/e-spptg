@@ -81,7 +81,7 @@ export function LandingPage() {
         <div className="text-center">
           <h2 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
             Sistem Pendaftaran & Pengelolaan
-            <span className="text-blue-600 block mt-2">Tanah Girik (SPPTG)</span>
+            <span className="text-blue-600 block mt-2">Tanah Garapan</span>
           </h2>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto mb-10">
             Platform digital untuk memudahkan proses pendaftaran, verifikasi, dan pengelolaan 
