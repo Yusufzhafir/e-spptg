@@ -9,7 +9,7 @@ import {
 } from './ui/breadcrumb';
 import { Button } from './ui/button';
 import { Check, FileText, MapPin, ClipboardCheck, Award } from 'lucide-react';
-import { SubmissionDraft } from '../types';
+import { StatusSPPTG, SubmissionDraft } from '../types';
 import { Step1DocumentUpload } from './submission-steps/Step1DocumentUpload';
 import { Step2FieldValidation } from './submission-steps/Step2FieldValidation';
 import { Step3Results } from './submission-steps/Step3Results';
