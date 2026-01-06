@@ -184,16 +184,16 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
   const confirmSaveDecision = () => {
     const feedbackData: FeedbackData | undefined = requiresFeedback
       ? {
-          alasanTerpilih,
-          dokumenTidakLengkap: alasanTerpilih.includes('Dokumen tidak lengkap')
-            ? dokumenTidakLengkap
-            : undefined,
-          detailFeedback,
-          tanggalTenggat: tanggalTenggat || undefined,
-          lampiranFeedback,
-          timestamp: new Date().toISOString().split('T')[0],
-          pemberi: 'Bambang Supriyanto', // Mock current user
-        }
+        alasanTerpilih,
+        dokumenTidakLengkap: alasanTerpilih.includes('Dokumen tidak lengkap')
+          ? dokumenTidakLengkap
+          : undefined,
+        detailFeedback,
+        tanggalTenggat: tanggalTenggat || undefined,
+        lampiranFeedback,
+        timestamp: new Date().toISOString().split('T')[0],
+        pemberi: 'Bambang Supriyanto', // Mock current user
+      }
       : undefined;
 
     onUpdateDraft({
@@ -212,7 +212,6 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
     { label: 'KK', uploaded: !!draft.dokumenKK },
     { label: 'Kwitansi Jual Beli', uploaded: !!draft.dokumenKwitansi },
     { label: 'Surat Permohonan', uploaded: !!draft.dokumenPermohonan },
-    { label: 'SK Kepala Desa', uploaded: !!draft.dokumenSKKepalaDesa },
     { label: 'Berita Acara Lapangan', uploaded: !!draft.dokumenBeritaAcara },
   ];
 
@@ -401,22 +400,20 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
             </p>
 
             <div className="space-y-4">
-              <div>
-                <Label htmlFor="status">
-                  Status SPPTG <span className="text-red-600">*</span>
-                </Label>
-                <Select value={selectedStatus} onValueChange={(val) => setSelectedStatus(val as StatusSPPTG)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="SPPTG terdaftar">SPPTG terdaftar</SelectItem>
-                    <SelectItem value="SPPTG terdata">SPPTG terdata</SelectItem>
-                    <SelectItem value="SPPTG ditinjau ulang">SPPTG ditinjau ulang</SelectItem>
-                    <SelectItem value="SPPTG ditolak">SPPTG ditolak</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <Label htmlFor="status">
+                Status SPPTG <span className="text-red-600">*</span>
+              </Label>
+              <Select value={selectedStatus} onValueChange={(val) => setSelectedStatus(val as StatusSPPTG)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SPPTG terdaftar">SPPTG terdaftar</SelectItem>
+                  <SelectItem value="SPPTG terdata">SPPTG terdata</SelectItem>
+                  <SelectItem value="SPPTG ditinjau ulang">SPPTG ditinjau ulang</SelectItem>
+                  <SelectItem value="SPPTG ditolak">SPPTG ditolak</SelectItem>
+                </SelectContent>
+              </Select>
 
               {selectedStatus && (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
@@ -429,10 +426,10 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
                         selectedStatus === 'SPPTG terdaftar'
                           ? 'bg-green-100 text-green-700'
                           : selectedStatus === 'SPPTG terdata'
-                          ? 'bg-blue-100 text-blue-700'
-                          : selectedStatus === 'SPPTG ditinjau ulang'
-                          ? 'bg-yellow-100 text-yellow-700'
-                          : 'bg-red-100 text-red-700'
+                            ? 'bg-blue-100 text-blue-700'
+                            : selectedStatus === 'SPPTG ditinjau ulang'
+                              ? 'bg-yellow-100 text-yellow-700'
+                              : 'bg-red-100 text-red-700'
                       }
                     >
                       {selectedStatus}

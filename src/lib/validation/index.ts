@@ -149,3 +149,16 @@ export const listDocumentsSchema = z.object({
   limit: z.number().int().positive().default(50),
   offset: z.number().int().nonnegative().default(0),
 });
+
+// ============================================================================
+// Template Schemas
+// ============================================================================
+
+export const getTemplateUrlSchema = z.object({
+  templateType: z.enum(
+     [
+      'surat_pernyataan_permohonan.pdf',
+      'surat_pernyataan_tidak_sengketa.pdf',
+      'berita_acara_validasi_lapangan.pdf',
+    ],
+  )});
