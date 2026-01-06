@@ -435,11 +435,28 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
                       {selectedStatus}
                     </Badge>
                   </div>
-                  {selectedStatus === 'SPPTG terdaftar' && (
-                    <p className="text-xs text-gray-600 mt-2">
-                      ✓ Langkah &quot;Penerbitan SPPTG&quot; akan terbuka setelah menyimpan keputusan
-                    </p>
-                  )}
+                  <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    {selectedStatus === 'SPPTG terdata' && (
+                      <p className="text-sm text-blue-800">
+                        ℹ️ Pengajuan akan disimpan dengan status terdata. Tidak perlu menerbitkan SPPTG. Anda dapat langsung submit setelah menyimpan keputusan.
+                      </p>
+                    )}
+                    {selectedStatus === 'SPPTG ditolak' && (
+                      <p className="text-sm text-blue-800">
+                        ℹ️ Keputusan penolakan akan disimpan dan feedback akan dikirim ke pemohon. Tidak perlu menerbitkan SPPTG.
+                      </p>
+                    )}
+                    {selectedStatus === 'SPPTG ditinjau ulang' && (
+                      <p className="text-sm text-blue-800">
+                        ℹ️ Keputusan tinjau ulang akan disimpan dan feedback akan dikirim ke pemohon. Tidak perlu menerbitkan SPPTG.
+                      </p>
+                    )}
+                    {selectedStatus === 'SPPTG terdaftar' && (
+                      <p className="text-sm text-blue-800">
+                        ✓ Langkah &quot;Penerbitan SPPTG&quot; akan terbuka setelah menyimpan keputusan.
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 

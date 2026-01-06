@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -9,7 +9,7 @@ import {
 } from './ui/breadcrumb';
 import { Button } from './ui/button';
 import { Check, FileText, MapPin, ClipboardCheck, Award } from 'lucide-react';
-import { SubmissionDraft } from '../types';
+import { StatusSPPTG, SubmissionDraft } from '../types';
 import { Step1DocumentUpload } from './submission-steps/Step1DocumentUpload';
 import { Step2FieldValidation } from './submission-steps/Step2FieldValidation';
 import { Step3Results } from './submission-steps/Step3Results';
@@ -36,6 +36,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
   const [lastSaved, setLastSaved] = useState<string>('');
+  const isSubmittingFromStep3 = useRef(false);
 
   // Load draft from backend
   const { data: draftData, isLoading: isLoadingDraft, error: draftError } = trpc.drafts.getById.useQuery({ draftId });
@@ -55,11 +56,15 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
   // Submit draft mutation
   const submitDraftMutation = trpc.submissions.submitDraft.useMutation({
     onSuccess: (data) => {
-      toast.success('Pengajuan berhasil disimpan');
-      router.push(`/app/pengajuan`);
+      // If submitting from Step 3, handleSubmitFromStep3 will show status-specific message
+      if (!isSubmittingFromStep3.current) {
+        toast.success('Pengajuan berhasil disimpan');
+        router.push(`/app/pengajuan`);
+      }
     },
     onError: (error) => {
       toast.error(`Gagal menyimpan pengajuan: ${error.message}`);
+      isSubmittingFromStep3.current = false;
     },
   });
 
@@ -188,7 +193,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     });
   }, [draft, saveDraftMutation]);
 
-  const handleNext = () => {
+  const handleNext = async () => {
     // Validate current step before proceeding
     if (currentStep === 1) {
       if (!draft.namaPemohon || !draft.nik || draft.nik.length !== 16) {
@@ -209,14 +214,83 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     }
 
     if (currentStep === 3) {
+      // Validate status and feedback
       if (!draft.status) {
         toast.error('Harap tentukan status keputusan terlebih dahulu');
         return;
       }
+      
+      // Validate feedback for rejection/review statuses
       if ((draft.status === 'SPPTG ditolak' || draft.status === 'SPPTG ditinjau ulang') && !draft.feedback?.detailFeedback) {
         toast.error('Feedback wajib diisi untuk status ini');
         return;
       }
+      
+      // Save decision first
+      if (draft.id) {
+        await saveDraftMutation.mutateAsync({
+          draftId: draft.id,
+          currentStep: 3,
+          payload: {
+            namaPemohon: draft.namaPemohon,
+            nik: draft.nik,
+            persetujuanData: draft.persetujuanData,
+            saksiList: draft.saksiList || [],
+            coordinatesGeografis: draft.coordinatesGeografis || [],
+            fotoLahan: draft.fotoLahan || [],
+            overlapResults: draft.overlapResults || [],
+            dokumenKTP: draft.dokumenKTP,
+            dokumenKK: draft.dokumenKK,
+            dokumenKwitansi: draft.dokumenKwitansi,
+            dokumenPermohonan: draft.dokumenPermohonan,
+            dokumenSKKepalaDesa: draft.dokumenSKKepalaDesa,
+            juruUkur: draft.juruUkur,
+            pihakBPD: draft.pihakBPD,
+            kepalaDusun: draft.kepalaDusun,
+            rtSetempat: draft.rtSetempat,
+            luasLahan: draft.luasLahan,
+            kelilingLahan: draft.kelilingLahan,
+            dokumenBeritaAcara: draft.dokumenBeritaAcara,
+            dokumenPernyataanJualBeli: draft.dokumenPernyataanJualBeli,
+            dokumenAsalUsul: draft.dokumenAsalUsul,
+            dokumenTidakSengketa: draft.dokumenTidakSengketa,
+            status: draft.status,
+            alasanStatus: draft.alasanStatus,
+            verifikator: draft.verifikator,
+            tanggalKeputusan: draft.tanggalKeputusan,
+            feedback: draft.feedback,
+            dokumenSPPTG: draft.dokumenSPPTG,
+            nomorSPPTG: draft.nomorSPPTG,
+            tanggalTerbit: draft.tanggalTerbit,
+          } as any,
+        });
+      }
+      
+      // If status requires Step 4, navigate there
+      if (draft.status === 'SPPTG terdaftar') {
+        const nextStep = 4 as const;
+        setCurrentStep(nextStep);
+        setDraft((prev) => ({ ...prev, currentStep: nextStep }));
+        
+        // Save draft with updated step
+        if (draft.id) {
+          saveDraftMutation.mutate({
+            draftId: draft.id,
+            currentStep: nextStep,
+            payload: {
+              ...draft,
+              currentStep: nextStep,
+            } as any,
+          });
+        }
+        
+        window.scrollTo(0, 0);
+        return;
+      }
+      
+      // Otherwise, submit directly
+      await handleSubmitFromStep3();
+      return;
     }
 
     if (currentStep < 4) {
@@ -286,6 +360,50 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
 
   const handleUpdateDraft = (updates: Partial<SubmissionDraft>) => {
     setDraft((prev) => ({ ...prev, ...updates }));
+  };
+
+  // Auto-save when status is updated
+  const prevStatusRef = useRef<StatusSPPTG | undefined>(draft.status);
+  useEffect(() => {
+    // If status changed and we're on Step 3, immediately save to backend
+    if (draft.status && draft.status !== prevStatusRef.current && currentStep === 3 && draft.id) {
+      prevStatusRef.current = draft.status;
+      // Save immediately when status changes on Step 3
+      const timeoutId = setTimeout(() => {
+        saveDraftToBackend();
+      }, 200);
+      
+      // Cleanup: clear timeout if component unmounts or dependencies change
+      return () => clearTimeout(timeoutId);
+    } else if (draft.status) {
+      prevStatusRef.current = draft.status;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.status, currentStep, draft.id]);
+
+  const handleSubmitFromStep3 = async () => {
+    if (!draft.id) {
+      toast.error('Draf belum dimuat');
+      return;
+    }
+    
+    isSubmittingFromStep3.current = true;
+    try {
+      await submitDraftMutation.mutateAsync({ draftId: draft.id });
+      const statusMessages: Record<string, string> = {
+        'SPPTG terdata': 'Pengajuan berhasil disimpan dengan status terdata.',
+        'SPPTG ditolak': 'Keputusan penolakan berhasil disimpan dan akan dikirim ke pemohon.',
+        'SPPTG ditinjau ulang': 'Keputusan tinjau ulang berhasil disimpan dan akan dikirim ke pemohon.',
+      };
+      const message = statusMessages[draft.status || ''] || 'Pengajuan berhasil disimpan';
+      toast.success(message);
+      onComplete(draft);
+      router.push('/app/pengajuan');
+    } catch (error) {
+      // Error already handled in mutation
+    } finally {
+      isSubmittingFromStep3.current = false;
+    }
   };
 
   const canAccessStep4 = draft.status === 'SPPTG terdaftar';
@@ -449,15 +567,25 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
           )}
 
           {currentStep < 4 ? (
-            <Button 
-              onClick={handleNext} 
-              className="bg-blue-600 hover:bg-blue-700"
-              disabled={isLoadingDraft || saveDraftMutation.isPending}
-            >
-              {currentStep === 3 && draft.status === 'SPPTG terdaftar'
-                ? 'Lanjut ke Penerbitan SPPTG'
-                : 'Berikutnya'}
-            </Button>
+            currentStep === 3 && draft.status && draft.status !== 'SPPTG terdaftar' ? (
+              <Button 
+                onClick={handleSubmitFromStep3} 
+                className="bg-green-600 hover:bg-green-700"
+                disabled={isLoadingDraft || saveDraftMutation.isPending || submitDraftMutation.isPending}
+              >
+                {submitDraftMutation.isPending ? 'Mengirim...' : draft.status === 'SPPTG terdata' ? 'Submit Pengajuan' : 'Submit Keputusan'}
+              </Button>
+            ) : (
+              <Button 
+                onClick={handleNext} 
+                className="bg-blue-600 hover:bg-blue-700"
+                disabled={isLoadingDraft || saveDraftMutation.isPending}
+              >
+                {currentStep === 3 && draft.status === 'SPPTG terdaftar'
+                  ? 'Lanjut ke Penerbitan SPPTG'
+                  : 'Berikutnya'}
+              </Button>
+            )
           ) : (
             <Button
               onClick={async () => {
