@@ -369,9 +369,12 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     if (draft.status && draft.status !== prevStatusRef.current && currentStep === 3 && draft.id) {
       prevStatusRef.current = draft.status;
       // Save immediately when status changes on Step 3
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         saveDraftToBackend();
       }, 200);
+      
+      // Cleanup: clear timeout if component unmounts or dependencies change
+      return () => clearTimeout(timeoutId);
     } else if (draft.status) {
       prevStatusRef.current = draft.status;
     }
