@@ -5,6 +5,7 @@ import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { SignedIn, SignedOut, SignInButton, SignUpButton } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 
 const features = [
   {
@@ -49,12 +50,10 @@ export function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-                <Map className="w-6 h-6 text-white" />
-              </div>
+              <Image src={"/SIPETA_LOGO.png"} alt='sipeta logo' width={40} height={40} className="text-white" />
               <div>
-                <h1 className="text-xl font-semibold text-gray-900">SPPTG Dashboard</h1>
-                <p className="text-xs text-gray-500">Pemerintah Daerah</p>
+                <h1 className="text-xl font-semibold text-gray-900">SIPETA</h1>
+                <p className="text-xs text-gray-500">Sistem Administrasi Penguasaan Tanah Wilayah Desa</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -84,7 +83,7 @@ export function LandingPage() {
             <span className="text-blue-600 block mt-2">Tanah Garapan</span>
           </h2>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto mb-10">
-            Platform digital untuk memudahkan proses pendaftaran, verifikasi, dan pengelolaan 
+            Platform digital untuk memudahkan proses pendaftaran, verifikasi, dan pengelolaan
             Surat Keterangan Tanah (SKT) bagi masyarakat dan pemerintah daerah.
           </p>
           <div className="flex items-center justify-center gap-4">
@@ -99,9 +98,9 @@ export function LandingPage() {
               </Button>
             </SignedOut>
             <SignedIn>
-              <Button 
-                size="lg" 
-                onClick={() => router.push('/app')} 
+              <Button
+                size="lg"
+                onClick={() => router.push('/app')}
                 className="bg-blue-600 hover:bg-blue-700 text-lg px-8 py-6"
               >
                 Buka Dashboard
@@ -154,10 +153,10 @@ export function LandingPage() {
             </SignUpButton>
           </SignedOut>
           <SignedIn>
-            <Button 
-              size="lg" 
-              variant="secondary" 
-              onClick={() => router.push('/app')} 
+            <Button
+              size="lg"
+              variant="secondary"
+              onClick={() => router.push('/app')}
               className="text-lg px-8 py-6"
             >
               Buka Dashboard

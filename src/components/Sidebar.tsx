@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils';
 import { Home, FileText, CheckSquare, Map, BarChart3, Settings } from 'lucide-react';
 import { useAuthRole } from './AuthRoleProvider';
+import Image from 'next/image';
 
 interface SidebarProps {
   currentPage: string;
@@ -32,11 +33,9 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
     <aside className="w-64 bg-white border-r border-gray-200 min-h-screen">
       <div className="p-6">
         <div className="flex items-center gap-2 mb-8">
-          <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-            <Map className="w-6 h-6 text-white" />
-          </div>
+          <Image src={"/SIPETA_LOGO.png"} alt='sipeta logo' width={40} height={40} className="text-white" />
           <div>
-            <h2 className="text-lg text-gray-900">SPPTG Dashboard</h2>
+            <h2 className="text-lg text-gray-900">SIPETA</h2>
             <p className="text-xs text-gray-500">Pemerintah Daerah</p>
           </div>
         </div>
@@ -45,7 +44,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
           {filteredMenuItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentPage === item.id;
-            
+
             return (
               <button
                 key={item.id}
