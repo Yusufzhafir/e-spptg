@@ -160,5 +160,6 @@ export const getTemplateUrlSchema = z.object({
       'surat_pernyataan_permohonan.pdf',
       'surat_pernyataan_tidak_sengketa.pdf',
       'berita_acara_validasi_lapangan.pdf',
+      'spptg_template.pdf',
     ],
   )});

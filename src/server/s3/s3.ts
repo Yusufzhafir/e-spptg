@@ -90,7 +90,7 @@ export async function getDownloadUrl(s3Key: string) {
  * Signed URL expires in 1 week (604800 seconds)
  */
 export async function getTemplateSignedUrl(templateType: string): Promise<string> {
-  const filename = templateType
+  const filename = templateType;
   if (!filename) {
     throw new Error(`Template type tidak valid: ${templateType}`);
   }
@@ -105,4 +105,79 @@ export async function getTemplateSignedUrl(templateType: string): Promise<string
   });
 
   return signedUrl;
+}
+
+/**
+ * Fetch template PDF from S3 server-side and return as Buffer
+ * This avoids CORS issues when accessing private S3 buckets
+ */
+export async function fetchTemplatePDF(templateType: string): Promise<Buffer> {
+  const filename = templateType;
+  if (!filename) {
+    throw new Error(`Template type tidak valid: ${templateType}`);
+  }
+  const s3Key = `template-documents/${filename}`;
+  
+  try {
+    const command = new GetObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME!,
+      Key: s3Key,
+    });
+
+    const response = await s3Client.send(command);
+    
+    if (!response.Body) {
+      throw new Error('Template PDF not found or empty');
+    }
+
+    // Convert stream to buffer
+    // AWS SDK v3 returns Body as a Readable stream
+    const bodyStream = response.Body;
+    
+    if (!bodyStream) {
+      throw new Error('Template PDF body is empty');
+    }
+
+    // Convert stream to buffer using async iteration (works for both Node.js and web streams)
+    const chunks: Buffer[] = [];
+    
+    // Check if it's an async iterable (Node.js Readable stream or web ReadableStream)
+    if (typeof (bodyStream as any)[Symbol.asyncIterator] === 'function') {
+      for await (const chunk of bodyStream as any) {
+        if (Buffer.isBuffer(chunk)) {
+          chunks.push(chunk);
+        } else if (chunk instanceof Uint8Array) {
+          chunks.push(Buffer.from(chunk));
+        } else {
+          chunks.push(Buffer.from(chunk));
+        }
+      }
+      return Buffer.concat(chunks);
+    }
+    
+    // Fallback: Handle as Node.js Readable stream with event emitter
+    return new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      const stream = bodyStream as NodeJS.ReadableStream;
+      
+      stream.on('data', (chunk: any) => {
+        if (Buffer.isBuffer(chunk)) {
+          chunks.push(chunk);
+        } else {
+          chunks.push(Buffer.from(chunk));
+        }
+      });
+      
+      stream.on('end', () => {
+        resolve(Buffer.concat(chunks));
+      });
+      
+      stream.on('error', (error) => {
+        reject(error);
+      });
+    });
+  } catch (error) {
+    console.error('Error fetching template PDF from S3:', error);
+    throw new Error(`Failed to fetch template PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }

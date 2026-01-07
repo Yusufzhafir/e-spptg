@@ -11,9 +11,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog';
-import { Upload, File, X, CheckCircle2, Download, Printer, ArrowLeft } from 'lucide-react';
+import { Upload, File, X, CheckCircle2, Download, Printer, ArrowLeft, FileText, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/trpc/client';
+import { generateFilledPDFFromBase64, createPDFBlobUrl, pdfBytesToBase64, type PDFFormData } from '@/lib/pdf-generator';
+import { generateCertificateNumber } from '@/lib/certificate-number-generator';
 
 interface Step4Props {
   draft: SubmissionDraft;
@@ -23,9 +25,12 @@ interface Step4Props {
 export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
   const [isSuccessDialogOpen, setIsSuccessDialogOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [generatedPDFUrl, setGeneratedPDFUrl] = useState<string | null>(null);
 
   const createUploadUrlMutation = trpc.documents.createUploadUrl.useMutation();
   const uploadFileMutation = trpc.documents.uploadFile.useMutation();
+  const fetchTemplatePDFMutation = trpc.documents.fetchTemplatePDF.useMutation();
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -111,6 +116,157 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
+  /**
+   * Generate PDF certificate from template
+   */
+  const handleGeneratePDF = async () => {
+    if (!draft.id) {
+      toast.error('Draf belum dimuat');
+      return;
+    }
+
+    // Validate required fields
+    if (!draft.namaPemohon || !draft.nik) {
+      toast.error('Data pemohon belum lengkap. Pastikan nama dan NIK sudah diisi.');
+      return;
+    }
+
+    if (!draft.luasLahan) {
+      toast.error('Data lahan belum lengkap. Pastikan luas lahan sudah dihitung.');
+      return;
+    }
+
+    setIsGeneratingPDF(true);
+    try {
+      // Step 1: Fetch template PDF server-side (avoids CORS issues)
+      const { pdfData: templateBase64 } = await fetchTemplatePDFMutation.mutateAsync({
+        templateType: 'spptg_template.pdf',
+      });
+
+      // Step 2: Auto-generate certificate number if not set
+      let certificateNumber = draft.nomorSPPTG;
+      if (!certificateNumber) {
+        // Generate a default certificate number (sequence will be determined by backend in production)
+        certificateNumber = generateCertificateNumber(1, '00.00');
+        onUpdateDraft({ nomorSPPTG: certificateNumber });
+        toast.info(`Nomor SPPTG otomatis dihasilkan: ${certificateNumber}`);
+      }
+
+      // Step 3: Auto-set issue date if not set
+      let issueDate = draft.tanggalTerbit;
+      if (!issueDate) {
+        issueDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+        onUpdateDraft({ tanggalTerbit: issueDate });
+        toast.info(`Tanggal terbit otomatis diset: ${new Date(issueDate).toLocaleDateString('id-ID')}`);
+      }
+
+      // Step 4: Prepare form data for PDF
+      const formData: PDFFormData = {
+        nomorSPPTG: certificateNumber,
+        namaPemohon: draft.namaPemohon,
+        nik: draft.nik,
+        luasLahan: draft.luasLahan,
+        tanggalTerbit: issueDate,
+        // Note: villageName, kecamatan, kabupaten would need to be added to draft if available
+        // For now, these fields will be skipped if not in coordinates
+      };
+
+      // Step 5: Generate PDF from base64 template
+      const pdfBytes = await generateFilledPDFFromBase64(templateBase64, formData);
+
+      // Step 6: Create preview URL
+      const previewUrl = createPDFBlobUrl(pdfBytes);
+      setGeneratedPDFUrl(previewUrl);
+
+      // Step 7: Auto-upload the generated PDF
+      const filename = `SPPTG_${certificateNumber.replace(/\//g, '_')}.pdf`;
+      
+      // Create document record and get s3Key
+      const { documentId, publicUrl, s3Key } = await createUploadUrlMutation.mutateAsync({
+        draftId: draft.id,
+        category: 'SPPG',
+        filename,
+        size: pdfBytes.length,
+        mimeType: 'application/pdf',
+      });
+
+      // Convert PDF bytes to base64
+      const base64String = pdfBytesToBase64(pdfBytes);
+
+      // Upload file via server-side tRPC mutation
+      const uploadResult = await uploadFileMutation.mutateAsync({
+        draftId: draft.id,
+        documentId,
+        s3Key,
+        fileData: base64String,
+        filename,
+        mimeType: 'application/pdf',
+        size: pdfBytes.length,
+      });
+
+      // Update draft with generated document
+      onUpdateDraft({
+        dokumenSPPTG: {
+          name: filename,
+          size: pdfBytes.length,
+          url: uploadResult.publicUrl,
+          uploadedAt: new Date().toISOString(),
+          documentId,
+        },
+        nomorSPPTG: certificateNumber,
+        tanggalTerbit: issueDate,
+      });
+
+      toast.success('PDF SPPTG berhasil dibuat dan diunggah.');
+    } catch (error: any) {
+      console.error('PDF generation error:', error);
+      if (error.message) {
+        toast.error(`Gagal membuat PDF: ${error.message}`);
+      } else {
+        toast.error('Gagal membuat PDF. Silakan coba lagi atau hubungi administrator.');
+      }
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
+  /**
+   * Download generated PDF
+   */
+  const handleDownloadPDF = () => {
+    if (!draft.dokumenSPPTG?.url && !generatedPDFUrl) {
+      toast.error('Dokumen SPPTG belum tersedia');
+      return;
+    }
+
+    const url = generatedPDFUrl || draft.dokumenSPPTG?.url;
+    if (!url) return;
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = draft.dokumenSPPTG?.name || 'SPPTG.pdf';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast.success('SPPTG sedang diunduh');
+  };
+
+  /**
+   * Preview PDF in new window
+   */
+  const handlePreviewPDF = () => {
+    if (!draft.dokumenSPPTG?.url && !generatedPDFUrl) {
+      toast.error('Dokumen SPPTG belum tersedia');
+      return;
+    }
+
+    const url = generatedPDFUrl || draft.dokumenSPPTG?.url;
+    if (url) {
+      window.open(url, '_blank');
+    }
+  };
+
   const isFormComplete = draft.dokumenSPPTG && draft.nomorSPPTG && draft.tanggalTerbit;
 
   return (
@@ -134,6 +290,38 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
 
       {draft.status === 'SPPTG terdaftar' && (
         <>
+          {/* PDF Generation Button */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-blue-900 mb-1">
+                  Generate PDF SPPTG Otomatis
+                </h3>
+                <p className="text-xs text-blue-700">
+                  Klik tombol di bawah untuk membuat PDF SPPTG secara otomatis dari template.
+                  Nomor SPPTG dan tanggal terbit akan di-generate otomatis jika belum diisi.
+                </p>
+              </div>
+              <Button
+                onClick={handleGeneratePDF}
+                disabled={isGeneratingPDF || isUploading}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {isGeneratingPDF ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
+                    Membuat PDF...
+                  </>
+                ) : (
+                  <>
+                    <FileText className="w-4 h-4 mr-2" />
+                    Generate PDF
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+
           {/* SPPTG Document Upload */}
           <div className="space-y-3">
             <Label>
@@ -185,6 +373,26 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
                     <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
                   </div>
                   <div className="flex gap-2 flex-shrink-0">
+                    {draft.dokumenSPPTG.url && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handlePreviewPDF}
+                          className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleDownloadPDF}
+                          className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                        >
+                          <Download className="w-4 h-4" />
+                        </Button>
+                      </>
+                    )}
                     <label htmlFor="replace-spptg">
                       <Button variant="ghost" size="sm" type="button" asChild>
                         <span className="cursor-pointer text-xs">Ganti</span>
@@ -313,11 +521,14 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
           </div>
 
           <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button variant="outline" className="w-full" onClick={() => toast.success('SPPTG diunduh')}>
+            <Button variant="outline" className="w-full" onClick={handleDownloadPDF}>
               <Download className="w-4 h-4 mr-2" />
               Unduh SPPTG
             </Button>
-            <Button variant="outline" className="w-full" onClick={() => toast.success('SPPTG dicetak')}>
+            <Button variant="outline" className="w-full" onClick={() => {
+              handlePreviewPDF();
+              window.print();
+            }}>
               <Printer className="w-4 h-4 mr-2" />
               Cetak
             </Button>
