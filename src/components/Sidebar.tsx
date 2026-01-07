@@ -33,7 +33,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
     <aside className="w-64 bg-white border-r border-gray-200 min-h-screen">
       <div className="p-6">
         <div className="flex items-center gap-2 mb-8">
-          <Image src={"/SIPETA_LOGO.png"} alt='sipeta logo' width={40} height={40} className="text-white" />
+          <Image src={"/SIPETA_LOGO.png"} alt='sipeta logo' width={40} height={40} />
           <div>
             <h2 className="text-lg text-gray-900">SIPETA</h2>
             <p className="text-xs text-gray-500">Pemerintah Daerah</p>
