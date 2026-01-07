@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { createUploadUrlSchema, listDocumentsSchema, uploadFileSchema, getTemplateUrlSchema } from '@/lib/validation/index';
 import * as queries from '@/server/db/queries/documents';
 import * as draftQueries from '@/server/db/queries/drafts';
-import { generateUploadUrl, uploadFileToS3, getTemplateSignedUrl } from '@/server/s3/s3';
+import { generateUploadUrl, uploadFileToS3, getTemplateSignedUrl, fetchTemplatePDF } from '@/server/s3/s3';
 import { TRPCError } from '@trpc/server';
 import { adminProcedure, protectedProcedure, router } from '@/trpc/init';
 
@@ -302,5 +302,28 @@ export const documentsRouter = router({
     .mutation(async ({ input }) => {
       const signedUrl = await getTemplateSignedUrl(input.templateType);
       return { signedUrl };
+    }),
+
+  /**
+   * Fetch template PDF server-side and return as base64
+   * This avoids CORS issues when accessing private S3 buckets
+   */
+  fetchTemplatePDF: protectedProcedure
+    .input(getTemplateUrlSchema)
+    .mutation(async ({ input }) => {
+      try {
+        const pdfBuffer = await fetchTemplatePDF(input.templateType);
+        // Convert buffer to base64
+        const base64String = pdfBuffer.toString('base64');
+        return { 
+          pdfData: base64String,
+          size: pdfBuffer.length,
+        };
+      } catch (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error instanceof Error ? error.message : 'Failed to fetch template PDF',
+        });
+      }
     }),
 });

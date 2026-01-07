@@ -593,6 +593,23 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                   toast.error('Draf belum dimuat');
                   return;
                 }
+
+                // Validate Step 4 requirements before submitting
+                if (!draft.dokumenSPPTG) {
+                  toast.error('Dokumen SPPTG wajib diunggah sebelum diterbitkan');
+                  return;
+                }
+
+                if (!draft.nomorSPPTG) {
+                  toast.error('Nomor SPPTG wajib diisi sebelum diterbitkan');
+                  return;
+                }
+
+                if (!draft.tanggalTerbit) {
+                  toast.error('Tanggal terbit wajib diisi sebelum diterbitkan');
+                  return;
+                }
+
                 // Save final draft before submitting
                 await saveDraftMutation.mutateAsync({
                   draftId: draft.id,
