@@ -50,7 +50,7 @@ export function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Image src={"/SIPETA_LOGO.png"} alt='sipeta logo' width={40} height={40} className="text-white" />
+              <Image src={"/SIPETA_LOGO.png"} alt='sipeta logo' width={40} height={40} />
               <div>
                 <h1 className="text-xl font-semibold text-gray-900">SIPETA</h1>
                 <p className="text-xs text-gray-500">Sistem Administrasi Penguasaan Tanah Wilayah Desa</p>
@@ -170,10 +170,8 @@ export function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                <Map className="w-4 h-4 text-white" />
-              </div>
-              <span className="text-white font-semibold">SPPTG Dashboard</span>
+              <Image src={"/SIPETA_LOGO.png"} alt='sipeta logo' width={40} height={40} />
+              <span className="text-white font-semibold">SIPETA</span>
             </div>
             <p className="text-sm">
               &copy; {new Date().getFullYear()} Pemerintah Daerah. Hak Cipta Dilindungi.
