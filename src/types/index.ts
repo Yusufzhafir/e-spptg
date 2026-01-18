@@ -20,6 +20,7 @@ export interface Submission {
   kecamatan: string;
   kabupaten: string;
   luas: number; // m²
+  luasManual?: number | null; // m² input manual
   penggunaanLahan: string;
   catatan: string | null;
   
@@ -115,7 +116,7 @@ export interface ProhibitedArea {
   dasarHukum: string | null;
   tanggalEfektif: string;
   tanggalUnggah: string;
-  diunggahOleh: number;
+  diunggahOleh: number | null;
   statusValidasi: ValidationStatus;
   aktifDiValidasi: boolean;
   warna: string;
@@ -203,6 +204,7 @@ export interface SubmissionDraft {
   
   overlapResults: OverlapResult[];
   luasLahan?: number; // m² calculated from polygon
+  luasManual?: number | null; // m² input manual
   kelilingLahan?: number; // m
   
   // Step 3: Results

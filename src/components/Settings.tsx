@@ -75,12 +75,10 @@ export function Settings({
   const isSuperadmin = hasRole('Superadmin');
 
   // Handle tab state when user role changes or unauthorized tab access
-  useEffect(() => {
-    // If active tab is "villages" and user doesn't have Superadmin role, switch to "users" tab
-    if (activeTab === 'villages' && !isSuperadmin) {
-      setActiveTab('users');
-    }
-  }, [activeTab, isSuperadmin]);
+  // Sync state during render to avoid cascading updates from useEffect
+  if (activeTab === 'villages' && !isSuperadmin) {
+    setActiveTab('users');
+  }
 
   return (
     <div className="space-y-6">

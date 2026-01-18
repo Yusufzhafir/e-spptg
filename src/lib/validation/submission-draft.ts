@@ -116,6 +116,11 @@ export const step2LapanganSchema = z.object({
     .positive('Luas lahan harus positif')
     .optional(),
 
+  luasManual: z
+    .number()
+    .positive('Luas manual harus positif')
+    .optional(),
+
   kelilingLahan: z
     .number()
     .positive('Keliling lahan harus positif')
@@ -218,6 +223,7 @@ export const submissionDraftPayloadSchema = z.object({
   saksiList: z.array(boundaryWitnessSchema).default([]),
   coordinatesGeografis: z.array(geographicCoordinateSchema).default([]),
   luasLahan: z.number().optional(),
+  luasManual: z.number().optional(),
   kelilingLahan: z.number().optional(),
   dokumenBeritaAcara: uploadedDocumentSchema.optional(),
   dokumenAsalUsul: uploadedDocumentSchema.optional(),

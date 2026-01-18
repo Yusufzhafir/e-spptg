@@ -382,6 +382,20 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                 </p>
               </div>
             )}
+
+            <div className="space-y-1">
+                 <Label>Luas Manual (m²)</Label>
+                 <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="Masukkan luas manual jika berbeda"
+                    value={draft.luasManual || ''}
+                    onChange={(e) => onUpdateDraft({ luasManual: parseFloat(e.target.value) || 0 })}
+                 />
+                 <p className="text-xs text-gray-500">
+                    Opsional: Masukkan luas hasil pengukuran manual jika berbeda dengan perhitungan otomatis.
+                 </p>
+            </div>
           </div>
 
           {/* Map Preview */}

@@ -222,6 +222,18 @@ The submission process has 4 steps:
 
 Draft data is stored as JSONB in `submission_drafts.payload` and validated per-step using Zod schemas in `src/lib/validation/submission-draft.ts`.
 
+### Submission Architecture & Gotchas
+
+*   **State Persistence**: Data is primarily saved to `submission_drafts` via `trpc.drafts.saveStep`. The final submission is created from this draft via `trpc.submissions.submitDraft`.
+*   **Explicit Saving**: When transitioning between steps (e.g., using `handleNext` in `SubmissionFlow.tsx`), the **current** step's data MUST be explicitly saved to the backend *before* changing the local `currentStep` state. Relying solely on auto-save intervals or `useEffect` hooks triggered by unmounts can lead to data loss (race conditions).
+*   **Payload Construction**: The payload object passed to `saveDraftStep` (in `saveDraftToBackend`) must be manually constructed to include ALL relevant fields from the state. Missing fields here (like `luasManual` previously) will cause data to not be persisted to the DB, even if the local state is correct.
+*   **Data Flow**:
+    1.  User enters data (Step 2: Coordinates, `luasManual`, Witnesses).
+    2.  `handleNext` triggered.
+    3.  `saveDraftMutation` called with current step data (including `luasManual`).
+    4.  On success, `currentStep` state updates to next step.
+    5.  Final submission reads from `submission_drafts.payload`.
+
 ---
 
 ## File Storage
@@ -346,4 +358,3 @@ S3_BUCKET_NAME=
 S3_ENDPOINT=            # For R2 or custom S3
 S3_PUBLIC_URL=          # Public URL prefix for files
 ```
-
