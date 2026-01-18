@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { trpc } from '@/trpc/client';
 import { useRouter } from 'next/navigation';
+import { coordinateSystem } from '../../drizzle/schema';
 
 interface SubmissionFlowProps {
   draftId: number;
@@ -40,7 +41,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
 
   // Load draft from backend
   const { data: draftData, isLoading: isLoadingDraft, error: draftError } = trpc.drafts.getById.useQuery({ draftId });
-  
+
   // Save draft mutation
   const saveDraftMutation = trpc.drafts.saveStep.useMutation({
     onSuccess: (data) => {
@@ -138,12 +139,13 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     }
   }, [draftError]);
 
-  const saveDraftToBackend = useCallback(() => {
+  const saveDraftToBackend = useCallback(async (stepOverride?: 1 | 2 | 3 | 4) => {
     if (!draft.id) return;
-    
+
     // Ensure currentStep is a valid literal type
-    const step = draft.currentStep as 1 | 2 | 3 | 4;
-    saveDraftMutation.mutate({
+    const step = stepOverride || (draft.currentStep as 1 | 2 | 3 | 4);
+    
+    return saveDraftMutation.mutateAsync({
       draftId: draft.id,
       currentStep: step,
       payload: {
@@ -152,6 +154,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         persetujuanData: draft.persetujuanData,
         saksiList: draft.saksiList || [],
         coordinatesGeografis: draft.coordinatesGeografis || [],
+        coordinateSystem: draft.coordinateSystem,
         fotoLahan: draft.fotoLahan || [],
         overlapResults: draft.overlapResults || [],
         dokumenKTP: draft.dokumenKTP,
@@ -221,52 +224,16 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         toast.error('Harap tentukan status keputusan terlebih dahulu');
         return;
       }
-      
+
       // Validate feedback for rejection/review statuses
       if ((draft.status === 'SPPTG ditolak' || draft.status === 'SPPTG ditinjau ulang') && !draft.feedback?.detailFeedback) {
         toast.error('Feedback wajib diisi untuk status ini');
         return;
       }
-      
+
       // Save decision first
       if (draft.id) {
-        await saveDraftMutation.mutateAsync({
-          draftId: draft.id,
-          currentStep: 3,
-          payload: {
-            namaPemohon: draft.namaPemohon,
-            nik: draft.nik,
-            persetujuanData: draft.persetujuanData,
-            saksiList: draft.saksiList || [],
-            coordinatesGeografis: draft.coordinatesGeografis || [],
-            fotoLahan: draft.fotoLahan || [],
-            overlapResults: draft.overlapResults || [],
-            dokumenKTP: draft.dokumenKTP,
-            dokumenKK: draft.dokumenKK,
-            dokumenKwitansi: draft.dokumenKwitansi,
-            dokumenPermohonan: draft.dokumenPermohonan,
-            dokumenSKKepalaDesa: draft.dokumenSKKepalaDesa,
-            juruUkur: draft.juruUkur,
-            pihakBPD: draft.pihakBPD,
-            kepalaDusun: draft.kepalaDusun,
-            rtSetempat: draft.rtSetempat,
-            luasLahan: draft.luasLahan,
-            luasManual: draft.luasManual,
-            kelilingLahan: draft.kelilingLahan,
-            dokumenBeritaAcara: draft.dokumenBeritaAcara,
-            dokumenPernyataanJualBeli: draft.dokumenPernyataanJualBeli,
-            dokumenAsalUsul: draft.dokumenAsalUsul,
-            dokumenTidakSengketa: draft.dokumenTidakSengketa,
-            status: draft.status,
-            alasanStatus: draft.alasanStatus,
-            verifikator: draft.verifikator,
-            tanggalKeputusan: draft.tanggalKeputusan,
-            feedback: draft.feedback,
-            dokumenSPPTG: draft.dokumenSPPTG,
-            nomorSPPTG: draft.nomorSPPTG,
-            tanggalTerbit: draft.tanggalTerbit,
-          } as any,
-        });
+        await saveDraftToBackend(3);
       }
       
       // If status requires Step 4, navigate there
@@ -277,20 +244,13 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         
         // Save draft with updated step
         if (draft.id) {
-          saveDraftMutation.mutate({
-            draftId: draft.id,
-            currentStep: nextStep,
-            payload: {
-              ...draft,
-              currentStep: nextStep,
-            } as any,
-          });
+          saveDraftToBackend(nextStep);
         }
         
         window.scrollTo(0, 0);
         return;
       }
-      
+
       // Otherwise, submit directly
       await handleSubmitFromStep3();
       return;
@@ -299,43 +259,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     if (currentStep < 4) {
       // Save current step data before transitioning
       if (draft.id) {
-        await saveDraftMutation.mutateAsync({
-          draftId: draft.id,
-          currentStep: currentStep as 1 | 2 | 3 | 4,
-          payload: {
-            namaPemohon: draft.namaPemohon,
-            nik: draft.nik,
-            persetujuanData: draft.persetujuanData,
-            saksiList: draft.saksiList || [],
-            coordinatesGeografis: draft.coordinatesGeografis || [],
-            fotoLahan: draft.fotoLahan || [],
-            overlapResults: draft.overlapResults || [],
-            dokumenKTP: draft.dokumenKTP,
-            dokumenKK: draft.dokumenKK,
-            dokumenKwitansi: draft.dokumenKwitansi,
-            dokumenPermohonan: draft.dokumenPermohonan,
-            dokumenSKKepalaDesa: draft.dokumenSKKepalaDesa,
-            juruUkur: draft.juruUkur,
-            pihakBPD: draft.pihakBPD,
-            kepalaDusun: draft.kepalaDusun,
-            rtSetempat: draft.rtSetempat,
-            luasLahan: draft.luasLahan,
-            luasManual: draft.luasManual,
-            kelilingLahan: draft.kelilingLahan,
-            dokumenBeritaAcara: draft.dokumenBeritaAcara,
-            dokumenPernyataanJualBeli: draft.dokumenPernyataanJualBeli,
-            dokumenAsalUsul: draft.dokumenAsalUsul,
-            dokumenTidakSengketa: draft.dokumenTidakSengketa,
-            status: draft.status,
-            alasanStatus: draft.alasanStatus,
-            verifikator: draft.verifikator,
-            tanggalKeputusan: draft.tanggalKeputusan,
-            feedback: draft.feedback,
-            dokumenSPPTG: draft.dokumenSPPTG,
-            nomorSPPTG: draft.nomorSPPTG,
-            tanggalTerbit: draft.tanggalTerbit,
-          } as any,
-        });
+        await saveDraftToBackend(currentStep as 1 | 2 | 3 | 4);
       }
 
       const nextStep = (currentStep + 1) as 1 | 2 | 3 | 4;
@@ -344,43 +268,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
       
       // Save draft with updated step
       if (draft.id) {
-        saveDraftMutation.mutate({
-          draftId: draft.id,
-          currentStep: nextStep,
-          payload: {
-            namaPemohon: draft.namaPemohon,
-            nik: draft.nik,
-            persetujuanData: draft.persetujuanData,
-            saksiList: draft.saksiList || [],
-            coordinatesGeografis: draft.coordinatesGeografis || [],
-            fotoLahan: draft.fotoLahan || [],
-            overlapResults: draft.overlapResults || [],
-            dokumenKTP: draft.dokumenKTP,
-            dokumenKK: draft.dokumenKK,
-            dokumenKwitansi: draft.dokumenKwitansi,
-            dokumenPermohonan: draft.dokumenPermohonan,
-            dokumenSKKepalaDesa: draft.dokumenSKKepalaDesa,
-            juruUkur: draft.juruUkur,
-            pihakBPD: draft.pihakBPD,
-            kepalaDusun: draft.kepalaDusun,
-            rtSetempat: draft.rtSetempat,
-            luasLahan: draft.luasLahan,
-            luasManual: draft.luasManual,
-            kelilingLahan: draft.kelilingLahan,
-            dokumenBeritaAcara: draft.dokumenBeritaAcara,
-            dokumenPernyataanJualBeli: draft.dokumenPernyataanJualBeli,
-            dokumenAsalUsul: draft.dokumenAsalUsul,
-            dokumenTidakSengketa: draft.dokumenTidakSengketa,
-            status: draft.status,
-            alasanStatus: draft.alasanStatus,
-            verifikator: draft.verifikator,
-            tanggalKeputusan: draft.tanggalKeputusan,
-            feedback: draft.feedback,
-            dokumenSPPTG: draft.dokumenSPPTG,
-            nomorSPPTG: draft.nomorSPPTG,
-            tanggalTerbit: draft.tanggalTerbit,
-          } as any, // Using 'as any' because payload structure varies by step
-        });
+        saveDraftToBackend(nextStep);
       }
       
       window.scrollTo(0, 0);
@@ -417,7 +305,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
       const timeoutId = setTimeout(() => {
         saveDraftToBackend();
       }, 200);
-      
+
       // Cleanup: clear timeout if component unmounts or dependencies change
       return () => clearTimeout(timeoutId);
     } else if (draft.status) {
@@ -431,7 +319,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
       toast.error('Draf belum dimuat');
       return;
     }
-    
+
     isSubmittingFromStep3.current = true;
     try {
       await submitDraftMutation.mutateAsync({ draftId: draft.id });
@@ -508,10 +396,10 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                       isCompleted
                         ? 'bg-green-600 border-green-600'
                         : isActive
-                        ? 'bg-blue-600 border-blue-600'
-                        : isLocked
-                        ? 'bg-gray-100 border-gray-300'
-                        : 'bg-white border-gray-300'
+                          ? 'bg-blue-600 border-blue-600'
+                          : isLocked
+                            ? 'bg-gray-100 border-gray-300'
+                            : 'bg-white border-gray-300'
                     )}
                   >
                     {isCompleted ? (
@@ -523,8 +411,8 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                           isActive
                             ? 'text-white'
                             : isLocked
-                            ? 'text-gray-400'
-                            : 'text-gray-600'
+                              ? 'text-gray-400'
+                              : 'text-gray-600'
                         )}
                       />
                     )}
@@ -535,8 +423,8 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                       isActive
                         ? 'text-blue-700'
                         : isLocked
-                        ? 'text-gray-400'
-                        : 'text-gray-700'
+                          ? 'text-gray-400'
+                          : 'text-gray-700'
                     )}
                   >
                     {step.label}
@@ -597,8 +485,8 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         </Button>
 
         <div className="flex gap-3">
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             onClick={handleSaveDraft}
             disabled={!draft.id || saveDraftMutation.isPending || isLoadingDraft}
           >
@@ -613,16 +501,16 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
 
           {currentStep < 4 ? (
             currentStep === 3 && draft.status && draft.status !== 'SPPTG terdaftar' ? (
-              <Button 
-                onClick={handleSubmitFromStep3} 
+              <Button
+                onClick={handleSubmitFromStep3}
                 className="bg-green-600 hover:bg-green-700"
                 disabled={isLoadingDraft || saveDraftMutation.isPending || submitDraftMutation.isPending}
               >
                 {submitDraftMutation.isPending ? 'Mengirim...' : draft.status === 'SPPTG terdata' ? 'Submit Pengajuan' : 'Submit Keputusan'}
               </Button>
             ) : (
-              <Button 
-                onClick={handleNext} 
+              <Button
+                onClick={handleNext}
                 className="bg-blue-600 hover:bg-blue-700"
                 disabled={isLoadingDraft || saveDraftMutation.isPending}
               >
@@ -656,14 +544,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                 }
 
                 // Save final draft before submitting
-                await saveDraftMutation.mutateAsync({
-                  draftId: draft.id,
-                  currentStep: 4,
-                  payload: {
-                    ...draft,
-                    currentStep: 4,
-                  } as any,
-                });
+                await saveDraftToBackend(4);
                 // Submit draft to create submission
                 try {
                   const result = await submitDraftMutation.mutateAsync({
