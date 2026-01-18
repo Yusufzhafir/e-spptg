@@ -204,7 +204,7 @@ export interface SubmissionDraft {
   
   overlapResults: OverlapResult[];
   luasLahan?: number; // m² calculated from polygon
-  luasManual?: number; // m² input manual
+  luasManual?: number | null; // m² input manual
   kelilingLahan?: number; // m
   
   // Step 3: Results
