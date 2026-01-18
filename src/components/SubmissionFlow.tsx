@@ -108,6 +108,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         kepalaDusun: payload.kepalaDusun,
         rtSetempat: payload.rtSetempat,
         luasLahan: payload.luasLahan,
+        luasManual: payload.luasManual,
         kelilingLahan: payload.kelilingLahan,
         dokumenBeritaAcara: payload.dokumenBeritaAcara,
         dokumenPernyataanJualBeli: payload.dokumenPernyataanJualBeli,
@@ -249,6 +250,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
             kepalaDusun: draft.kepalaDusun,
             rtSetempat: draft.rtSetempat,
             luasLahan: draft.luasLahan,
+            luasManual: draft.luasManual,
             kelilingLahan: draft.kelilingLahan,
             dokumenBeritaAcara: draft.dokumenBeritaAcara,
             dokumenPernyataanJualBeli: draft.dokumenPernyataanJualBeli,
@@ -294,6 +296,47 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     }
 
     if (currentStep < 4) {
+      // Save current step data before transitioning
+      if (draft.id) {
+        await saveDraftMutation.mutateAsync({
+          draftId: draft.id,
+          currentStep: currentStep as 1 | 2 | 3 | 4,
+          payload: {
+            namaPemohon: draft.namaPemohon,
+            nik: draft.nik,
+            persetujuanData: draft.persetujuanData,
+            saksiList: draft.saksiList || [],
+            coordinatesGeografis: draft.coordinatesGeografis || [],
+            fotoLahan: draft.fotoLahan || [],
+            overlapResults: draft.overlapResults || [],
+            dokumenKTP: draft.dokumenKTP,
+            dokumenKK: draft.dokumenKK,
+            dokumenKwitansi: draft.dokumenKwitansi,
+            dokumenPermohonan: draft.dokumenPermohonan,
+            dokumenSKKepalaDesa: draft.dokumenSKKepalaDesa,
+            juruUkur: draft.juruUkur,
+            pihakBPD: draft.pihakBPD,
+            kepalaDusun: draft.kepalaDusun,
+            rtSetempat: draft.rtSetempat,
+            luasLahan: draft.luasLahan,
+            luasManual: draft.luasManual,
+            kelilingLahan: draft.kelilingLahan,
+            dokumenBeritaAcara: draft.dokumenBeritaAcara,
+            dokumenPernyataanJualBeli: draft.dokumenPernyataanJualBeli,
+            dokumenAsalUsul: draft.dokumenAsalUsul,
+            dokumenTidakSengketa: draft.dokumenTidakSengketa,
+            status: draft.status,
+            alasanStatus: draft.alasanStatus,
+            verifikator: draft.verifikator,
+            tanggalKeputusan: draft.tanggalKeputusan,
+            feedback: draft.feedback,
+            dokumenSPPTG: draft.dokumenSPPTG,
+            nomorSPPTG: draft.nomorSPPTG,
+            tanggalTerbit: draft.tanggalTerbit,
+          } as any,
+        });
+      }
+
       const nextStep = (currentStep + 1) as 1 | 2 | 3 | 4;
       setCurrentStep(nextStep);
       setDraft((prev) => ({ ...prev, currentStep: nextStep }));
@@ -321,6 +364,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
             kepalaDusun: draft.kepalaDusun,
             rtSetempat: draft.rtSetempat,
             luasLahan: draft.luasLahan,
+            luasManual: draft.luasManual,
             kelilingLahan: draft.kelilingLahan,
             dokumenBeritaAcara: draft.dokumenBeritaAcara,
             dokumenPernyataanJualBeli: draft.dokumenPernyataanJualBeli,

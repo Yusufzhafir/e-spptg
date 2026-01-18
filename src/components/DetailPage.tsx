@@ -89,6 +89,11 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
                 <div>
                   <p className="text-gray-600">Luas</p>
                   <p>{submission.luas.toLocaleString()} m²</p>
+                  {submission.luasManual != null && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      (Manual: {submission.luasManual.toLocaleString()} m²)
+                    </p>
+                  )}
                 </div>
                 <div>
                   <p className="text-gray-600">Penggunaan</p>
@@ -227,6 +232,11 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
                     <div>
                       <p className="text-sm text-gray-600">Luas</p>
                       <p>{submission.luas.toLocaleString()} m²</p>
+                      {submission.luasManual != null && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          (Manual: {submission.luasManual.toLocaleString()} m²)
+                        </p>
+                      )}
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Penggunaan Lahan</p>

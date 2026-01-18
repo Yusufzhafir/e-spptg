@@ -239,6 +239,7 @@ export const submissions = pgTable(
     kecamatan: varchar('kecamatan', { length: 255 }).notNull(),
     kabupaten: varchar('kabupaten', { length: 255 }).notNull(),
     luas: doublePrecision('luas').notNull(), // m²
+    luasManual: doublePrecision('luas_manual'), // m² (input manual user)
     penggunaanLahan: varchar('penggunaan_lahan', { length: 255 }).notNull(),
     catatan: text('catatan'),
     

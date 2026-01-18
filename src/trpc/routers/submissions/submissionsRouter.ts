@@ -71,6 +71,7 @@ export const submissionsRouter = router({
                         kecamatan: payload.kecamatan || '',
                         kabupaten: payload.kabupaten || 'Cirebon',
                         luas: payload.luasLahan || 0,
+                        luasManual: payload.luasManual || 0,
                         penggunaanLahan: payload.penggunaanLahan || '',
                         catatan: payload.catatan ?? null,
                         status: submissionStatus,
