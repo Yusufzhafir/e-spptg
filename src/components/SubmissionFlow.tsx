@@ -18,7 +18,6 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { trpc } from '@/trpc/client';
 import { useRouter } from 'next/navigation';
-import { coordinateSystem } from '../../drizzle/schema';
 
 interface SubmissionFlowProps {
   draftId: number;
