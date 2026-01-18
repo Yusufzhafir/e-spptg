@@ -138,19 +138,6 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     }
   }, [draftError]);
 
-  // Auto-save functionality
-  useEffect(() => {
-    if (!draft.id || isLoadingDraft) return;
-
-    const autoSave = setInterval(() => {
-      if (draft.namaPemohon || draft.nik) {
-        saveDraftToBackend();
-      }
-    }, 60000); // Auto-save every minute
-
-    return () => clearInterval(autoSave);
-  }, [draft, isLoadingDraft]);
-
   const saveDraftToBackend = useCallback(() => {
     if (!draft.id) return;
     
@@ -177,6 +164,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         kepalaDusun: draft.kepalaDusun,
         rtSetempat: draft.rtSetempat,
         luasLahan: draft.luasLahan,
+        luasManual: draft.luasManual,
         kelilingLahan: draft.kelilingLahan,
         dokumenBeritaAcara: draft.dokumenBeritaAcara,
         dokumenPernyataanJualBeli: draft.dokumenPernyataanJualBeli,
@@ -193,6 +181,19 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
       } as any, // Using 'as any' because payload structure varies by step
     });
   }, [draft, saveDraftMutation]);
+
+  // Auto-save functionality
+  useEffect(() => {
+    if (!draft.id || isLoadingDraft) return;
+
+    const autoSave = setInterval(() => {
+      if (draft.namaPemohon || draft.nik) {
+        saveDraftToBackend();
+      }
+    }, 60000); // Auto-save every minute
+
+    return () => clearInterval(autoSave);
+  }, [draft, isLoadingDraft, saveDraftToBackend]);
 
   const handleNext = async () => {
     // Validate current step before proceeding

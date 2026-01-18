@@ -20,7 +20,7 @@ export interface Submission {
   kecamatan: string;
   kabupaten: string;
   luas: number; // m²
-  luasManual?: number; // m² input manual
+  luasManual?: number | null; // m² input manual
   penggunaanLahan: string;
   catatan: string | null;
   
@@ -116,7 +116,7 @@ export interface ProhibitedArea {
   dasarHukum: string | null;
   tanggalEfektif: string;
   tanggalUnggah: string;
-  diunggahOleh: number;
+  diunggahOleh: number | null;
   statusValidasi: ValidationStatus;
   aktifDiValidasi: boolean;
   warna: string;

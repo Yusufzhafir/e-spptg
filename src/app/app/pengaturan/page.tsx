@@ -4,7 +4,7 @@ import { Settings } from '@/components/Settings';
 import { RequireRole } from '@/components/RequireRole';
 import { trpc } from '@/trpc/client';
 import { User, Village, ProhibitedArea } from '@/types';
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import { CreateProhibitedAreaInput, UpdateProhibitedAreaInput } from '@/types/prohibitedAreas';
 
@@ -108,7 +108,7 @@ export default function PengaturanPage() {
   // Transform data to match component types
   const users: User[] = useMemo(() => {
     if (!usersData) return [];
-    const transformed = usersData.map((u: any) => ({
+    return usersData.map((u) => ({
       id: u.id,
       clerkUserId: u.clerkUserId,
       nama: u.nama,
@@ -119,13 +119,15 @@ export default function PengaturanPage() {
       nomorHP: u.nomorHP || null,
       terakhirMasuk: u.terakhirMasuk ? new Date(u.terakhirMasuk) : null,
     }));
-    prevUsersRef.current = transformed;
-    return transformed;
   }, [usersData]);
+
+  useEffect(() => {
+    prevUsersRef.current = users;
+  }, [users]);
 
   const villages: Village[] = useMemo(() => {
     if (!villagesData) return [];
-    const transformed = villagesData.map((v: any) => ({
+    return villagesData.map((v) => ({
       id: v.id,
       kodeDesa: v.kodeDesa,
       namaDesa: v.namaDesa,
@@ -134,40 +136,34 @@ export default function PengaturanPage() {
       provinsi: v.provinsi,
       jumlahPengajuan: v.jumlahPengajuan || 0,
     }));
-    prevVillagesRef.current = transformed;
-    return transformed;
   }, [villagesData]);
+
+  useEffect(() => {
+    prevVillagesRef.current = villages;
+  }, [villages]);
 
   const prohibitedAreas: ProhibitedArea[] = useMemo(() => {
     if (!prohibitedAreasData) return [];
-    const transformed = prohibitedAreasData.map((a: any) => ({
+    return prohibitedAreasData.map((a) => ({
       id: a.id,
       namaKawasan: a.namaKawasan,
       jenisKawasan: a.jenisKawasan,
       sumberData: a.sumberData,
       dasarHukum: a.dasarHukum,
-      tanggalEfektif: a.tanggalEfektif instanceof Date 
-        ? a.tanggalEfektif.toISOString() 
-        : typeof a.tanggalEfektif === 'string' 
-          ? a.tanggalEfektif 
-          : new Date(a.tanggalEfektif).toISOString(),
-      tanggalUnggah: a.tanggalUnggah instanceof Date 
-        ? a.tanggalUnggah.toISOString() 
-        : typeof a.tanggalUnggah === 'string' 
-          ? a.tanggalUnggah 
-          : a.tanggalUnggah 
-            ? new Date(a.tanggalUnggah).toISOString() 
-            : new Date().toISOString(),
+      tanggalEfektif: typeof a.tanggalEfektif === 'string' ? a.tanggalEfektif : new Date(a.tanggalEfektif).toISOString(),
+      tanggalUnggah: typeof a.tanggalUnggah === 'string' ? a.tanggalUnggah : new Date(a.tanggalUnggah).toISOString(),
       diunggahOleh: a.diunggahOleh,
       statusValidasi: a.statusValidasi,
       aktifDiValidasi: a.aktifDiValidasi,
       warna: a.warna,
       catatan: a.catatan,
-      geomGeoJSON: a.geom,
+      geomGeoJSON: a.geom as string | null,
     }));
-    prevProhibitedAreasRef.current = transformed;
-    return transformed;
   }, [prohibitedAreasData]);
+
+  useEffect(() => {
+    prevProhibitedAreasRef.current = prohibitedAreas;
+  }, [prohibitedAreas]);
 
   // Handler functions that sync with TRPC by detecting changes
   const handleUpdateUsers = (newUsers: User[]) => {
