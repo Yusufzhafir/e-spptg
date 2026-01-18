@@ -505,6 +505,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                                 <Input 
                                     min="1"
                                     max="60"
+                                    type="number"
                                     value={coord.zone}
                                     onChange={(e) => handleUpdateUTM(coord.id, 'zone', e.target.value)}
                                     placeholder="48"
