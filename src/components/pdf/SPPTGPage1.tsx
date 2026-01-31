@@ -136,10 +136,17 @@ export const SPPTGPage1: React.FC<PageProps> = ({ data }) => {
             label="Luas perhitungan peta"
             value={`${formatLuas(data.luasLahan)}`}
           />
+          {/* Display all 8 boundary positions */}
           {data.batasUtara && (
             <FieldRow
               label={data.batasUtara}
               value={data.penggunaanBatasUtara}
+            />
+          )}
+          {data.batasTimurLaut && (
+            <FieldRow
+              label={data.batasTimurLaut}
+              value={data.penggunaanBatasTimurLaut}
             />
           )}
           {data.batasTimur && (
@@ -148,16 +155,34 @@ export const SPPTGPage1: React.FC<PageProps> = ({ data }) => {
               value={data.penggunaanBatasTimur}
             />
           )}
+          {data.batasTenggara && (
+            <FieldRow
+              label={data.batasTenggara}
+              value={data.penggunaanBatasTenggara}
+            />
+          )}
           {data.batasSelatan && (
             <FieldRow
               label={data.batasSelatan}
               value={data.penggunaanBatasSelatan}
             />
           )}
+          {data.batasBaratDaya && (
+            <FieldRow
+              label={data.batasBaratDaya}
+              value={data.penggunaanBatasBaratDaya}
+            />
+          )}
           {data.batasBarat && (
             <FieldRow
               label={data.batasBarat}
               value={data.penggunaanBatasBarat}
+            />
+          )}
+          {data.batasBaratLaut && (
+            <FieldRow
+              label={data.batasBaratLaut}
+              value={data.penggunaanBatasBaratLaut}
             />
           )}
         </View>

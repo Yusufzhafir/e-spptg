@@ -6,8 +6,7 @@
  * - Legal disclaimer/closing statement
  * - Location and date declaration
  * - Declarant signature section
- * - Witnesses table (2x2 grid with 4 witnesses)
- * - Administrative section (Kepala Desa signature)
+ * - Witnesses table (up to 8 witnesses in 2x4 grid)
  */
 
 import React from 'react';
@@ -39,7 +38,7 @@ const WitnessCell: React.FC<{
   };
   isLast?: boolean;
 }> = ({ witness, isLast = false }) => (
-  <View style={isLast ? styles.tableCellLast : styles.tableCell}>
+  <View style={[isLast ? styles.tableCellLast : styles.tableCell, { minHeight: 60 }]}>
     {witness ? (
       <>
         <Text style={styles.witnessName}>{witness.nama}</Text>
@@ -58,15 +57,14 @@ export const SPPTGPage2: React.FC<PageProps> = ({ data, config }) => {
   // Format date
   const formattedDate = formatIndonesianDate(data.tanggalPernyataan);
 
-  // Get witnesses (up to 4)
-  const witnesses = data.saksiList.slice(0, 4);
-  const witness1 = witnesses[0];
-  const witness2 = witnesses[1];
-  const witness3 = witnesses[2];
-  const witness4 = witnesses[3];
+  // Get witnesses (up to 8)
+  const witnesses = data.saksiList.slice(0, 8);
+  const showWitnesses = config?.includeWitnesses !== false;
 
-  const showWitnesses = config?.includeWitnesses !== false && witnesses.length > 0;
-  const showAdministrative = config?.includeAdministrative !== false;
+  // Split witnesses into rows of 4
+  const row1 = witnesses.slice(0, 4);
+  const row2 = witnesses.slice(4, 8);
+  const hasRow2 = row2.length > 0;
 
   return (
     <Page size="A4" style={styles.page}>
@@ -123,62 +121,32 @@ export const SPPTGPage2: React.FC<PageProps> = ({ data, config }) => {
 
       <View style={styles.spacerMedium} />
 
-      {/* Witnesses Section */}
+      {/* Witnesses Section - Always show if enabled, even if empty */}
       {showWitnesses && (
         <>
           <Text style={styles.subtitle}>Saksi-saksi batas</Text>
 
-          {/* 2x2 Witnesses Table */}
+          {/* Witnesses Table - 2 rows x 4 columns */}
           <View style={styles.table}>
-            {/* First Row */}
-            <View style={styles.tableRow}>
-              <WitnessCell witness={witness1} />
-              <WitnessCell witness={witness2} isLast />
+            {/* First Row - Always show 4 cells */}
+            <View style={hasRow2 ? styles.tableRow : styles.tableRowLast}>
+              <WitnessCell witness={row1[0]} />
+              <WitnessCell witness={row1[1]} />
+              <WitnessCell witness={row1[2]} />
+              <WitnessCell witness={row1[3]} isLast />
             </View>
 
-            {/* Second Row */}
-            <View style={styles.tableRowLast}>
-              <WitnessCell witness={witness3} />
-              <WitnessCell witness={witness4} isLast />
-            </View>
+            {/* Second Row - Only if there are more than 4 witnesses */}
+            {hasRow2 && (
+              <View style={styles.tableRowLast}>
+                <WitnessCell witness={row2[0]} />
+                <WitnessCell witness={row2[1]} />
+                <WitnessCell witness={row2[2]} />
+                <WitnessCell witness={row2[3]} isLast />
+              </View>
+            )}
           </View>
         </>
-      )}
-
-      <View style={styles.spacerMedium} />
-
-      {/* Administrative Section */}
-      {showAdministrative && (
-        <View style={styles.administrative}>
-          <Text style={styles.subtitle}>Mengetahui</Text>
-
-          <View style={styles.row}>
-            <Text style={styles.label}>Nomor Registrasi:</Text>
-            <Text style={styles.colon}>:</Text>
-            <Text style={[styles.value, { fontFamily: 'Times-Bold' }]}>
-              {data.nomorSPPTG}
-            </Text>
-          </View>
-
-          <View style={styles.row}>
-            <Text style={styles.label}>Tanggal</Text>
-            <Text style={styles.colon}>:</Text>
-            <Text style={styles.value}>{formattedDate}</Text>
-          </View>
-
-          <View style={styles.spacerSmall} />
-
-          <View style={styles.signature}>
-            <Text style={styles.signatureLabel}>
-              Kepala Desa {data.namaDesa}
-            </Text>
-            <View style={styles.spacerLarge} />
-            <View style={styles.spacerLarge} />
-            <Text style={styles.signatureValue}>
-              {data.namaKepalaDesa || '(_________________________)'}
-            </Text>
-          </View>
-        </View>
       )}
 
       {/* Footer */}

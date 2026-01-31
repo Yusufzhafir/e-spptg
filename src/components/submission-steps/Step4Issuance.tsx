@@ -133,47 +133,64 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
     // Get witnesses and boundaries
     const saksiList = draft.saksiList || [];
     
-    // Map witnesses to boundary directions
+    // Build boundary data for all 8 positions (display as-is, no mapping)
     const boundaryData: {
       batasUtara?: string;
       penggunaanBatasUtara?: string;
+      batasTimurLaut?: string;
+      penggunaanBatasTimurLaut?: string;
       batasTimur?: string;
       penggunaanBatasTimur?: string;
+      batasTenggara?: string;
+      penggunaanBatasTenggara?: string;
       batasSelatan?: string;
       penggunaanBatasSelatan?: string;
+      batasBaratDaya?: string;
+      penggunaanBatasBaratDaya?: string;
       batasBarat?: string;
       penggunaanBatasBarat?: string;
+      batasBaratLaut?: string;
+      penggunaanBatasBaratLaut?: string;
     } = {};
     
+    // Map each witness to their exact position
     saksiList.forEach((saksi) => {
       const sisi = saksi.sisi;
-      // North boundary (including northeast and northwest)
-      if (sisi === 'Utara' || sisi === 'Timur Laut' || sisi === 'Barat Laut') {
-        if (!boundaryData.batasUtara) {
+      const penggunaan = saksi.penggunaanLahanBatas || '';
+      
+      switch (sisi) {
+        case 'Utara':
           boundaryData.batasUtara = sisi;
-          boundaryData.penggunaanBatasUtara = saksi.penggunaanLahanBatas || '';
-        }
-      }
-      // East boundary (including northeast and southeast)
-      if (sisi === 'Timur' || sisi === 'Timur Laut' || sisi === 'Tenggara') {
-        if (!boundaryData.batasTimur) {
+          boundaryData.penggunaanBatasUtara = penggunaan;
+          break;
+        case 'Timur Laut':
+          boundaryData.batasTimurLaut = sisi;
+          boundaryData.penggunaanBatasTimurLaut = penggunaan;
+          break;
+        case 'Timur':
           boundaryData.batasTimur = sisi;
-          boundaryData.penggunaanBatasTimur = saksi.penggunaanLahanBatas || '';
-        }
-      }
-      // South boundary (including southeast and southwest)
-      if (sisi === 'Selatan' || sisi === 'Tenggara' || sisi === 'Barat Daya') {
-        if (!boundaryData.batasSelatan) {
+          boundaryData.penggunaanBatasTimur = penggunaan;
+          break;
+        case 'Tenggara':
+          boundaryData.batasTenggara = sisi;
+          boundaryData.penggunaanBatasTenggara = penggunaan;
+          break;
+        case 'Selatan':
           boundaryData.batasSelatan = sisi;
-          boundaryData.penggunaanBatasSelatan = saksi.penggunaanLahanBatas || '';
-        }
-      }
-      // West boundary (including southwest and northwest)
-      if (sisi === 'Barat' || sisi === 'Barat Daya' || sisi === 'Barat Laut') {
-        if (!boundaryData.batasBarat) {
+          boundaryData.penggunaanBatasSelatan = penggunaan;
+          break;
+        case 'Barat Daya':
+          boundaryData.batasBaratDaya = sisi;
+          boundaryData.penggunaanBatasBaratDaya = penggunaan;
+          break;
+        case 'Barat':
           boundaryData.batasBarat = sisi;
-          boundaryData.penggunaanBatasBarat = saksi.penggunaanLahanBatas || '';
-        }
+          boundaryData.penggunaanBatasBarat = penggunaan;
+          break;
+        case 'Barat Laut':
+          boundaryData.batasBaratLaut = sisi;
+          boundaryData.penggunaanBatasBaratLaut = penggunaan;
+          break;
       }
     });
 
@@ -182,12 +199,9 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
       ? generateStaticMapUrl(draft.coordinatesGeografis) || undefined
       : undefined;
 
-    // Format luas terbilang
-    const luasTerbilang = draft.luasManual 
-      ? numberToIndonesianWords(draft.luasManual)
-      : draft.luasLahan 
-        ? numberToIndonesianWords(draft.luasLahan)
-        : '';
+    // Use luasManual as primary value (consistent throughout document)
+    const luasValue = draft.luasManual || draft.luasLahan || 0;
+    const luasTerbilang = luasValue ? numberToIndonesianWords(luasValue) : '';
 
     return {
       // Personal Information
@@ -199,7 +213,7 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
       alamatKTP: draft.alamatKTP,
       
       // Land Information
-      luasManual: draft.luasManual || undefined,
+      luasManual: luasValue || undefined,
       luasTerbilang,
       luasLahan: draft.luasLahan,
       penggunaanLahan: draft.penggunaanLahan,

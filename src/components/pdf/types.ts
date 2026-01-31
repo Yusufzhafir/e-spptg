@@ -71,23 +71,39 @@ export interface SPPTGPDFData {
   /** Regency name */
   kabupaten: string;
 
-  // Boundary Information (4 cardinal directions)
+  // Boundary Information (8 directions: 4 cardinal + 4 intercardinal)
   /** North boundary direction */
   batasUtara?: string;
   /** North boundary land use */
   penggunaanBatasUtara?: string;
+  /** Northeast boundary direction */
+  batasTimurLaut?: string;
+  /** Northeast boundary land use */
+  penggunaanBatasTimurLaut?: string;
   /** East boundary direction */
   batasTimur?: string;
   /** East boundary land use */
   penggunaanBatasTimur?: string;
+  /** Southeast boundary direction */
+  batasTenggara?: string;
+  /** Southeast boundary land use */
+  penggunaanBatasTenggara?: string;
   /** South boundary direction */
   batasSelatan?: string;
   /** South boundary land use */
   penggunaanBatasSelatan?: string;
+  /** Southwest boundary direction */
+  batasBaratDaya?: string;
+  /** Southwest boundary land use */
+  penggunaanBatasBaratDaya?: string;
   /** West boundary direction */
   batasBarat?: string;
   /** West boundary land use */
   penggunaanBatasBarat?: string;
+  /** Northwest boundary direction */
+  batasBaratLaut?: string;
+  /** Northwest boundary land use */
+  penggunaanBatasBaratLaut?: string;
 
   // Witnesses (1-4 witnesses)
   /** List of boundary witnesses */

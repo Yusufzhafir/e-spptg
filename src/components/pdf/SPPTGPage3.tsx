@@ -1,41 +1,52 @@
 /**
- * SPPTG Page 3 Component
+ * SPPTG Page 3 Component - Administrative Section
  * 
  * This component renders the third page of the SPPTG document containing:
- * - Map attachment header
- * - Land location map image
- * - Footer
+ * - Administrative section with Nomor Registrasi and Tanggal
+ * - Kepala Desa signature block
  */
 
 import React from 'react';
-import { Page, Text, View, Image } from '@react-pdf/renderer';
-import { styles } from './styles';
+import { Page, Text, View } from '@react-pdf/renderer';
+import { styles, formatIndonesianDate } from './styles';
 import { PageProps } from './types';
 
-export const SPPTGPage3: React.FC<PageProps> = ({ data, config }) => {
-  const showMap = config?.includeMap !== false;
+export const SPPTGPage3: React.FC<PageProps> = ({ data }) => {
+  const formattedDate = formatIndonesianDate(data.tanggalPernyataan);
 
   return (
     <Page size="A4" style={styles.page}>
-      {/* Map Attachment Header */}
-      <Text style={styles.attachmentLabel}>Lampiran 1 Peta lahan</Text>
+      {/* Administrative Section */}
+      <View style={styles.administrative}>
+        <Text style={styles.subtitle}>Mengetahui</Text>
 
-      {/* Map Image */}
-      {showMap && data.mapImageUrl ? (
-        <View style={styles.mapContainer}>
-          {/* eslint-disable-next-line jsx-a11y/alt-text */}
-          <Image src={data.mapImageUrl} style={styles.mapImage} />
-        </View>
-      ) : (
-        <View style={[styles.mapContainer, { borderWidth: 1, borderColor: '#ccc', padding: 20 }]}>
-          <Text style={[styles.text, styles.textCenter]}>
-            [Gambar Peta Lahan]
-          </Text>
-          <Text style={[styles.text, styles.textCenter, { fontSize: 9, marginTop: 10 }]}>
-            Peta lokasi tanah akan ditampilkan di sini
+        <View style={styles.row}>
+          <Text style={styles.label}>Nomor Registrasi</Text>
+          <Text style={styles.colon}>:</Text>
+          <Text style={[styles.value, { fontFamily: 'Times-Bold' }]}>
+            {data.nomorSPPTG}
           </Text>
         </View>
-      )}
+
+        <View style={styles.row}>
+          <Text style={styles.label}>Tanggal</Text>
+          <Text style={styles.colon}>:</Text>
+          <Text style={styles.value}>{formattedDate}</Text>
+        </View>
+
+        <View style={styles.spacerSmall} />
+
+        <View style={styles.signature}>
+          <Text style={styles.signatureLabel}>
+            Kepala Desa {data.namaDesa}
+          </Text>
+          <View style={styles.spacerLarge} />
+          <View style={styles.spacerLarge} />
+          <Text style={styles.signatureValue}>
+            {data.namaKepalaDesa || '(_________________________)'}
+          </Text>
+        </View>
+      </View>
 
       {/* Footer */}
       <View style={styles.footer} fixed>
