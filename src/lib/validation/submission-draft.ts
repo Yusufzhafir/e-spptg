@@ -210,6 +210,10 @@ export const submissionDraftPayloadSchema = z.object({
   // Step 1 data
   namaPemohon: z.string(),
   nik: z.string(),
+  tempatLahir: z.string().optional(),
+  tanggalLahir: z.string().optional(),
+  pekerjaan: z.string().optional(),
+  alamatKTP: z.string().optional(),
   dokumenKTP: uploadedDocumentSchema,
   dokumenKK: uploadedDocumentSchema,
   dokumenKwitansi: uploadedDocumentSchema.optional(),
@@ -217,6 +221,17 @@ export const submissionDraftPayloadSchema = z.object({
   persetujuanData: z.boolean().optional(),
 
   // Step 2 data
+  villageId: z.number().int().optional(),
+  namaJalan: z.string().optional(),
+  namaGang: z.string().optional(),
+  nomorPersil: z.string().optional(),
+  rtrw: z.string().optional(),
+  dusun: z.string().optional(),
+  kecamatan: z.string().optional(),
+  kabupaten: z.string().optional(),
+  penggunaanLahan: z.string().optional(),
+  tahunAwalGarap: z.number().optional(),
+  namaKepalaDesa: z.string().optional(),
   juruUkur: researchTeamMemberSchema.optional(),
   pihakBPD: researchTeamMemberSchema.optional(),
   kepalaDusun: researchTeamMemberSchema.optional(),
