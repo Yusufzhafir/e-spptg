@@ -208,6 +208,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         toast.error('Harap setujui pernyataan data terlebih dahulu');
         return;
       }
+      await saveDraftToBackend(1);
     }
 
     if (currentStep === 2) {
@@ -215,6 +216,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         toast.error('Minimal 3 titik koordinat diperlukan untuk membentuk polygon');
         return;
       }
+      await saveDraftToBackend(2);
     }
 
     if (currentStep === 3) {

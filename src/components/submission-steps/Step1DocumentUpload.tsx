@@ -3,6 +3,7 @@ import { Label } from '../ui/label';
 import { Input } from '../ui/input';
 import { Checkbox } from '../ui/checkbox';
 import { FileUploadField } from '../FileUploadField';
+import { Textarea } from '../ui/textarea';
 
 interface Step1Props {
   draft: SubmissionDraft;
@@ -54,6 +55,52 @@ export function Step1DocumentUpload({ draft, onUpdateDraft }: Step1Props) {
             {draft.nik && draft.nik.length !== 16 && (
               <p className="text-xs text-red-600 mt-1">NIK harus 16 digit</p>
             )}
+          </div>
+        </div>
+
+        {/* Personal Details */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="tempatLahir">Tempat Lahir</Label>
+            <Input
+              id="tempatLahir"
+              value={draft.tempatLahir || ''}
+              onChange={(e) => onUpdateDraft({ tempatLahir: e.target.value })}
+              placeholder="Masukkan tempat lahir"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="tanggalLahir">Tanggal Lahir</Label>
+            <Input
+              id="tanggalLahir"
+              type="date"
+              value={draft.tanggalLahir || ''}
+              onChange={(e) => onUpdateDraft({ tanggalLahir: e.target.value })}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="pekerjaan">Pekerjaan</Label>
+            <Input
+              id="pekerjaan"
+              value={draft.pekerjaan || ''}
+              onChange={(e) => onUpdateDraft({ pekerjaan: e.target.value })}
+              placeholder="Masukkan pekerjaan"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="alamatKTP">Alamat KTP</Label>
+            <Textarea
+              id="alamatKTP"
+              value={draft.alamatKTP || ''}
+              onChange={(e) => onUpdateDraft({ alamatKTP: e.target.value })}
+              placeholder="Masukkan alamat sesuai KTP"
+              rows={3}
+            />
           </div>
         </div>
       </div>
