@@ -102,11 +102,12 @@ export function numberToIndonesianWords(num: number): string {
   let result = convertMillions(integerPart);
   
   if (decimalPart > 0) {
-    // Convert decimal part (e.g., 0.56 -> "lima puluh enam per seratus")
+    // Convert decimal part using "koma" format
+    // Note: While "koma" format is technically correct, it's uncommon for land area.
+    // Consider rounding to whole numbers for land area measurements if preferred.
     const decimalStr = decimalPart.toString().split('.')[1] || '';
     const decimalNum = parseInt(decimalStr.padEnd(2, '0').slice(0, 2), 10);
     if (decimalNum > 0) {
-      const denominator = Math.pow(10, decimalStr.length);
       result += ' koma ' + convertHundreds(decimalNum);
     }
   }

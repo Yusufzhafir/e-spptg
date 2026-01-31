@@ -141,7 +141,7 @@ export function generateStaticMapUrl(
     zoom: zoom.toString(),
     size: `${mergedConfig.width}x${mergedConfig.height}`,
     maptype: mergedConfig.mapType || 'hybrid',
-    path: `fillcolor:0x${mergedConfig.fillColor}33|weight:${mergedConfig.strokeWeight}|color:0x${mergedConfig.strokeColor}FF|${path}`,
+    path: `fillcolor:0x${mergedConfig.fillColor}33|weight:${mergedConfig.strokeWeight}|color:0x${mergedConfig.strokeColor}FF|${path}|${coordinates[0].latitude},${coordinates[0].longitude}`,
   });
 
   return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
@@ -185,7 +185,7 @@ export function generateStyledMapUrl(
     zoom: zoom.toString(),
     size: `${width}x${height}`,
     maptype: 'hybrid',
-    path: `fillcolor:0x3b82f633|weight:2|color:0x1d4ed8FF|${path}`,
+    path: `fillcolor:0x3b82f633|weight:2|color:0x1d4ed8FF|${path}|${coordinates[0].latitude},${coordinates[0].longitude}`,
   });
 
   // Add markers if provided

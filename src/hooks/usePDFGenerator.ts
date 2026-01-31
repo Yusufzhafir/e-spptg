@@ -47,8 +47,8 @@ async function createPDFDocument(
   const { SPPTGDocument } = await import('@/components/pdf/SPPTGDocument');
   const React = await import('react');
   
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return React.createElement(SPPTGDocument as any, { data, config });
+  const element = React.createElement(SPPTGDocument, { data, config });
+  return element as React.ReactElement;
 }
 
 /**
@@ -76,6 +76,7 @@ export function usePDFGenerator(): UsePDFGeneratorReturn {
       const document = await createPDFDocument(data, config);
 
       // Generate PDF blob using react-pdf's pdf function
+      // Type cast needed due to ReactElement generic type mismatch with @react-pdf/renderer
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const blob = await pdf(document as any).toBlob();
 
