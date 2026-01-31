@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { trpc } from '@/trpc/client';
 import { generateFilledPDFFromBase64, createPDFBlobUrl, pdfBytesToBase64, type PDFFormData } from '@/lib/pdf-generator';
 import { generateCertificateNumber } from '@/lib/certificate-number-generator';
+import { numberToIndonesianWords } from '@/lib/number-to-words';
 
 interface Step4Props {
   draft: SubmissionDraft;
@@ -31,6 +32,12 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
   const createUploadUrlMutation = trpc.documents.createUploadUrl.useMutation();
   const uploadFileMutation = trpc.documents.uploadFile.useMutation();
   const fetchTemplatePDFMutation = trpc.documents.fetchTemplatePDF.useMutation();
+  
+  // Fetch village data if villageId is set
+  const { data: villageData } = trpc.villages.byId.useQuery(
+    { id: draft.villageId! },
+    { enabled: !!draft.villageId }
+  );
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -161,14 +168,113 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
       }
 
       // Step 4: Prepare form data for PDF
+      // Format tempat dan tanggal lahir
+      let tempatTanggalLahir = '';
+      if (draft.tempatLahir || draft.tanggalLahir) {
+        const tempat = draft.tempatLahir || '';
+        const tanggal = draft.tanggalLahir 
+          ? new Date(draft.tanggalLahir).toLocaleDateString('id-ID', {
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+            })
+          : '';
+        tempatTanggalLahir = [tempat, tanggal].filter(Boolean).join(', ');
+      }
+      
+      // Format luas terbilang
+      const luasTerbilang = draft.luasManual 
+        ? numberToIndonesianWords(draft.luasManual)
+        : draft.luasLahan 
+          ? numberToIndonesianWords(draft.luasLahan)
+          : '';
+      
+      // Format witnesses (up to 4)
+      const saksi = draft.saksiList || [];
+      const saksiData: Record<string, string> = {};
+      saksi.forEach((s, index) => {
+        const num = index + 1;
+        saksiData[`namaSaksi${num}`] = s.nama;
+        saksiData[`batasSaksi${num}`] = s.sisi;
+        saksiData[`penggunaanSaksi${num}`] = s.penggunaanLahanBatas || '';
+      });
+      
+      // Format boundary directions
+      // Note: Some directions like "Timur Laut" belong to multiple boundaries
+      // We assign them to the primary cardinal direction
+      const boundaryData: Record<string, string> = {};
+      saksi.forEach((s) => {
+        const sisi = s.sisi;
+        // North boundary (including northeast and northwest)
+        if (sisi === 'Utara' || sisi === 'Timur Laut' || sisi === 'Barat Laut') {
+          if (!boundaryData.batasUtara) {
+            boundaryData.batasUtara = sisi;
+            boundaryData.penggunaanBatasUtara = s.penggunaanLahanBatas || '';
+          }
+        }
+        // East boundary (including northeast and southeast)
+        if (sisi === 'Timur' || sisi === 'Timur Laut' || sisi === 'Tenggara') {
+          if (!boundaryData.batasTimur) {
+            boundaryData.batasTimur = sisi;
+            boundaryData.penggunaanBatasTimur = s.penggunaanLahanBatas || '';
+          }
+        }
+        // South boundary (including southeast and southwest)
+        if (sisi === 'Selatan' || sisi === 'Tenggara' || sisi === 'Barat Daya') {
+          if (!boundaryData.batasSelatan) {
+            boundaryData.batasSelatan = sisi;
+            boundaryData.penggunaanBatasSelatan = s.penggunaanLahanBatas || '';
+          }
+        }
+        // West boundary (including southwest and northwest)
+        if (sisi === 'Barat' || sisi === 'Barat Daya' || sisi === 'Barat Laut') {
+          if (!boundaryData.batasBarat) {
+            boundaryData.batasBarat = sisi;
+            boundaryData.penggunaanBatasBarat = s.penggunaanLahanBatas || '';
+          }
+        }
+      });
+      
       const formData: PDFFormData = {
+        // Personal Information
         nomorSPPTG: certificateNumber,
         namaPemohon: draft.namaPemohon,
         nik: draft.nik,
+        tempatTanggalLahir,
+        pekerjaan: draft.pekerjaan,
+        alamatKTP: draft.alamatKTP,
+        
+        // Land Location
+        namaJalan: draft.namaJalan,
+        namaGang: draft.namaGang,
+        nomorPersil: draft.nomorPersil,
+        rtrw: draft.rtrw,
+        dusun: draft.dusun,
+        namaDesa: villageData?.namaDesa || '',
+        kecamatan: villageData?.kecamatan || draft.kecamatan || '',
+        kabupaten: villageData?.kabupaten || draft.kabupaten || '',
+        
+        // Land Details
+        luasManual: draft.luasManual || undefined,
+        luasTerbilang,
         luasLahan: draft.luasLahan,
+        penggunaanLahan: draft.penggunaanLahan,
+        tahunAwalGarap: draft.tahunAwalGarap,
+        
+        // Boundaries
+        ...boundaryData,
+        
+        // Witnesses
+        ...saksiData,
+        
+        // Administrative
+        tanggalPernyataan: issueDate,
+        namaDesaPernyataan: villageData?.namaDesa || '',
+        namaKepalaDesa: draft.namaKepalaDesa,
         tanggalTerbit: issueDate,
-        // Note: villageName, kecamatan, kabupaten would need to be added to draft if available
-        // For now, these fields will be skipped if not in coordinates
+        
+        // Signature (Page 2)
+        namaPemohonSignature: draft.namaPemohon,
       };
 
       // Step 5: Generate PDF from base64 template

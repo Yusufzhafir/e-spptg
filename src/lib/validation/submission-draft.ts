@@ -34,6 +34,7 @@ export const boundaryWitnessSchema = z.object({
   sisi: z.enum(['Utara', 'Timur', 'Selatan', 'Barat', 'Timur Laut', 'Tenggara', 'Barat Daya', 'Barat Laut'], {
     error: (e) => ({ message: `value :${e.input} causes: ${e.message}` }),
   }),
+  penggunaanLahanBatas: z.string().optional(), // Land use at boundary
 });
 
 export type BoundaryWitness = z.infer<typeof boundaryWitnessSchema>;
