@@ -14,8 +14,11 @@ import {
 import { Upload, File, X, CheckCircle2, Download, Printer, ArrowLeft, FileText, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/trpc/client';
-import { generateFilledPDFFromBase64, createPDFBlobUrl, pdfBytesToBase64, type PDFFormData } from '@/lib/pdf-generator';
 import { generateCertificateNumber } from '@/lib/certificate-number-generator';
+import { numberToIndonesianWords } from '@/lib/number-to-words';
+import { usePDFGenerator } from '@/hooks/usePDFGenerator';
+import type { SPPTGPDFData } from '@/components/pdf/types';
+import { generateStaticMapUrl } from '@/lib/map-static-api';
 
 interface Step4Props {
   draft: SubmissionDraft;
@@ -25,12 +28,19 @@ interface Step4Props {
 export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
   const [isSuccessDialogOpen, setIsSuccessDialogOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [generatedPDFUrl, setGeneratedPDFUrl] = useState<string | null>(null);
 
   const createUploadUrlMutation = trpc.documents.createUploadUrl.useMutation();
   const uploadFileMutation = trpc.documents.uploadFile.useMutation();
-  const fetchTemplatePDFMutation = trpc.documents.fetchTemplatePDF.useMutation();
+  
+  // New PDF generator hook (react-pdf based)
+  const { generatePDF, isGenerating: isGeneratingPDF } = usePDFGenerator();
+  
+  // Fetch village data if villageId is set
+  const { data: villageData } = trpc.villages.byId.useQuery(
+    { id: draft.villageId! },
+    { enabled: !!draft.villageId }
+  );
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -117,7 +127,127 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
   };
 
   /**
-   * Generate PDF certificate from template
+   * Build PDF data from draft
+   */
+  const buildPDFData = (): SPPTGPDFData => {
+    // Get witnesses and boundaries
+    const saksiList = draft.saksiList || [];
+    
+    // Build boundary data for all 8 positions (display as-is, no mapping)
+    const boundaryData: {
+      batasUtara?: string;
+      penggunaanBatasUtara?: string;
+      batasTimurLaut?: string;
+      penggunaanBatasTimurLaut?: string;
+      batasTimur?: string;
+      penggunaanBatasTimur?: string;
+      batasTenggara?: string;
+      penggunaanBatasTenggara?: string;
+      batasSelatan?: string;
+      penggunaanBatasSelatan?: string;
+      batasBaratDaya?: string;
+      penggunaanBatasBaratDaya?: string;
+      batasBarat?: string;
+      penggunaanBatasBarat?: string;
+      batasBaratLaut?: string;
+      penggunaanBatasBaratLaut?: string;
+    } = {};
+    
+    // Map each witness to their exact position
+    saksiList.forEach((saksi) => {
+      const sisi = saksi.sisi;
+      const penggunaan = saksi.penggunaanLahanBatas || '';
+      
+      switch (sisi) {
+        case 'Utara':
+          boundaryData.batasUtara = sisi;
+          boundaryData.penggunaanBatasUtara = penggunaan;
+          break;
+        case 'Timur Laut':
+          boundaryData.batasTimurLaut = sisi;
+          boundaryData.penggunaanBatasTimurLaut = penggunaan;
+          break;
+        case 'Timur':
+          boundaryData.batasTimur = sisi;
+          boundaryData.penggunaanBatasTimur = penggunaan;
+          break;
+        case 'Tenggara':
+          boundaryData.batasTenggara = sisi;
+          boundaryData.penggunaanBatasTenggara = penggunaan;
+          break;
+        case 'Selatan':
+          boundaryData.batasSelatan = sisi;
+          boundaryData.penggunaanBatasSelatan = penggunaan;
+          break;
+        case 'Barat Daya':
+          boundaryData.batasBaratDaya = sisi;
+          boundaryData.penggunaanBatasBaratDaya = penggunaan;
+          break;
+        case 'Barat':
+          boundaryData.batasBarat = sisi;
+          boundaryData.penggunaanBatasBarat = penggunaan;
+          break;
+        case 'Barat Laut':
+          boundaryData.batasBaratLaut = sisi;
+          boundaryData.penggunaanBatasBaratLaut = penggunaan;
+          break;
+      }
+    });
+
+    // Generate map image URL if coordinates exist
+    const mapImageUrl = draft.coordinatesGeografis && draft.coordinatesGeografis.length >= 3
+      ? generateStaticMapUrl(draft.coordinatesGeografis) || undefined
+      : undefined;
+
+    // Use luasManual as primary value (consistent throughout document)
+    const luasValue = draft.luasManual || draft.luasLahan || 0;
+    const luasTerbilang = luasValue ? numberToIndonesianWords(luasValue) : '';
+
+    return {
+      // Personal Information
+      namaPemohon: draft.namaPemohon,
+      nik: draft.nik,
+      tempatLahir: draft.tempatLahir,
+      tanggalLahir: draft.tanggalLahir,
+      pekerjaan: draft.pekerjaan,
+      alamatKTP: draft.alamatKTP,
+      
+      // Land Information
+      luasManual: luasValue || undefined,
+      luasTerbilang,
+      luasLahan: draft.luasLahan,
+      penggunaanLahan: draft.penggunaanLahan,
+      tahunAwalGarap: draft.tahunAwalGarap,
+      
+      // Location
+      namaJalan: draft.namaJalan,
+      namaGang: draft.namaGang,
+      nomorPersil: draft.nomorPersil,
+      rtrw: draft.rtrw,
+      dusun: draft.dusun,
+      namaDesa: villageData?.namaDesa || '',
+      kecamatan: villageData?.kecamatan || draft.kecamatan || '',
+      kabupaten: villageData?.kabupaten || draft.kabupaten || '',
+      
+      // Boundaries
+      ...boundaryData,
+      
+      // Witnesses
+      saksiList,
+      
+      // Administrative
+      nomorSPPTG: draft.nomorSPPTG || '',
+      tanggalPernyataan: draft.tanggalTerbit || new Date().toISOString().split('T')[0],
+      namaKepalaDesa: draft.namaKepalaDesa,
+      
+      // Map
+      coordinatesGeografis: draft.coordinatesGeografis || [],
+      mapImageUrl,
+    };
+  };
+
+  /**
+   * Generate PDF certificate using react-pdf
    */
   const handleGeneratePDF = async () => {
     if (!draft.id) {
@@ -136,23 +266,16 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
       return;
     }
 
-    setIsGeneratingPDF(true);
     try {
-      // Step 1: Fetch template PDF server-side (avoids CORS issues)
-      const { pdfData: templateBase64 } = await fetchTemplatePDFMutation.mutateAsync({
-        templateType: 'spptg_template.pdf',
-      });
-
-      // Step 2: Auto-generate certificate number if not set
+      // Auto-generate certificate number if not set
       let certificateNumber = draft.nomorSPPTG;
       if (!certificateNumber) {
-        // Generate a default certificate number (sequence will be determined by backend in production)
         certificateNumber = generateCertificateNumber(1, '00.00');
         onUpdateDraft({ nomorSPPTG: certificateNumber });
         toast.info(`Nomor SPPTG otomatis dihasilkan: ${certificateNumber}`);
       }
 
-      // Step 3: Auto-set issue date if not set
+      // Auto-set issue date if not set
       let issueDate = draft.tanggalTerbit;
       if (!issueDate) {
         issueDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
@@ -160,25 +283,23 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
         toast.info(`Tanggal terbit otomatis diset: ${new Date(issueDate).toLocaleDateString('id-ID')}`);
       }
 
-      // Step 4: Prepare form data for PDF
-      const formData: PDFFormData = {
-        nomorSPPTG: certificateNumber,
-        namaPemohon: draft.namaPemohon,
-        nik: draft.nik,
-        luasLahan: draft.luasLahan,
-        tanggalTerbit: issueDate,
-        // Note: villageName, kecamatan, kabupaten would need to be added to draft if available
-        // For now, these fields will be skipped if not in coordinates
-      };
+      // Build PDF data
+      const pdfData = buildPDFData();
+      
+      // Update data with generated values
+      pdfData.nomorSPPTG = certificateNumber;
+      pdfData.tanggalPernyataan = issueDate;
 
-      // Step 5: Generate PDF from base64 template
-      const pdfBytes = await generateFilledPDFFromBase64(templateBase64, formData);
+      // Generate PDF using react-pdf hook
+      const result = await generatePDF(pdfData, {
+        includeWitnesses: true,
+        includeAdministrative: true,
+        includeMap: true,
+      });
 
-      // Step 6: Create preview URL
-      const previewUrl = createPDFBlobUrl(pdfBytes);
-      setGeneratedPDFUrl(previewUrl);
+      setGeneratedPDFUrl(result.url);
 
-      // Step 7: Auto-upload the generated PDF
+      // Auto-upload the generated PDF
       const filename = `SPPTG_${certificateNumber.replace(/\//g, '_')}.pdf`;
       
       // Create document record and get s3Key
@@ -186,29 +307,26 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
         draftId: draft.id,
         category: 'SPPG',
         filename,
-        size: pdfBytes.length,
+        size: result.size,
         mimeType: 'application/pdf',
       });
-
-      // Convert PDF bytes to base64
-      const base64String = pdfBytesToBase64(pdfBytes);
 
       // Upload file via server-side tRPC mutation
       const uploadResult = await uploadFileMutation.mutateAsync({
         draftId: draft.id,
         documentId,
         s3Key,
-        fileData: base64String,
+        fileData: result.base64,
         filename,
         mimeType: 'application/pdf',
-        size: pdfBytes.length,
+        size: result.size,
       });
 
       // Update draft with generated document
       onUpdateDraft({
         dokumenSPPTG: {
           name: filename,
-          size: pdfBytes.length,
+          size: result.size,
           url: uploadResult.publicUrl,
           uploadedAt: new Date().toISOString(),
           documentId,
@@ -225,8 +343,6 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
       } else {
         toast.error('Gagal membuat PDF. Silakan coba lagi atau hubungi administrator.');
       }
-    } finally {
-      setIsGeneratingPDF(false);
     }
   };
 
@@ -298,7 +414,7 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
                   Generate PDF SPPTG Otomatis
                 </h3>
                 <p className="text-xs text-blue-700">
-                  Klik tombol di bawah untuk membuat PDF SPPTG secara otomatis dari template.
+                  Klik tombol di bawah untuk membuat PDF SPPTG secara otomatis menggunakan React PDF.
                   Nomor SPPTG dan tanggal terbit akan di-generate otomatis jika belum diisi.
                 </p>
               </div>

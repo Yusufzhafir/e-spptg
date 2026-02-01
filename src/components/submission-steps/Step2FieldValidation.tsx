@@ -391,6 +391,93 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
         )}
       </div>
 
+      {/* Land Location & Details */}
+      <div className="space-y-4 pt-4 border-t border-gray-200">
+        <h3 className="text-gray-900">Lokasi dan Detail Lahan</h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="namaJalan">Nama Jalan</Label>
+            <Input
+              id="namaJalan"
+              value={draft.namaJalan || ''}
+              onChange={(e) => onUpdateDraft({ namaJalan: e.target.value })}
+              placeholder="Masukkan nama jalan"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="namaGang">Nama Gang</Label>
+            <Input
+              id="namaGang"
+              value={draft.namaGang || ''}
+              onChange={(e) => onUpdateDraft({ namaGang: e.target.value })}
+              placeholder="Masukkan nama gang"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="nomorPersil">Nomor Persil</Label>
+            <Input
+              id="nomorPersil"
+              value={draft.nomorPersil || ''}
+              onChange={(e) => onUpdateDraft({ nomorPersil: e.target.value })}
+              placeholder="Masukkan nomor persil"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="rtrw">RT / RW</Label>
+            <Input
+              id="rtrw"
+              value={draft.rtrw || ''}
+              onChange={(e) => onUpdateDraft({ rtrw: e.target.value })}
+              placeholder="Contoh: 001/002"
+            />
+          </div>
+        </div>
+
+        <div>
+          <Label htmlFor="dusun">Dusun</Label>
+          <Input
+            id="dusun"
+            value={draft.dusun || ''}
+            onChange={(e) => onUpdateDraft({ dusun: e.target.value })}
+            placeholder="Masukkan nama dusun"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="penggunaanLahan">Penggunaan Lahan</Label>
+            <Input
+              id="penggunaanLahan"
+              value={draft.penggunaanLahan || ''}
+              onChange={(e) => onUpdateDraft({ penggunaanLahan: e.target.value })}
+              placeholder="Contoh: Pertanian, Perkebunan, dll"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="tahunAwalGarap">Tahun Awal Garap</Label>
+            <Input
+              id="tahunAwalGarap"
+              type="number"
+              value={draft.tahunAwalGarap || ''}
+              onChange={(e) => {
+                const value = e.target.value ? parseInt(e.target.value) : undefined;
+                onUpdateDraft({ tahunAwalGarap: value });
+              }}
+              placeholder="Contoh: 2010"
+              min={1900}
+              max={new Date().getFullYear()}
+            />
+          </div>
+        </div>
+      </div>
+
       {/* Coordinates */}
       <div className="space-y-4 pt-4 border-t border-gray-200">
         <div className="flex items-center justify-between">

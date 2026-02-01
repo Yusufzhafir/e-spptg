@@ -147,6 +147,7 @@ export interface BoundaryWitness {
   id: string;
   nama: string;
   sisi: BoundaryDirection;
+  penggunaanLahanBatas?: string; // Land use at boundary
 }
 
 export interface GeographicCoordinate {
@@ -179,6 +180,10 @@ export interface SubmissionDraft {
   // Step 1: Documents
   namaPemohon: string;
   nik: string;
+  tempatLahir?: string; // Place of birth
+  tanggalLahir?: string; // Date of birth (ISO date string)
+  pekerjaan?: string; // Occupation
+  alamatKTP?: string; // KTP address
   dokumenKTP?: UploadedDocument;
   dokumenKK?: UploadedDocument;
   dokumenKwitansi?: UploadedDocument;
@@ -187,6 +192,18 @@ export interface SubmissionDraft {
   persetujuanData: boolean;
   
   // Step 2: Field Validation
+  villageId?: number; // Village ID
+  namaJalan?: string; // Street name
+  namaGang?: string; // Alley name
+  nomorPersil?: string; // Plot number
+  rtrw?: string; // RT/RW
+  dusun?: string; // Hamlet
+  kecamatan?: string; // District
+  kabupaten?: string; // Regency
+  penggunaanLahan?: string; // Land use
+  tahunAwalGarap?: number; // Year cultivation started
+  namaKepalaDesa?: string; // Village head name
+  
   juruUkur?: ResearchTeamMember;
   pihakBPD?: ResearchTeamMember;
   kepalaDusun?: ResearchTeamMember;
