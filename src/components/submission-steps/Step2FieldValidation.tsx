@@ -63,6 +63,11 @@ type NewWitness = { nama?: string, sisi?: BoundaryDirection };
 export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
   const [isOverlapDialogOpen, setIsOverlapDialogOpen] = useState(false);
   const [newWitness, setNewWitness] = useState<NewWitness>({ nama: '', sisi: '' as BoundaryDirection });
+  const { data: villagesData } = trpc.villages.list.useQuery({
+    limit: 1000,
+    offset: 0,
+  });
+  const villages = villagesData ?? [];
   
   // Local state for UTM coordinates to prevent rounding issues during editing
   // We sync this with draft.coordinatesGeografis whenever draft changes or user edits
@@ -253,6 +258,17 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
 
   const luas = calculateArea();
 
+  const handleVillageChange = (value: string) => {
+    const villageId = Number(value);
+    const selectedVillage = villages.find((v) => v.id === villageId);
+    onUpdateDraft({
+      villageId,
+      kecamatan: selectedVillage?.kecamatan,
+      kabupaten: selectedVillage?.kabupaten,
+      namaKepalaDesa: selectedVillage?.namaKepalaDesa || undefined,
+    });
+  };
+
   // Update luasLahan when coordinates change
   useEffect(() => {
     if (draft.coordinatesGeografis.length >= 3) {
@@ -394,6 +410,25 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
       {/* Land Location & Details */}
       <div className="space-y-4 pt-4 border-t border-gray-200">
         <h3 className="text-gray-900">Lokasi dan Detail Lahan</h3>
+
+        <div>
+          <Label htmlFor="villageId">Desa *</Label>
+          <Select
+            value={draft.villageId ? String(draft.villageId) : ''}
+            onValueChange={handleVillageChange}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Pilih desa" />
+            </SelectTrigger>
+            <SelectContent>
+              {villages.map((village) => (
+                <SelectItem key={village.id} value={String(village.id)}>
+                  {village.namaDesa}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
