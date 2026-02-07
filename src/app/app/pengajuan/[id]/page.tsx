@@ -5,7 +5,7 @@ import { DetailPage } from '@/components/DetailPage';
 import { useAppState } from '@/app/app/layout';
 import { trpc } from '@/trpc/client';
 import { useMemo } from 'react';
-import { FeedbackData, StatusHistory } from '@/types';
+import { FeedbackData, GeoJSONPolygon, StatusHistory, Submission } from '@/types';
 
 
 export default function SubmissionDetailPage() {
@@ -14,12 +14,24 @@ export default function SubmissionDetailPage() {
   const { handleStatusChange } = useAppState();
 
   const {data: submission} = trpc.submissions.byId.useQuery({ id: Number(id) });
-  const mappedData = useMemo(() => {
+  const mappedData = useMemo<Submission | null>(() => {
     if (!submission) {
       return null;
     }
+
+    const parsedGeoJSON = submission.geoJSON;
+    const geoJSON: GeoJSONPolygon | null | undefined =
+      parsedGeoJSON &&
+      typeof parsedGeoJSON === 'object' &&
+      'type' in parsedGeoJSON &&
+      (parsedGeoJSON as { type?: string }).type === 'Polygon' &&
+      'coordinates' in parsedGeoJSON
+        ? (parsedGeoJSON as GeoJSONPolygon)
+        : null;
+
     return {
      ...submission,
+     geoJSON,
      tanggalPengajuan: new Date(submission?.tanggalPengajuan),
      riwayat: submission?.riwayat as StatusHistory[],
      feedback: submission?.feedback as FeedbackData | null,

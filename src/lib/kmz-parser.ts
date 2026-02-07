@@ -17,8 +17,8 @@ export interface ParseResult {
   error?: string;
 }
 
-// Legacy interface for backward compatibility
-export interface KMZParseResult extends ParseResult { }
+// Legacy type alias for backward compatibility
+export type KMZParseResult = ParseResult;
 
 /**
  * Parse KML file directly (not zipped)
@@ -405,4 +405,3 @@ export async function parseGeospatialFile(file: File): Promise<ParseResult> {
       };
   }
 }
-

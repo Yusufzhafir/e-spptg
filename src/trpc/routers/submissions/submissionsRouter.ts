@@ -11,6 +11,7 @@ import * as documentQueries from '@/server/db/queries/documents';
 import { computeOverlaps } from '@/server/postgis';
 import { sql } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
+import { normalizeOverlapRows } from '@/lib/overlap-results';
 
 export const submissionsRouter = router({
     /**
@@ -37,7 +38,22 @@ export const submissionsRouter = router({
                         });
                     }
 
-                    const payload = draft.payload as any;
+                    const payload = (draft.payload ?? {}) as {
+                        namaPemohon?: string;
+                        nik?: string;
+                        alamat?: string;
+                        email?: string;
+                        villageId?: number;
+                        kecamatan?: string;
+                        kabupaten?: string;
+                        luasLahan?: number;
+                        luasManual?: number;
+                        penggunaanLahan?: string;
+                        catatan?: string | null;
+                        status?: string;
+                        juruUkur?: { nomorHP?: string };
+                        coordinatesGeografis?: Array<{ latitude: number; longitude: number }>;
+                    };
 
                     // Validate required fields
                     if (!payload.namaPemohon || !payload.nik) {
@@ -221,68 +237,58 @@ export const submissionsRouter = router({
                 coordinates: [closedCoords],
             };
 
-            // Define Zod schema for validation of database result rows
-            const OverlapResultSchema = z.object({
-                kawasan_id: z.number().or(z.string()).transform((v) => Number(v)), // ID might be numeric or string from DB
-                nama_kawasan: z.string(),
-                jenis_kawasan: z.string(),
-                luas_overlap: z.number().nullable().transform((v) => v === null ? 0 : Number(v)),
-                percentage_overlap: z.number().nullable().optional().transform((v) => v === null ? undefined : Number(v)),
-                sumber: z.enum(['ProhibitedArea', 'Submission']),
-            });
-
-            const OverlapResultArraySchema = z.array(OverlapResultSchema);
-
             // Query prohibited areas and existing submissions
             const geoJsonText = JSON.stringify(geoJson);
             const intersectSql = sql`
                 WITH input_geom AS (
                     SELECT ST_SetSRID(ST_MakeValid(ST_GeomFromGeoJSON(${geoJsonText})), 4326) AS geom
+                ),
+                prohibited_geom AS (
+                    SELECT
+                        pa.id,
+                        pa.nama_kawasan,
+                        pa.jenis_kawasan,
+                        ST_MakeValid(pa.geom) AS geom
+                    FROM prohibited_areas pa
+                    WHERE pa.aktif_di_validasi = true
+                    AND pa.geom IS NOT NULL
+                ),
+                submission_geom AS (
+                    SELECT
+                        s.id,
+                        s.nama_pemilik,
+                        ST_MakeValid(s.geom) AS geom
+                    FROM submissions s
+                    WHERE s.status IN ('SPPTG terdaftar', 'SPPTG terdata')
+                    AND s.geom IS NOT NULL
                 )
-                -- Prohibited areas
                 SELECT 
-                    pa.id AS kawasan_id,
-                    pa.nama_kawasan,
-                    pa.jenis_kawasan,
-                    ST_Area(ST_Intersection(ig.geom, pa.geom))::double precision AS luas_overlap,
-                    (ST_Area(ST_Intersection(ig.geom, pa.geom)) / NULLIF(ST_Area(ig.geom), 0) * 100)::double precision as percentage_overlap,
+                    pg.id AS kawasan_id,
+                    pg.nama_kawasan,
+                    pg.jenis_kawasan::text AS jenis_kawasan,
+                    ST_Area(ST_Intersection(ig.geom, pg.geom))::double precision AS luas_overlap,
+                    (ST_Area(ST_Intersection(ig.geom, pg.geom)) / NULLIF(ST_Area(ig.geom), 0) * 100)::double precision as percentage_overlap,
                     'ProhibitedArea' as sumber
-                FROM prohibited_areas pa
+                FROM prohibited_geom pg
                 CROSS JOIN input_geom ig
-                WHERE ST_Intersects(ig.geom, pa.geom)
-                AND pa.aktif_di_validasi = true
+                WHERE ST_Intersects(ig.geom, pg.geom)
 
                 UNION ALL
 
-                -- Existing submissions (SPPTG Terdata or SPPTG Terdaftar)
                 SELECT
-                    s.id AS kawasan_id,
-                    s.nama_pemohon AS nama_kawasan,
+                    sg.id AS kawasan_id,
+                    sg.nama_pemilik AS nama_kawasan,
                     'SPPTG Eksisting' AS jenis_kawasan,
-                    ST_Area(ST_Intersection(ig.geom, ST_MakeValid(s.geom)))::double precision AS luas_overlap,
-                    (ST_Area(ST_Intersection(ig.geom, ST_MakeValid(s.geom))) / NULLIF(ST_Area(ig.geom), 0) * 100)::double precision as percentage_overlap,
+                    ST_Area(ST_Intersection(ig.geom, sg.geom))::double precision AS luas_overlap,
+                    (ST_Area(ST_Intersection(ig.geom, sg.geom)) / NULLIF(ST_Area(ig.geom), 0) * 100)::double precision as percentage_overlap,
                     'Submission' as sumber
-                FROM submissions s
+                FROM submission_geom sg
                 CROSS JOIN input_geom ig
-                WHERE 
-                    s.status IN ('SPPTG terdaftar', 'SPPTG terdata')
-                    AND s.geom IS NOT NULL
-                    AND ST_Intersects(ig.geom, s.geom)
+                WHERE ST_Intersects(ig.geom, sg.geom)
             `;
 
             const result = await ctx.db.execute(intersectSql);
-
-            // Validate and transform result using Zod
-            const overlaps = OverlapResultArraySchema.parse(result.rows || []);
-
-            return overlaps.map((row) => ({
-                kawasanId: row.kawasan_id,
-                namaKawasan: row.nama_kawasan,
-                jenisKawasan: row.jenis_kawasan,
-                luasOverlap: row.luas_overlap,
-                percentageOverlap: row.percentage_overlap,
-                sumber: row.sumber,
-            }));
+            return normalizeOverlapRows(result.rows || []);
         }),
 
     updateStatus: verifikatorProcedure

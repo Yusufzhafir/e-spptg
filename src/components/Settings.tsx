@@ -36,7 +36,12 @@ interface SettingsProps {
   users: User[];
   villages: Village[];
   prohibitedAreas: ProhibitedArea[];
-  onUpdateUsers: (users: User[]) => void;
+  onUpdateUsers?: (users: User[]) => void;
+  onUpdateUser?: (
+    id: number,
+    data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'nomorHP' | 'status'>>
+  ) => void;
+  onToggleUserStatus?: (id: number) => void;
   onUpdateVillages?: (villages: Village[]) => void; // Keep for backward compatibility
   onUpdateProhibitedAreas: (areas: ProhibitedArea[]) => void; // Changed to ProhibitedArea[] for local state updates
   // Village mutation callbacks
@@ -61,6 +66,8 @@ export function Settings({
   villages,
   prohibitedAreas,
   onUpdateUsers,
+  onUpdateUser,
+  onToggleUserStatus,
   onUpdateVillages,
   onUpdateProhibitedAreas,
   onCreateVillage,
@@ -137,7 +144,12 @@ export function Settings({
         </TabsList>
 
         <TabsContent value="users" className="mt-6">
-          <UsersTab users={users} onUpdateUsers={onUpdateUsers} />
+          <UsersTab
+            users={users}
+            onUpdateUsers={onUpdateUsers}
+            onUpdateUser={onUpdateUser}
+            onToggleUserStatus={onToggleUserStatus}
+          />
         </TabsContent>
 
         {isSuperadmin && (

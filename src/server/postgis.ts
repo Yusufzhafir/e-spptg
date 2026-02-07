@@ -12,7 +12,7 @@ export interface OverlapCalculation {
   jenisKawasan: string;
   luasOverlap: number;
   percentageOverlap: number;
-  intersectionGeom: any; // PostGIS geometry
+  intersectionGeom: unknown; // PostGIS geometry
 }
 
 /**
@@ -44,14 +44,17 @@ export async function calculateAllOverlaps(
     );
 
     // Transform database results into JavaScript objects
-    const overlaps: OverlapCalculation[] = (result.rows || []).map((row: any) => ({
-      prohibitedAreaId: Number(row.prohibited_area_id),
-      namaKawasan: row.nama_kawasan,
-      jenisKawasan: row.jenis_kawasan,
-      luasOverlap: Number(row.luas_overlap ?? 0),
-      percentageOverlap: Number(row.percentage_overlap ?? 0),
-      intersectionGeom: row.intersection_geom,
-    }));
+    const overlaps: OverlapCalculation[] = (result.rows || []).map((row: unknown) => {
+      const typedRow = row as Record<string, unknown>;
+      return {
+      prohibitedAreaId: Number(typedRow.prohibited_area_id),
+      namaKawasan: String(typedRow.nama_kawasan ?? ''),
+      jenisKawasan: String(typedRow.jenis_kawasan ?? ''),
+      luasOverlap: Number(typedRow.luas_overlap ?? 0),
+      percentageOverlap: Number(typedRow.percentage_overlap ?? 0),
+      intersectionGeom: typedRow.intersection_geom,
+      };
+    });
 
     return overlaps;
   } catch (error) {

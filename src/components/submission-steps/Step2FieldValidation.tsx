@@ -122,6 +122,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
             ...converted
         };
       });
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setUtmCoordinates(newUtmCoords);
     }
   }, [draft.coordinatesGeografis, coordinateSystem, toUTM]);
@@ -178,7 +179,11 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
     onUpdateDraft({ coordinatesGeografis: updated });
   };
 
-  const handleUpdateUTM = (id: string, field: keyof LocalUTMCoordinate, value: any) => {
+  const handleUpdateUTM = (
+    id: string,
+    field: keyof LocalUTMCoordinate,
+    value: string | number
+  ) => {
     // Update local UTM state first
     const updatedUtm = utmCoordinates.map(c => 
         c.id === id ? { ...c, [field]: value } : c
@@ -230,6 +235,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
           kawasanId: o.kawasanId,
           namaKawasan: o.namaKawasan,
           jenisKawasan: o.jenisKawasan,
+          sumber: o.sumber,
           luasOverlap: o.luasOverlap,
           percentageOverlap: o.percentageOverlap,
         }))
@@ -787,6 +793,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                       <TableRow className="bg-gray-50">
                         <TableHead>Nama Kawasan</TableHead>
                         <TableHead>Jenis</TableHead>
+                        <TableHead>Sumber</TableHead>
                         <TableHead>Luas Overlap</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -796,6 +803,11 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                           <TableCell>{overlap.namaKawasan}</TableCell>
                           <TableCell>
                             <Badge variant="outline">{overlap.jenisKawasan}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">
+                              {overlap.sumber === 'Submission' ? 'SPPTG Eksisting' : 'Kawasan Non-SPPTG'}
+                            </Badge>
                           </TableCell>
                           <TableCell>{overlap.luasOverlap} m²</TableCell>
                         </TableRow>

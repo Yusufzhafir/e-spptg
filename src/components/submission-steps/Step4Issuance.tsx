@@ -15,10 +15,9 @@ import { Upload, File, X, CheckCircle2, Download, Printer, ArrowLeft, FileText, 
 import { toast } from 'sonner';
 import { trpc } from '@/trpc/client';
 import { generateCertificateNumber } from '@/lib/certificate-number-generator';
-import { numberToIndonesianWords } from '@/lib/number-to-words';
 import { usePDFGenerator } from '@/hooks/usePDFGenerator';
 import type { SPPTGPDFData } from '@/components/pdf/types';
-import { generateStaticMapUrl } from '@/lib/map-static-api';
+import { buildSPPTGPDFData } from '@/lib/spptg-pdf-data';
 
 interface Step4Props {
   draft: SubmissionDraft;
@@ -67,7 +66,7 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
     setIsUploading(true);
     try {
       // Step 1: Create document record and get s3Key
-      const { documentId, publicUrl, s3Key } = await createUploadUrlMutation.mutateAsync({
+      const { documentId, s3Key } = await createUploadUrlMutation.mutateAsync({
         draftId: draft.id,
         category: 'SPPG',
         filename: file.name,
@@ -102,10 +101,10 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
         },
       });
       toast.success('Dokumen SPPTG berhasil diunggah.');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Upload error:', error);
       // Provide user-friendly error messages
-      if (error.message) {
+      if (error instanceof Error && error.message) {
         toast.error(error.message);
       } else {
         toast.error('Gagal mengunggah dokumen. Silakan coba lagi atau hubungi administrator jika masalah berlanjut.');
@@ -130,120 +129,7 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
    * Build PDF data from draft
    */
   const buildPDFData = (): SPPTGPDFData => {
-    // Get witnesses and boundaries
-    const saksiList = draft.saksiList || [];
-    
-    // Build boundary data for all 8 positions (display as-is, no mapping)
-    const boundaryData: {
-      batasUtara?: string;
-      penggunaanBatasUtara?: string;
-      batasTimurLaut?: string;
-      penggunaanBatasTimurLaut?: string;
-      batasTimur?: string;
-      penggunaanBatasTimur?: string;
-      batasTenggara?: string;
-      penggunaanBatasTenggara?: string;
-      batasSelatan?: string;
-      penggunaanBatasSelatan?: string;
-      batasBaratDaya?: string;
-      penggunaanBatasBaratDaya?: string;
-      batasBarat?: string;
-      penggunaanBatasBarat?: string;
-      batasBaratLaut?: string;
-      penggunaanBatasBaratLaut?: string;
-    } = {};
-    
-    // Map each witness to their exact position
-    saksiList.forEach((saksi) => {
-      const sisi = saksi.sisi;
-      const penggunaan = saksi.penggunaanLahanBatas || '';
-      
-      switch (sisi) {
-        case 'Utara':
-          boundaryData.batasUtara = sisi;
-          boundaryData.penggunaanBatasUtara = penggunaan;
-          break;
-        case 'Timur Laut':
-          boundaryData.batasTimurLaut = sisi;
-          boundaryData.penggunaanBatasTimurLaut = penggunaan;
-          break;
-        case 'Timur':
-          boundaryData.batasTimur = sisi;
-          boundaryData.penggunaanBatasTimur = penggunaan;
-          break;
-        case 'Tenggara':
-          boundaryData.batasTenggara = sisi;
-          boundaryData.penggunaanBatasTenggara = penggunaan;
-          break;
-        case 'Selatan':
-          boundaryData.batasSelatan = sisi;
-          boundaryData.penggunaanBatasSelatan = penggunaan;
-          break;
-        case 'Barat Daya':
-          boundaryData.batasBaratDaya = sisi;
-          boundaryData.penggunaanBatasBaratDaya = penggunaan;
-          break;
-        case 'Barat':
-          boundaryData.batasBarat = sisi;
-          boundaryData.penggunaanBatasBarat = penggunaan;
-          break;
-        case 'Barat Laut':
-          boundaryData.batasBaratLaut = sisi;
-          boundaryData.penggunaanBatasBaratLaut = penggunaan;
-          break;
-      }
-    });
-
-    // Generate map image URL if coordinates exist
-    const mapImageUrl = draft.coordinatesGeografis && draft.coordinatesGeografis.length >= 3
-      ? generateStaticMapUrl(draft.coordinatesGeografis) || undefined
-      : undefined;
-
-    // Use luasManual as primary value (consistent throughout document)
-    const luasValue = draft.luasManual || draft.luasLahan || 0;
-    const luasTerbilang = luasValue ? numberToIndonesianWords(luasValue) : '';
-
-    return {
-      // Personal Information
-      namaPemohon: draft.namaPemohon,
-      nik: draft.nik,
-      tempatLahir: draft.tempatLahir,
-      tanggalLahir: draft.tanggalLahir,
-      pekerjaan: draft.pekerjaan,
-      alamatKTP: draft.alamatKTP,
-      
-      // Land Information
-      luasManual: luasValue || undefined,
-      luasTerbilang,
-      luasLahan: draft.luasLahan,
-      penggunaanLahan: draft.penggunaanLahan,
-      tahunAwalGarap: draft.tahunAwalGarap,
-      
-      // Location
-      namaJalan: draft.namaJalan,
-      namaGang: draft.namaGang,
-      nomorPersil: draft.nomorPersil,
-      rtrw: draft.rtrw,
-      dusun: draft.dusun,
-      namaDesa: villageData?.namaDesa || '',
-      kecamatan: villageData?.kecamatan || draft.kecamatan || '',
-      kabupaten: villageData?.kabupaten || draft.kabupaten || '',
-      
-      // Boundaries
-      ...boundaryData,
-      
-      // Witnesses
-      saksiList,
-      
-      // Administrative
-      nomorSPPTG: draft.nomorSPPTG || '',
-      tanggalPernyataan: draft.tanggalTerbit || new Date().toISOString().split('T')[0],
-      namaKepalaDesa: draft.namaKepalaDesa,
-      
-      // Map
-      coordinatesGeografis: draft.coordinatesGeografis || [],
-      mapImageUrl,
-    };
+    return buildSPPTGPDFData(draft, villageData ?? null);
   };
 
   /**
@@ -303,7 +189,7 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
       const filename = `SPPTG_${certificateNumber.replace(/\//g, '_')}.pdf`;
       
       // Create document record and get s3Key
-      const { documentId, publicUrl, s3Key } = await createUploadUrlMutation.mutateAsync({
+      const { documentId, s3Key } = await createUploadUrlMutation.mutateAsync({
         draftId: draft.id,
         category: 'SPPG',
         filename,
@@ -336,9 +222,9 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
       });
 
       toast.success('PDF SPPTG berhasil dibuat dan diunggah.');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('PDF generation error:', error);
-      if (error.message) {
+      if (error instanceof Error && error.message) {
         toast.error(`Gagal membuat PDF: ${error.message}`);
       } else {
         toast.error('Gagal membuat PDF. Silakan coba lagi atau hubungi administrator.');

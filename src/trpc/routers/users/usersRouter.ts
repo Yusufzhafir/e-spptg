@@ -74,7 +74,8 @@ export const usersRouter = router({
         }
 
         try {
-          await clerkClient.users.updateUserMetadata(targetUser.clerkUserId, {
+          const client = await clerkClient();
+          await client.users.updateUserMetadata(targetUser.clerkUserId, {
             privateMetadata: {
               role: input.data.peran,
             },

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { SubmissionDraft, StatusSPPTG, FeedbackData, UploadedDocument } from '../../types';
+import { useMemo, useState } from 'react';
+import { SubmissionDraft, StatusSPPTG, FeedbackData, UploadedDocument, Submission } from '../../types';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Button } from '../ui/button';
@@ -35,6 +35,8 @@ import {
 
 import { CheckCircle2, XCircle, MapPin, AlertTriangle, Upload, File, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { ReadOnlyMap } from '@/components/maps/ReadOnlyMap';
+import { coordinatesToGeoJSON } from '@/lib/map-utils';
 
 interface Step3Props {
   draft: SubmissionDraft;
@@ -215,6 +217,35 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
     { label: 'Berita Acara Lapangan', uploaded: !!draft.dokumenBeritaAcara },
   ];
 
+  const mapPreviewSubmission = useMemo<Submission | null>(() => {
+    const geoJSON = coordinatesToGeoJSON(draft.coordinatesGeografis || []);
+    if (!geoJSON) return null;
+
+    return {
+      id: -1,
+      namaPemilik: draft.namaPemohon || 'Draft',
+      nik: draft.nik || '',
+      alamat: draft.alamatKTP || '-',
+      nomorHP: draft.juruUkur?.nomorHP || '-',
+      email: '-',
+      villageId: draft.villageId || 0,
+      kecamatan: draft.kecamatan || '-',
+      kabupaten: draft.kabupaten || '-',
+      luas: draft.luasLahan || 0,
+      luasManual: draft.luasManual,
+      penggunaanLahan: draft.penggunaanLahan || '-',
+      catatan: null,
+      geoJSON,
+      status: draft.status || 'SPPTG terdata',
+      tanggalPengajuan: new Date(),
+      verifikator: draft.verifikator || null,
+      riwayat: [],
+      feedback: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+  }, [draft]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -362,34 +393,26 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
           {/* Map Preview */}
           <div>
             <h3 className="text-gray-900 mb-3">Peta Lahan yang Diajukan</h3>
-            <div className="bg-gray-100 rounded-lg border border-gray-300 h-96 flex items-center justify-center relative">
-              <div className="text-center text-gray-500">
-                <MapPin className="w-16 h-16 mx-auto mb-3 text-gray-400" />
-                <p>Pratinjau Polygon Lahan</p>
-                <p className="text-sm">
-                  {draft.coordinatesGeografis.length >= 3
-                    ? `${draft.coordinatesGeografis.length} titik koordinat`
-                    : 'Belum ada koordinat'}
-                </p>
-              </div>
-
-              {/* Legend */}
-              <div className="absolute bottom-4 right-4 bg-white rounded-lg shadow-lg p-3 border border-gray-200">
-                <p className="text-xs mb-2">Legenda:</p>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded bg-blue-600 opacity-60" />
-                    <span className="text-xs">Lahan Pengajuan</span>
-                  </div>
-                  {hasOverlap && (
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 rounded bg-orange-600 opacity-60" />
-                      <span className="text-xs">Kawasan Non-SPPTG</span>
-                    </div>
-                  )}
+            {mapPreviewSubmission ? (
+              <ReadOnlyMap
+                submissions={[mapPreviewSubmission]}
+                selectedSubmission={mapPreviewSubmission}
+                height="24rem"
+                zoom={16}
+                center={{
+                  lat: draft.coordinatesGeografis[0]?.latitude || -6.9175,
+                  lng: draft.coordinatesGeografis[0]?.longitude || 107.6191,
+                }}
+              />
+            ) : (
+              <div className="bg-gray-100 rounded-lg border border-gray-300 h-96 flex items-center justify-center">
+                <div className="text-center text-gray-500">
+                  <MapPin className="w-16 h-16 mx-auto mb-3 text-gray-400" />
+                  <p>Pratinjau Polygon Lahan</p>
+                  <p className="text-sm">Belum ada koordinat valid</p>
                 </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Status Decision */}
@@ -669,6 +692,9 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
                     <p className="text-gray-900">{overlap.namaKawasan}</p>
                     <p className="text-sm text-gray-600 mt-1">
                       Jenis: {overlap.jenisKawasan}
+                    </p>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Sumber: {overlap.sumber === 'Submission' ? 'SPPTG Eksisting' : 'Kawasan Non-SPPTG'}
                     </p>
                   </div>
                   <Badge variant="outline" className="text-orange-700 border-orange-300">

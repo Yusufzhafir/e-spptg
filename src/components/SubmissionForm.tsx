@@ -29,7 +29,7 @@ export function SubmissionForm({ onSubmit, onCancel }: SubmissionFormProps) {
     luas: 0,
     penggunaanLahan: '',
     catatan: '',
-    geoJSON: [],
+    geoJSON: null,
   });
 
    

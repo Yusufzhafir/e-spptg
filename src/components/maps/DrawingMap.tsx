@@ -19,6 +19,10 @@ interface DrawingMapProps {
   zoom?: number;
 }
 
+type PolygonWithListeners = google.maps.Polygon & {
+  __listeners?: google.maps.MapsEventListener[];
+};
+
 // Internal component that uses the map instance
 function DrawingMapInternal({
   coordinates,
@@ -42,7 +46,7 @@ function DrawingMapInternal({
   // Centralized cleanup function for polygon and its listeners
   const cleanupPolygon = useCallback(() => {
     if (polygonRef.current) {
-      const listeners = (polygonRef.current as any).__listeners;
+      const listeners = (polygonRef.current as PolygonWithListeners).__listeners;
       if (listeners) {
         listeners.forEach((listener: google.maps.MapsEventListener) => {
           google.maps.event.removeListener(listener);
@@ -146,7 +150,7 @@ function DrawingMapInternal({
           });
 
           // Store listeners for cleanup
-          (polygon as any).__listeners = [setAtListener, insertAtListener, removeAtListener];
+          (polygon as PolygonWithListeners).__listeners = [setAtListener, insertAtListener, removeAtListener];
         }
       }
     );
@@ -211,7 +215,7 @@ function DrawingMapInternal({
           });
 
           // Store listeners for cleanup
-          (newPolygon as any).__listeners = [setAtListener, insertAtListener, removeAtListener];
+          (newPolygon as PolygonWithListeners).__listeners = [setAtListener, insertAtListener, removeAtListener];
         } else {
           // Add point to existing polygon
           const path = polygonRef.current.getPath();
@@ -358,7 +362,7 @@ function DrawingMapInternal({
       });
 
       // Store listeners for cleanup
-      (polygon as any).__listeners = [setAtListener, insertAtListener, removeAtListener];
+      (polygon as PolygonWithListeners).__listeners = [setAtListener, insertAtListener, removeAtListener];
 
       isUpdatingFromPropsRef.current = false;
     } else {

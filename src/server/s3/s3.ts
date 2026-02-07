@@ -142,14 +142,15 @@ export async function fetchTemplatePDF(templateType: string): Promise<Buffer> {
     const chunks: Buffer[] = [];
     
     // Check if it's an async iterable (Node.js Readable stream or web ReadableStream)
-    if (typeof (bodyStream as any)[Symbol.asyncIterator] === 'function') {
-      for await (const chunk of bodyStream as any) {
+    const asyncIterableBody = bodyStream as AsyncIterable<unknown>;
+    if (typeof asyncIterableBody[Symbol.asyncIterator] === 'function') {
+      for await (const chunk of asyncIterableBody) {
         if (Buffer.isBuffer(chunk)) {
           chunks.push(chunk);
         } else if (chunk instanceof Uint8Array) {
           chunks.push(Buffer.from(chunk));
         } else {
-          chunks.push(Buffer.from(chunk));
+          chunks.push(Buffer.from(String(chunk)));
         }
       }
       return Buffer.concat(chunks);
@@ -160,11 +161,13 @@ export async function fetchTemplatePDF(templateType: string): Promise<Buffer> {
       const chunks: Buffer[] = [];
       const stream = bodyStream as NodeJS.ReadableStream;
       
-      stream.on('data', (chunk: any) => {
+      stream.on('data', (chunk: unknown) => {
         if (Buffer.isBuffer(chunk)) {
           chunks.push(chunk);
-        } else {
+        } else if (chunk instanceof Uint8Array) {
           chunks.push(Buffer.from(chunk));
+        } else {
+          chunks.push(Buffer.from(String(chunk)));
         }
       });
       

@@ -1,4 +1,4 @@
-import { GeographicCoordinate } from '@/types';
+import { GeographicCoordinate, GeoJSONPolygon } from '@/types';
 
 /**
  * Convert GeographicCoordinate array to Google Maps LatLng array
@@ -51,7 +51,9 @@ export function coordinatesToPolygonPath(
 /**
  * Convert geoJSON to Google Maps LatLng array
  */
-export function geoJSONToLatLng(geoJSON: any): google.maps.LatLng[] {
+export function geoJSONToLatLng(
+  geoJSON: GeoJSONPolygon | null | undefined
+): google.maps.LatLng[] {
   if (!geoJSON || !geoJSON.coordinates || !geoJSON.coordinates[0]) {
     return [];
   }
@@ -67,7 +69,9 @@ export function geoJSONToLatLng(geoJSON: any): google.maps.LatLng[] {
 /**
  * Convert Google Maps LatLng array to geoJSON format
  */
-export function latLngToGeoJSON(latLngs: google.maps.LatLng[]): any {
+export function latLngToGeoJSON(
+  latLngs: google.maps.LatLng[]
+): GeoJSONPolygon | null {
   if (latLngs.length < 3) {
     return null;
   }
@@ -79,6 +83,23 @@ export function latLngToGeoJSON(latLngs: google.maps.LatLng[]): any {
   return {
     type: 'Polygon',
     coordinates: [coordinates],
+  };
+}
+
+export function coordinatesToGeoJSON(
+  coordinates: GeographicCoordinate[]
+): GeoJSONPolygon | null {
+  if (coordinates.length < 3) return null;
+  const polygon = coordinates.map((coord) => [coord.longitude, coord.latitude]);
+  const [firstLng, firstLat] = polygon[0];
+  const [lastLng, lastLat] = polygon[polygon.length - 1];
+  if (firstLng !== lastLng || firstLat !== lastLat) {
+    polygon.push([firstLng, firstLat]);
+  }
+
+  return {
+    type: 'Polygon',
+    coordinates: [polygon],
   };
 }
 

@@ -267,6 +267,7 @@ export const submissionDraftPayloadSchema = z.object({
         kawasanId: z.number().int(),
         namaKawasan: z.string(),
         jenisKawasan: z.string(),
+        sumber: z.enum(['ProhibitedArea', 'Submission']).optional(),
         luasOverlap: z.number(),
         percentageOverlap: z.number().optional(),
       })

@@ -6,6 +6,11 @@ export type StatusSPPTG = ((typeof submissions.$inferSelect)["status"])
 
 export type DocumentCategoryEnum = (typeof submissions_documents.$inferSelect)['category']
 
+export interface GeoJSONPolygon {
+  type: 'Polygon';
+  coordinates: number[][][];
+}
+
 export interface Submission {
   id: number;
   // Data Pemilik
@@ -25,7 +30,7 @@ export interface Submission {
   catatan: string | null;
   
   // Peta & Dokumen
-  geoJSON?: any;
+  geoJSON?: GeoJSONPolygon | null;
   
   // Status
   status: StatusSPPTG;
@@ -173,6 +178,7 @@ export interface OverlapResult {
   kawasanId: number | string; // Can be number from DB or string from mock
   namaKawasan: string;
   jenisKawasan: string;
+  sumber?: 'ProhibitedArea' | 'Submission';
   luasOverlap: number; // m²
   percentageOverlap?: number;
 }

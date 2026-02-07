@@ -60,6 +60,7 @@ export const SPPTGPage2: React.FC<PageProps> = ({ data, config }) => {
   // Get witnesses (up to 8)
   const witnesses = data.saksiList.slice(0, 8);
   const showWitnesses = config?.includeWitnesses !== false;
+  const showAdministrative = config?.includeAdministrative !== false;
 
   // Split witnesses into rows of 4
   const row1 = witnesses.slice(0, 4);
@@ -147,6 +148,37 @@ export const SPPTGPage2: React.FC<PageProps> = ({ data, config }) => {
             )}
           </View>
         </>
+      )}
+
+      {showAdministrative && (
+        <View style={styles.administrative}>
+          <Text style={styles.subtitle}>Mengetahui</Text>
+
+          <View style={styles.row}>
+            <Text style={styles.label}>Nomor Registrasi</Text>
+            <Text style={styles.colon}>:</Text>
+            <Text style={[styles.value, { fontFamily: 'Times-Bold' }]}>
+              {data.nomorSPPTG}
+            </Text>
+          </View>
+
+          <View style={styles.row}>
+            <Text style={styles.label}>Tanggal</Text>
+            <Text style={styles.colon}>:</Text>
+            <Text style={styles.value}>{formattedDate}</Text>
+          </View>
+
+          <View style={styles.spacerSmall} />
+
+          <View style={styles.signature}>
+            <Text style={styles.signatureLabel}>Kepala Desa {data.namaDesa}</Text>
+            <View style={styles.spacerLarge} />
+            <View style={styles.spacerLarge} />
+            <Text style={styles.signatureValue}>
+              {data.namaKepalaDesa || '(_________________________)'}
+            </Text>
+          </View>
+        </View>
       )}
 
       {/* Footer */}

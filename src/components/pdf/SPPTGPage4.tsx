@@ -42,7 +42,7 @@ export const SPPTGPage4: React.FC<PageProps> = ({ data, config }) => {
       {/* Footer */}
       <View style={styles.footer} fixed>
         <Text>
-          Surat Pernyataan Penguasaan Tanah Garapan - Halaman 4
+          Surat Pernyataan Penguasaan Tanah Garapan - Halaman 3
         </Text>
       </View>
     </Page>
