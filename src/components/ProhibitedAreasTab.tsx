@@ -31,17 +31,14 @@ import {
 } from './ui/select';
 
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
 import {
   Search,
   Plus,
-  Upload,
   Eye,
   Edit,
   Download,
   Trash2,
-  MapPin,
   AlertTriangle,
   Shield,
 } from 'lucide-react';
@@ -77,7 +74,6 @@ export function ProhibitedAreasTab({
   const [isOverlapCheckDialogOpen, setIsOverlapCheckDialogOpen] = useState(false);
   const [selectedArea, setSelectedArea] = useState<ProhibitedArea | null>(null);
   const [formData, setFormData] = useState<Partial<Omit<ProhibitedArea, 'geomGeoJSON'>> & { geomGeoJSON?: { type: 'Polygon'; coordinates: [[[number, number]]] } | null }>({});
-  const [uploadMethod, setUploadMethod] = useState<'upload' | 'draw'>('upload');
   const [isParsingFile, setIsParsingFile] = useState(false);
 
   // Filter areas
@@ -99,7 +95,6 @@ export function ProhibitedAreasTab({
       statusValidasi: 'Lolos',
       warna: '#3b82f6',
     });
-    setUploadMethod('upload');
     setIsAddDialogOpen(true);
   };
 
@@ -488,53 +483,30 @@ export function ProhibitedAreasTab({
             </DialogDescription>
           </DialogHeader>
 
-          <Tabs value={uploadMethod} onValueChange={(v) => setUploadMethod(v as "upload")}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="upload">
-                <Upload className="h-4 w-4 mr-2" />
-                Unggah File
-              </TabsTrigger>
-              <TabsTrigger value="draw">
-                <MapPin className="h-4 w-4 mr-2" />
-                Gambar di Peta
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="upload" className="space-y-4">
-              <div>
-                <Label htmlFor="kml-file">File KML/KMZ/GPX</Label>
-                <Input
-                  id="kml-file"
-                  type="file"
-                  accept=".kml,.kmz,.gpx"
-                  onChange={handleFileUpload}
-                  disabled={isParsingFile}
-                  className="mt-2"
-                />
-                <p className="text-xs text-gray-500 mt-2">
-                  Maks 50 MB. Geometry: Polygon/MultiPolygon. Koordinat: WGS84 (EPSG:4326)
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="kml-file">File KML/KMZ/GPX</Label>
+              <Input
+                id="kml-file"
+                type="file"
+                accept=".kml,.kmz,.gpx"
+                onChange={handleFileUpload}
+                disabled={isParsingFile}
+                className="mt-2"
+              />
+              <p className="text-xs text-gray-500 mt-2">
+                Maks 50 MB. Geometry: Polygon/MultiPolygon. Koordinat: WGS84 (EPSG:4326)
+              </p>
+              {isParsingFile && (
+                <p className="text-xs text-blue-600 mt-2">Memproses file...</p>
+              )}
+              {formData.geomGeoJSON && (
+                <p className="text-xs text-green-600 mt-2">
+                  ✓ File berhasil diparse. Geometry siap digunakan.
                 </p>
-                {isParsingFile && (
-                  <p className="text-xs text-blue-600 mt-2">Memproses file...</p>
-                )}
-                {formData.geomGeoJSON && (
-                  <p className="text-xs text-green-600 mt-2">
-                    ✓ File berhasil diparse. Geometry siap digunakan.
-                  </p>
-                )}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="draw" className="space-y-4">
-              <div className="bg-gray-100 rounded-lg border border-gray-300 h-64 flex items-center justify-center">
-                <div className="text-center text-gray-500">
-                  <MapPin className="h-12 w-12 mx-auto mb-2 text-gray-400" />
-                  <p>Kanvas Peta Interaktif</p>
-                  <p className="text-sm">Gunakan alat polygon untuk menggambar kawasan</p>
-                </div>
-              </div>
-            </TabsContent>
-          </Tabs>
+              )}
+            </div>
+          </div>
 
           <div className="space-y-4 pt-4 border-t">
             <div className="grid grid-cols-2 gap-4">
@@ -804,27 +776,6 @@ export function ProhibitedAreasTab({
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* Map Preview */}
-            <div className="bg-gray-100 rounded-lg border border-gray-300 h-96 flex items-center justify-center relative">
-              <div className="text-center text-gray-500">
-                <MapPin className="h-16 w-16 mx-auto mb-3 text-gray-400" />
-                <p>Pratinjau Peta Kawasan</p>
-                <p className="text-sm">Layer kawasan ditampilkan dengan basemap</p>
-              </div>
-
-              {/* Legend */}
-              <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-3 border border-gray-200">
-                <p className="text-xs mb-2">Legenda:</p>
-                <div className="flex items-center gap-2">
-                  <div
-                    className="w-4 h-4 rounded"
-                    style={{ backgroundColor: selectedArea?.warna, opacity: 0.6 }}
-                  />
-                  <span className="text-xs">{selectedArea?.jenisKawasan}</span>
-                </div>
-              </div>
-            </div>
-
             {/* Info */}
             <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg">
               <div>
