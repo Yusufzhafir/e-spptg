@@ -133,6 +133,7 @@ export const villages = pgTable(
     }),
     kodeDesa: varchar('kode_desa', { length: 20 }).notNull(), // BPS code
     namaDesa: varchar('nama_desa', { length: 255 }).notNull(),
+    namaKepalaDesa: varchar('nama_kepala_desa', { length: 255 }),
     kecamatan: varchar('kecamatan', { length: 255 }).notNull(),
     kabupaten: varchar('kabupaten', { length: 255 }).notNull(),
     provinsi: varchar('provinsi', { length: 255 }).notNull(),

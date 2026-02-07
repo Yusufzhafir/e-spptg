@@ -42,6 +42,7 @@ import { toast } from 'sonner';
 type CreateVillageInput = {
   kodeDesa: string;
   namaDesa: string;
+  namaKepalaDesa: string;
   kecamatan: string;
   kabupaten: string;
   provinsi: string;
@@ -116,6 +117,7 @@ export function VillagesTab({
     if (
       !formData.kodeDesa ||
       !formData.namaDesa ||
+      !formData.namaKepalaDesa ||
       !formData.kecamatan ||
       !formData.kabupaten ||
       !formData.provinsi
@@ -129,6 +131,7 @@ export function VillagesTab({
       onCreateVillage({
         kodeDesa: formData.kodeDesa,
         namaDesa: formData.namaDesa,
+        namaKepalaDesa: formData.namaKepalaDesa,
         kecamatan: formData.kecamatan,
         kabupaten: formData.kabupaten,
         provinsi: formData.provinsi,
@@ -141,6 +144,7 @@ export function VillagesTab({
         id: new Date().getTime(),
         kodeDesa: formData.kodeDesa,
         namaDesa: formData.namaDesa,
+        namaKepalaDesa: formData.namaKepalaDesa,
         kecamatan: formData.kecamatan,
         kabupaten: formData.kabupaten,
         provinsi: formData.provinsi,
@@ -159,6 +163,7 @@ export function VillagesTab({
     if (
       !formData.kodeDesa ||
       !formData.namaDesa ||
+      !formData.namaKepalaDesa ||
       !formData.kecamatan ||
       !formData.kabupaten ||
       !formData.provinsi
@@ -172,6 +177,7 @@ export function VillagesTab({
       onUpdateVillage(selectedVillage.id, {
         kodeDesa: formData.kodeDesa,
         namaDesa: formData.namaDesa,
+        namaKepalaDesa: formData.namaKepalaDesa,
         kecamatan: formData.kecamatan,
         kabupaten: formData.kabupaten,
         provinsi: formData.provinsi,
@@ -279,6 +285,7 @@ export function VillagesTab({
             <TableRow className="bg-gray-50">
               <TableHead>Kode Desa (BPS)</TableHead>
               <TableHead>Nama Desa</TableHead>
+              <TableHead>Kepala Desa</TableHead>
               <TableHead>Kecamatan</TableHead>
               <TableHead>Kabupaten/Kota</TableHead>
               <TableHead>Provinsi</TableHead>
@@ -289,7 +296,7 @@ export function VillagesTab({
           <TableBody>
             {filteredVillages.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+              <TableCell colSpan={8} className="text-center py-8 text-gray-500">
                   {searchQuery || kecamatanFilter !== 'all'
                     ? 'Tidak ada desa yang ditemukan'
                     : 'Belum ada data desa. Tambahkan desa terlebih dahulu.'}
@@ -300,6 +307,7 @@ export function VillagesTab({
                 <TableRow key={village.id}>
                   <TableCell className="text-gray-900">{village.kodeDesa}</TableCell>
                   <TableCell>{village.namaDesa}</TableCell>
+                  <TableCell className="text-gray-600">{village.namaKepalaDesa || '-'}</TableCell>
                   <TableCell className="text-gray-600">{village.kecamatan}</TableCell>
                   <TableCell className="text-gray-600">{village.kabupaten}</TableCell>
                   <TableCell className="text-gray-600">{village.provinsi}</TableCell>
@@ -364,6 +372,16 @@ export function VillagesTab({
                 value={formData.namaDesa || ''}
                 onChange={(e) => setFormData({ ...formData, namaDesa: e.target.value })}
                 placeholder="Masukkan nama desa"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="namaKepalaDesa">Nama Kepala Desa *</Label>
+              <Input
+                id="namaKepalaDesa"
+                value={formData.namaKepalaDesa || ''}
+                onChange={(e) => setFormData({ ...formData, namaKepalaDesa: e.target.value })}
+                placeholder="Masukkan nama kepala desa"
               />
             </div>
 
@@ -441,6 +459,15 @@ export function VillagesTab({
                 id="edit-namaDesa"
                 value={formData.namaDesa || ''}
                 onChange={(e) => setFormData({ ...formData, namaDesa: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="edit-namaKepalaDesa">Nama Kepala Desa *</Label>
+              <Input
+                id="edit-namaKepalaDesa"
+                value={formData.namaKepalaDesa || ''}
+                onChange={(e) => setFormData({ ...formData, namaKepalaDesa: e.target.value })}
               />
             </div>
 

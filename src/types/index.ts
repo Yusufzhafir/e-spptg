@@ -88,6 +88,7 @@ export interface Village {
   id: number;
   kodeDesa: string; // BPS code
   namaDesa: string;
+  namaKepalaDesa?: string | null;
   kecamatan: string;
   kabupaten: string;
   provinsi: string;

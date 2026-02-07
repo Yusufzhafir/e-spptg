@@ -131,6 +131,7 @@ export default function PengaturanPage() {
       id: v.id,
       kodeDesa: v.kodeDesa,
       namaDesa: v.namaDesa,
+      namaKepalaDesa: v.namaKepalaDesa ?? null,
       kecamatan: v.kecamatan,
       kabupaten: v.kabupaten,
       provinsi: v.provinsi,
@@ -247,6 +248,7 @@ export default function PengaturanPage() {
       createVillageMutation.mutate({
         kodeDesa: village.kodeDesa,
         namaDesa: village.namaDesa,
+        namaKepalaDesa: village.namaKepalaDesa || '',
         kecamatan: village.kecamatan,
         kabupaten: village.kabupaten,
         provinsi: village.provinsi,
@@ -260,6 +262,7 @@ export default function PengaturanPage() {
         data: {
           kodeDesa: village.kodeDesa,
           namaDesa: village.namaDesa,
+          namaKepalaDesa: village.namaKepalaDesa || '',
           kecamatan: village.kecamatan,
           kabupaten: village.kabupaten,
           provinsi: village.provinsi,
@@ -339,6 +342,7 @@ export default function PengaturanPage() {
   const handleCreateVillage = (data: {
     kodeDesa: string;
     namaDesa: string;
+    namaKepalaDesa: string;
     kecamatan: string;
     kabupaten: string;
     provinsi: string;
@@ -349,6 +353,7 @@ export default function PengaturanPage() {
   const handleUpdateVillage = (id: number, data: Partial<{
     kodeDesa: string;
     namaDesa: string;
+    namaKepalaDesa: string;
     kecamatan: string;
     kabupaten: string;
     provinsi: string;

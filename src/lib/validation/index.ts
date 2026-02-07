@@ -29,6 +29,7 @@ export const updateUserSchema = createUserSchema.partial();
 export const createVillageSchema = z.object({
   kodeDesa: z.string().min(1, 'Kode desa diperlukan'),
   namaDesa: z.string().min(2, 'Nama desa minimal 2 karakter'),
+  namaKepalaDesa: z.string().min(2, 'Nama kepala desa minimal 2 karakter'),
   kecamatan: z.string().min(2, 'Kecamatan minimal 2 karakter'),
   kabupaten: z.string().min(2, 'Kabupaten minimal 2 karakter'),
   provinsi: z.string().min(2, 'Provinsi minimal 2 karakter'),

@@ -18,6 +18,7 @@ import { useAuthRole } from './AuthRoleProvider';
 type CreateVillageInput = {
   kodeDesa: string;
   namaDesa: string;
+  namaKepalaDesa: string;
   kecamatan: string;
   kabupaten: string;
   provinsi: string;
