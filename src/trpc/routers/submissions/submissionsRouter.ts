@@ -234,26 +234,22 @@ export const submissionsRouter = router({
             const OverlapResultArraySchema = z.array(OverlapResultSchema);
 
             // Query prohibited areas and existing submissions
+            const geoJsonText = JSON.stringify(geoJson);
             const intersectSql = sql`
+                WITH input_geom AS (
+                    SELECT ST_SetSRID(ST_MakeValid(ST_GeomFromGeoJSON(${geoJsonText})), 4326) AS geom
+                )
                 -- Prohibited areas
                 SELECT 
                     pa.id AS kawasan_id,
                     pa.nama_kawasan,
                     pa.jenis_kawasan,
-                    ST_Area(ST_Intersection(
-                        ST_GeomFromGeoJSON(${JSON.stringify(geoJson)})::geometry(Polygon, 4326),
-                        pa.geom
-                    ))::double precision AS luas_overlap,
-                    (ST_Area(ST_Intersection(
-                        ST_GeomFromGeoJSON(${JSON.stringify(geoJson)})::geometry(Polygon, 4326),
-                        pa.geom
-                    )) / NULLIF(ST_Area(ST_GeomFromGeoJSON(${JSON.stringify(geoJson)})::geometry(Polygon, 4326)), 0) * 100)::double precision as percentage_overlap,
+                    ST_Area(ST_Intersection(ig.geom, pa.geom))::double precision AS luas_overlap,
+                    (ST_Area(ST_Intersection(ig.geom, pa.geom)) / NULLIF(ST_Area(ig.geom), 0) * 100)::double precision as percentage_overlap,
                     'ProhibitedArea' as sumber
                 FROM prohibited_areas pa
-                WHERE ST_Intersects(
-                    ST_GeomFromGeoJSON(${JSON.stringify(geoJson)})::geometry(Polygon, 4326),
-                    pa.geom
-                )
+                CROSS JOIN input_geom ig
+                WHERE ST_Intersects(ig.geom, pa.geom)
                 AND pa.aktif_di_validasi = true
 
                 UNION ALL
@@ -263,23 +259,15 @@ export const submissionsRouter = router({
                     s.id AS kawasan_id,
                     s.nama_pemohon AS nama_kawasan,
                     'SPPTG Eksisting' AS jenis_kawasan,
-                    ST_Area(ST_Intersection(
-                        ST_GeomFromGeoJSON(${JSON.stringify(geoJson)})::geometry(Polygon, 4326),
-                        s.geom
-                    ))::double precision AS luas_overlap,
-                    (ST_Area(ST_Intersection(
-                        ST_GeomFromGeoJSON(${JSON.stringify(geoJson)})::geometry(Polygon, 4326),
-                        s.geom
-                    )) / NULLIF(ST_Area(ST_GeomFromGeoJSON(${JSON.stringify(geoJson)})::geometry(Polygon, 4326)), 0) * 100)::double precision as percentage_overlap,
+                    ST_Area(ST_Intersection(ig.geom, ST_MakeValid(s.geom)))::double precision AS luas_overlap,
+                    (ST_Area(ST_Intersection(ig.geom, ST_MakeValid(s.geom))) / NULLIF(ST_Area(ig.geom), 0) * 100)::double precision as percentage_overlap,
                     'Submission' as sumber
                 FROM submissions s
+                CROSS JOIN input_geom ig
                 WHERE 
                     s.status IN ('SPPTG terdaftar', 'SPPTG terdata')
                     AND s.geom IS NOT NULL
-                    AND ST_Intersects(
-                        ST_GeomFromGeoJSON(${JSON.stringify(geoJson)})::geometry(Polygon, 4326),
-                        s.geom
-                    )
+                    AND ST_Intersects(ig.geom, s.geom)
             `;
 
             const result = await ctx.db.execute(intersectSql);
