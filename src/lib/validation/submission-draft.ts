@@ -314,13 +314,14 @@ export const saveStep4Schema = z.object({
 
 export type SaveStep4 = z.infer<typeof saveStep4Schema>;
 
-// Union type for all step saves
-export const saveDraftStepSchema = z.discriminatedUnion('currentStep', [
-  saveStep1Schema,
-  saveStep2Schema,
-  saveStep3Schema,
-  saveStep4Schema,
-]);
+const saveDraftPayloadSchema = z.object({}).passthrough();
+
+// Save draft should accept partial data to avoid blocking in-progress work
+export const saveDraftStepSchema = z.object({
+  draftId: z.number().int(),
+  currentStep: z.number().int().min(1).max(4),
+  payload: saveDraftPayloadSchema,
+});
 
 export type SaveDraftStep = z.infer<typeof saveDraftStepSchema>;
 
