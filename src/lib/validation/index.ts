@@ -30,6 +30,12 @@ export const createVillageSchema = z.object({
   kodeDesa: z.string().min(1, 'Kode desa diperlukan'),
   namaDesa: z.string().min(2, 'Nama desa minimal 2 karakter'),
   namaKepalaDesa: z.string().min(2, 'Nama kepala desa minimal 2 karakter'),
+  juruUkurNama: z.string().min(2, 'Nama juru ukur minimal 2 karakter'),
+  juruUkurJabatan: z.string().min(2, 'Jabatan juru ukur minimal 2 karakter'),
+  juruUkurInstansi: z.string().optional(),
+  juruUkurNomorHP: z
+    .string()
+    .regex(/^(\+62|0)[0-9]{9,12}$/, 'Nomor HP juru ukur tidak valid'),
   kecamatan: z.string().min(2, 'Kecamatan minimal 2 karakter'),
   kabupaten: z.string().min(2, 'Kabupaten minimal 2 karakter'),
   provinsi: z.string().min(2, 'Provinsi minimal 2 karakter'),

@@ -3,7 +3,6 @@ import { useState, useEffect, useCallback } from 'react';
 import proj4 from 'proj4';
 import {
   SubmissionDraft,
-  ResearchTeamMember,
   BoundaryWitness,
   GeographicCoordinate,
   BoundaryDirection,
@@ -261,11 +260,24 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
   const handleVillageChange = (value: string) => {
     const villageId = Number(value);
     const selectedVillage = villages.find((v) => v.id === villageId);
+    const juruUkur =
+      selectedVillage &&
+      selectedVillage.juruUkurNama &&
+      selectedVillage.juruUkurJabatan &&
+      selectedVillage.juruUkurNomorHP
+        ? {
+            nama: selectedVillage.juruUkurNama,
+            jabatan: selectedVillage.juruUkurJabatan,
+            instansi: selectedVillage.juruUkurInstansi || undefined,
+            nomorHP: selectedVillage.juruUkurNomorHP,
+          }
+        : undefined;
     onUpdateDraft({
       villageId,
       kecamatan: selectedVillage?.kecamatan,
       kabupaten: selectedVillage?.kabupaten,
       namaKepalaDesa: selectedVillage?.namaKepalaDesa || undefined,
+      juruUkur,
     });
   };
 
@@ -288,51 +300,35 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
         </p>
       </div>
 
-      {/* Research Team */}
+      {/* Research Team (read-only from village settings) */}
       <div className="space-y-4">
-        <h3 className="text-gray-900">Tim Peneliti</h3>
-
-        <div className="max-w-3xl">
-          <div className="space-y-3 p-4 border border-gray-200 rounded-lg">
-            <h4 className="text-sm text-gray-900">Juru Ukur</h4>
-            <Input
-              placeholder="Nama"
-              value={draft.juruUkur?.nama || ''}
-              onChange={(e) =>
-                onUpdateDraft({
-                  juruUkur: { ...draft.juruUkur, nama: e.target.value } as ResearchTeamMember,
-                })
-              }
-            />
-            <Input
-              placeholder="Jabatan"
-              value={draft.juruUkur?.jabatan || ''}
-              onChange={(e) =>
-                onUpdateDraft({
-                  juruUkur: { ...draft.juruUkur, jabatan: e.target.value } as ResearchTeamMember,
-                })
-              }
-            />
-            <Input
-              placeholder="Instansi"
-              value={draft.juruUkur?.instansi || ''}
-              onChange={(e) =>
-                onUpdateDraft({
-                  juruUkur: { ...draft.juruUkur, instansi: e.target.value } as ResearchTeamMember,
-                })
-              }
-            />
-            <Input
-              placeholder="Nomor HP"
-              value={draft.juruUkur?.nomorHP || ''}
-              onChange={(e) =>
-                onUpdateDraft({
-                  juruUkur: { ...draft.juruUkur, nomorHP: e.target.value } as ResearchTeamMember,
-                })
-              }
-            />
+        <h3 className="text-gray-900">Tim Peneliti (Juru Ukur)</h3>
+        {draft.juruUkur ? (
+          <div className="max-w-3xl">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
+              <div>
+                <p className="text-xs text-gray-600">Nama</p>
+                <p className="text-sm text-gray-900">{draft.juruUkur.nama}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-600">Jabatan</p>
+                <p className="text-sm text-gray-900">{draft.juruUkur.jabatan}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-600">Instansi</p>
+                <p className="text-sm text-gray-900">{draft.juruUkur.instansi || '-'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-600">Nomor HP</p>
+                <p className="text-sm text-gray-900">{draft.juruUkur.nomorHP}</p>
+              </div>
+            </div>
           </div>
-        </div>
+        ) : (
+          <p className="text-sm text-gray-500">
+            Pilih desa untuk memuat data tim peneliti dari pengaturan.
+          </p>
+        )}
       </div>
 
       {/* Boundary Witnesses */}

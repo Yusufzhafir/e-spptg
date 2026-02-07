@@ -132,6 +132,10 @@ export default function PengaturanPage() {
       kodeDesa: v.kodeDesa,
       namaDesa: v.namaDesa,
       namaKepalaDesa: v.namaKepalaDesa ?? null,
+      juruUkurNama: v.juruUkurNama ?? null,
+      juruUkurJabatan: v.juruUkurJabatan ?? null,
+      juruUkurInstansi: v.juruUkurInstansi ?? null,
+      juruUkurNomorHP: v.juruUkurNomorHP ?? null,
       kecamatan: v.kecamatan,
       kabupaten: v.kabupaten,
       provinsi: v.provinsi,
@@ -249,6 +253,10 @@ export default function PengaturanPage() {
         kodeDesa: village.kodeDesa,
         namaDesa: village.namaDesa,
         namaKepalaDesa: village.namaKepalaDesa || '',
+        juruUkurNama: village.juruUkurNama || '',
+        juruUkurJabatan: village.juruUkurJabatan || '',
+        juruUkurInstansi: village.juruUkurInstansi || undefined,
+        juruUkurNomorHP: village.juruUkurNomorHP || '',
         kecamatan: village.kecamatan,
         kabupaten: village.kabupaten,
         provinsi: village.provinsi,
@@ -263,6 +271,10 @@ export default function PengaturanPage() {
           kodeDesa: village.kodeDesa,
           namaDesa: village.namaDesa,
           namaKepalaDesa: village.namaKepalaDesa || '',
+          juruUkurNama: village.juruUkurNama || '',
+          juruUkurJabatan: village.juruUkurJabatan || '',
+          juruUkurInstansi: village.juruUkurInstansi || undefined,
+          juruUkurNomorHP: village.juruUkurNomorHP || '',
           kecamatan: village.kecamatan,
           kabupaten: village.kabupaten,
           provinsi: village.provinsi,
@@ -343,6 +355,10 @@ export default function PengaturanPage() {
     kodeDesa: string;
     namaDesa: string;
     namaKepalaDesa: string;
+    juruUkurNama: string;
+    juruUkurJabatan: string;
+    juruUkurInstansi?: string;
+    juruUkurNomorHP: string;
     kecamatan: string;
     kabupaten: string;
     provinsi: string;
@@ -354,6 +370,10 @@ export default function PengaturanPage() {
     kodeDesa: string;
     namaDesa: string;
     namaKepalaDesa: string;
+    juruUkurNama: string;
+    juruUkurJabatan: string;
+    juruUkurInstansi?: string;
+    juruUkurNomorHP: string;
     kecamatan: string;
     kabupaten: string;
     provinsi: string;

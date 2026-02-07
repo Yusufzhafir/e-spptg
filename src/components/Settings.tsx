@@ -19,6 +19,10 @@ type CreateVillageInput = {
   kodeDesa: string;
   namaDesa: string;
   namaKepalaDesa: string;
+  juruUkurNama: string;
+  juruUkurJabatan: string;
+  juruUkurInstansi?: string;
+  juruUkurNomorHP: string;
   kecamatan: string;
   kabupaten: string;
   provinsi: string;
