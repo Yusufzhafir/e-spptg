@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ProhibitedArea, ProhibitedAreaType, ValidationStatus } from '../types';
 import { parseGeospatialFile } from '../lib/kmz-parser';
+import { generateStaticMapUrl } from '@/lib/map-static-api';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -75,6 +76,30 @@ export function ProhibitedAreasTab({
   const [selectedArea, setSelectedArea] = useState<ProhibitedArea | null>(null);
   const [formData, setFormData] = useState<Partial<Omit<ProhibitedArea, 'geomGeoJSON'>> & { geomGeoJSON?: { type: 'Polygon'; coordinates: [[[number, number]]] } | null }>({});
   const [isParsingFile, setIsParsingFile] = useState(false);
+
+  const previewMapUrl = useMemo(() => {
+    if (!selectedArea?.geomGeoJSON) return null;
+    try {
+      const geoJson =
+        typeof selectedArea.geomGeoJSON === 'string'
+          ? JSON.parse(selectedArea.geomGeoJSON)
+          : selectedArea.geomGeoJSON;
+      if (!geoJson?.coordinates?.[0]) return null;
+      const coordinates = geoJson.coordinates[0].map((coord: number[]) => ({
+        latitude: coord[1],
+        longitude: coord[0],
+      }));
+      const hexColor = selectedArea.warna?.replace('#', '');
+      return generateStaticMapUrl(coordinates, {
+        mapType: 'terrain',
+        fillColor: hexColor,
+        strokeColor: hexColor,
+      });
+    } catch (error) {
+      console.error('Gagal memuat pratinjau peta kawasan:', error);
+      return null;
+    }
+  }, [selectedArea]);
 
   // Filter areas
   const filteredAreas = prohibitedAreas.filter((area) => {
@@ -776,6 +801,21 @@ export function ProhibitedAreasTab({
           </DialogHeader>
 
           <div className="space-y-4">
+            <div className="rounded-lg border border-gray-200 overflow-hidden">
+              {previewMapUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={previewMapUrl}
+                  alt="Pratinjau peta kawasan"
+                  className="h-96 w-full object-cover"
+                />
+              ) : (
+                <div className="h-96 flex items-center justify-center bg-gray-50 text-gray-500 text-sm">
+                  Pratinjau peta belum tersedia untuk kawasan ini.
+                </div>
+              )}
+            </div>
+
             {/* Info */}
             <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg">
               <div>
