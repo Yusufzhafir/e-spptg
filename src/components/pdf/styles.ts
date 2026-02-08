@@ -230,8 +230,10 @@ export const styles = StyleSheet.create({
   },
 
   mapImage: {
-    width: 450,
-    height: 600,
+    width: 500,
+    height: 328,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
   },
 
   // Attachment label
