@@ -202,6 +202,21 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     }
 
     if (currentStep === 2) {
+      if (draft.saksiList.length < 1) {
+        toast.error('Minimal 1 saksi batas lahan diperlukan');
+        return;
+      }
+
+      const invalidWitness = draft.saksiList.find(
+        (w) => !w.nama?.trim() || !w.sisi || !w.penggunaanLahanBatas?.trim()
+      );
+      if (invalidWitness) {
+        toast.error(
+          'Lengkapi data saksi batas lahan: nama saksi, sisi batas, dan penggunaan batas lahan'
+        );
+        return;
+      }
+
       if (draft.coordinatesGeografis.length < 3) {
         toast.error('Minimal 3 titik koordinat diperlukan untuk membentuk polygon');
         return;

@@ -57,11 +57,19 @@ interface Step2Props {
   onUpdateDraft: (updates: Partial<SubmissionDraft>) => void;
 }
 
-type NewWitness = { nama?: string, sisi?: BoundaryDirection };
+type NewWitnessWithUsage = {
+  nama?: string;
+  sisi?: BoundaryDirection;
+  penggunaanLahanBatas?: string;
+};
 
 export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
   const [isOverlapDialogOpen, setIsOverlapDialogOpen] = useState(false);
-  const [newWitness, setNewWitness] = useState<NewWitness>({ nama: '', sisi: '' as BoundaryDirection });
+  const [newWitness, setNewWitness] = useState<NewWitnessWithUsage>({
+    nama: '',
+    sisi: '' as BoundaryDirection,
+    penggunaanLahanBatas: '',
+  });
   const { data: villagesData } = trpc.villages.list.useQuery({
     limit: 1000,
     offset: 0,
@@ -142,14 +150,24 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
       return;
     }
 
+    if (!newWitness.penggunaanLahanBatas?.trim()) {
+      toast.error('Penggunaan batas lahan harus diisi');
+      return;
+    }
+
     const witness: BoundaryWitness = {
       id: `W-${Date.now()}`,
-      nama: newWitness.nama,
+      nama: newWitness.nama.trim(),
       sisi: newWitness.sisi,
+      penggunaanLahanBatas: newWitness.penggunaanLahanBatas.trim(),
     };
 
     onUpdateDraft({ saksiList: [...draft.saksiList, witness] });
-    setNewWitness({ nama: '', sisi: '' as BoundaryDirection  });
+    setNewWitness({
+      nama: '',
+      sisi: '' as BoundaryDirection,
+      penggunaanLahanBatas: '',
+    });
     toast.success('Saksi berhasil ditambahkan');
   };
 
@@ -341,12 +359,11 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
       <div className="space-y-4 pt-4 border-t border-gray-200">
         <h3 className="text-gray-900">Saksi Batas Lahan</h3>
 
-        <div className="flex gap-2">
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_200px_1fr_auto] gap-2">
           <Input
             placeholder="Nama saksi"
             value={newWitness.nama}
             onChange={(e) => setNewWitness({ ...newWitness, nama: e.target.value })}
-            className="flex-1"
           />
           <Select
             value={newWitness.sisi}
@@ -354,8 +371,8 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
               setNewWitness({ ...newWitness, sisi: value as BoundaryDirection })
             }
           >
-            <SelectTrigger className="w-32">
-              <SelectValue />
+            <SelectTrigger>
+              <SelectValue placeholder="Sisi batas" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="Utara">Utara</SelectItem>
@@ -368,6 +385,13 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
               <SelectItem value="Barat Laut">Barat Laut</SelectItem>
             </SelectContent>
           </Select>
+          <Input
+            placeholder="Penggunaan batas lahan"
+            value={newWitness.penggunaanLahanBatas}
+            onChange={(e) =>
+              setNewWitness({ ...newWitness, penggunaanLahanBatas: e.target.value })
+            }
+          />
           <Button onClick={handleAddWitness}>
             <Plus className="w-4 h-4 mr-2" />
             Tambah
@@ -381,6 +405,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                 <TableRow className="bg-gray-50">
                   <TableHead>Nama Saksi</TableHead>
                   <TableHead>Sisi Batas</TableHead>
+                  <TableHead>Penggunaan Batas</TableHead>
                   <TableHead className="text-right">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
@@ -391,6 +416,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                     <TableCell>
                       <Badge variant="outline">{witness.sisi}</Badge>
                     </TableCell>
+                    <TableCell>{witness.penggunaanLahanBatas || '-'}</TableCell>
                     <TableCell className="text-right">
                       <Button
                         variant="ghost"

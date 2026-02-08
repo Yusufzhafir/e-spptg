@@ -157,7 +157,7 @@ export interface BoundaryWitness {
   id: string;
   nama: string;
   sisi: BoundaryDirection;
-  penggunaanLahanBatas?: string; // Land use at boundary
+  penggunaanLahanBatas: string; // Land use at boundary
 }
 
 export interface GeographicCoordinate {

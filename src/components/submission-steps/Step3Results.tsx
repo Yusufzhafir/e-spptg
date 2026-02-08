@@ -316,9 +316,14 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
             ) : (
               <div className="space-y-2">
                 {draft.saksiList.map((saksi) => (
-                  <div key={saksi.id} className="flex items-center justify-between text-sm">
-                    <span className="text-gray-900">{saksi.nama}</span>
-                    <Badge variant="outline" className="text-xs">
+                  <div key={saksi.id} className="flex items-start justify-between gap-3 text-sm">
+                    <div>
+                      <p className="text-gray-900">{saksi.nama}</p>
+                      <p className="text-xs text-gray-600">
+                        Penggunaan batas: {saksi.penggunaanLahanBatas || '-'}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="text-xs mt-0.5">
                       {saksi.sisi}
                     </Badge>
                   </div>
