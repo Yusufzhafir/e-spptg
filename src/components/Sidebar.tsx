@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { Home, FileText, CheckSquare, Map, BarChart3, Settings } from 'lucide-react';
+import { Home, FileText, CheckSquare, Settings } from 'lucide-react';
 import { useAuthRole } from './AuthRoleProvider';
 import Image from 'next/image';
 
@@ -12,8 +12,6 @@ const menuItems = [
   { id: 'beranda', label: 'Beranda', icon: Home },
   { id: 'pengajuan', label: 'Pengajuan', icon: FileText },
   { id: 'verifikasi', label: 'Verifikasi', icon: CheckSquare },
-  { id: 'peta', label: 'Peta', icon: Map },
-  { id: 'laporan', label: 'Laporan', icon: BarChart3 },
   { id: 'pengaturan', label: 'Pengaturan', icon: Settings },
 ];
 

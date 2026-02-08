@@ -93,9 +93,6 @@ export function LandingPage() {
                   Mulai Sekarang
                 </Button>
               </SignInButton>
-              <Button size="lg" variant="outline" className="text-lg px-8 py-6">
-                Pelajari Lebih Lanjut
-              </Button>
             </SignedOut>
             <SignedIn>
               <Button

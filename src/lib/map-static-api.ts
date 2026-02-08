@@ -27,19 +27,32 @@ interface MapImageConfig {
   strokeColor?: string;
   /** Polygon stroke weight */
   strokeWeight?: number;
+  /** Image scale multiplier for better quality */
+  scale?: 1 | 2;
+  /** Zoom out levels to include surrounding places */
+  contextZoomOut?: number;
 }
 
 /**
  * Default configuration for SPPTG map images
  */
 const DEFAULT_CONFIG: MapImageConfig = {
-  width: 600,
-  height: 600,
+  width: 640,
+  height: 420,
   zoom: 16,
-  mapType: 'hybrid',
+  mapType: 'roadmap',
   fillColor: '3b82f6', // Blue
   strokeColor: '1d4ed8', // Darker blue
-  strokeWeight: 2,
+  strokeWeight: 3,
+  scale: 2,
+  contextZoomOut: 1,
+};
+
+type Bounds = {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
 };
 
 /**
@@ -68,33 +81,49 @@ function calculateCentroid(coordinates: GeographicCoordinate[]): { lat: number; 
  * Calculate zoom level based on coordinate spread
  * This helps ensure the polygon fits within the image
  */
-function calculateZoomLevel(coordinates: GeographicCoordinate[]): number {
-  if (coordinates.length < 2) return 16;
+function calculateBounds(coordinates: GeographicCoordinate[]): Bounds {
+  return coordinates.reduce<Bounds>(
+    (acc, coord) => ({
+      minLat: Math.min(acc.minLat, coord.latitude),
+      maxLat: Math.max(acc.maxLat, coord.latitude),
+      minLng: Math.min(acc.minLng, coord.longitude),
+      maxLng: Math.max(acc.maxLng, coord.longitude),
+    }),
+    {
+      minLat: coordinates[0].latitude,
+      maxLat: coordinates[0].latitude,
+      minLng: coordinates[0].longitude,
+      maxLng: coordinates[0].longitude,
+    }
+  );
+}
 
-  let minLat = coordinates[0].latitude;
-  let maxLat = coordinates[0].latitude;
-  let minLng = coordinates[0].longitude;
-  let maxLng = coordinates[0].longitude;
+/**
+ * Calculate zoom level so polygon fits in the image and still shows nearby landmarks.
+ * This intentionally zooms out one extra level by default.
+ */
+function calculateZoomLevel(
+  coordinates: GeographicCoordinate[],
+  width: number,
+  height: number,
+  contextZoomOut = 1
+): number {
+  if (coordinates.length < 2) return Math.max(12, 16 - contextZoomOut);
 
-  coordinates.forEach((coord) => {
-    minLat = Math.min(minLat, coord.latitude);
-    maxLat = Math.max(maxLat, coord.latitude);
-    minLng = Math.min(minLng, coord.longitude);
-    maxLng = Math.max(maxLng, coord.longitude);
-  });
+  const bounds = calculateBounds(coordinates);
+  const latDiff = Math.max(bounds.maxLat - bounds.minLat, 0.00001);
+  const lngDiff = Math.max(bounds.maxLng - bounds.minLng, 0.00001);
 
-  const latDiff = maxLat - minLat;
-  const lngDiff = maxLng - minLng;
-  const maxDiff = Math.max(latDiff, lngDiff);
+  // Keep 80% of viewport for polygon to leave surroundings visible
+  const usableWidth = width * 0.8;
+  const usableHeight = height * 0.8;
 
-  // Calculate approximate zoom level
-  // This is a rough approximation
-  if (maxDiff > 0.1) return 12;
-  if (maxDiff > 0.05) return 13;
-  if (maxDiff > 0.02) return 14;
-  if (maxDiff > 0.01) return 15;
-  if (maxDiff > 0.005) return 16;
-  return 17;
+  const zoomForLng = Math.log2((usableWidth * 360) / (lngDiff * 256));
+  const zoomForLat = Math.log2((usableHeight * 170) / (latDiff * 256));
+  const rawZoom = Math.floor(Math.min(zoomForLng, zoomForLat));
+  const contextualZoom = rawZoom - contextZoomOut;
+
+  return Math.max(8, Math.min(20, contextualZoom));
 }
 
 /**
@@ -104,6 +133,40 @@ function encodePath(coordinates: GeographicCoordinate[]): string {
   return coordinates
     .map((coord) => `${coord.latitude},${coord.longitude}`)
     .join('|');
+}
+
+/**
+ * Polyline encoding to keep Google Static Maps URL short/stable for bigger polygons.
+ * Reference: https://developers.google.com/maps/documentation/utilities/polylinealgorithm
+ */
+function encodeSigned(value: number): string {
+  let encoded = '';
+  let shifted = value < 0 ? ~(value << 1) : value << 1;
+
+  while (shifted >= 0x20) {
+    encoded += String.fromCharCode((0x20 | (shifted & 0x1f)) + 63);
+    shifted >>= 5;
+  }
+  encoded += String.fromCharCode(shifted + 63);
+
+  return encoded;
+}
+
+function encodePolyline(coordinates: GeographicCoordinate[]): string {
+  let encoded = '';
+  let prevLat = 0;
+  let prevLng = 0;
+
+  for (const coord of coordinates) {
+    const lat = Math.round(coord.latitude * 1e5);
+    const lng = Math.round(coord.longitude * 1e5);
+    encoded += encodeSigned(lat - prevLat);
+    encoded += encodeSigned(lng - prevLng);
+    prevLat = lat;
+    prevLng = lng;
+  }
+
+  return encoded;
 }
 
 /**
@@ -131,8 +194,14 @@ export function generateStaticMapUrl(
 
   const mergedConfig = { ...DEFAULT_CONFIG, ...config };
   const centroid = calculateCentroid(coordinates);
-  const zoom = calculateZoomLevel(coordinates);
-  const path = encodePath(coordinates);
+  const zoom = calculateZoomLevel(
+    coordinates,
+    mergedConfig.width || DEFAULT_CONFIG.width!,
+    mergedConfig.height || DEFAULT_CONFIG.height!,
+    mergedConfig.contextZoomOut ?? DEFAULT_CONFIG.contextZoomOut
+  );
+  const closedCoordinates = [...coordinates, coordinates[0]];
+  const encodedPath = encodePolyline(closedCoordinates);
 
   // Build the URL
   const params = new URLSearchParams({
@@ -140,8 +209,9 @@ export function generateStaticMapUrl(
     center: `${centroid.lat},${centroid.lng}`,
     zoom: zoom.toString(),
     size: `${mergedConfig.width}x${mergedConfig.height}`,
-    maptype: mergedConfig.mapType || 'hybrid',
-    path: `fillcolor:0x${mergedConfig.fillColor}33|weight:${mergedConfig.strokeWeight}|color:0x${mergedConfig.strokeColor}FF|${path}|${coordinates[0].latitude},${coordinates[0].longitude}`,
+    scale: String(mergedConfig.scale || 1),
+    maptype: mergedConfig.mapType || 'roadmap',
+    path: `fillcolor:0x${mergedConfig.fillColor}55|weight:${mergedConfig.strokeWeight}|color:0x${mergedConfig.strokeColor}FF|enc:${encodedPath}`,
   });
 
   return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
@@ -173,10 +243,10 @@ export function generateStyledMapUrl(
     return null;
   }
 
-  const centroid = options.center || calculateCentroid(coordinates);
-  const zoom = options.zoom || calculateZoomLevel(coordinates);
   const width = options.size?.width || 600;
   const height = options.size?.height || 600;
+  const centroid = options.center || calculateCentroid(coordinates);
+  const zoom = options.zoom || calculateZoomLevel(coordinates, width, height);
   const path = encodePath(coordinates);
 
   const params = new URLSearchParams({

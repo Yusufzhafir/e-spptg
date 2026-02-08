@@ -17,7 +17,10 @@ export const SPPTGPage4: React.FC<PageProps> = ({ data, config }) => {
   return (
     <Page size="A4" style={styles.page}>
       {/* Map Attachment Header */}
-      <Text style={styles.attachmentLabel}>Lampiran 1 - Peta Lokasi Tanah</Text>
+      <Text style={styles.attachmentLabel}>Lampiran 1 - Peta Lahan yang Diajukan</Text>
+      <Text style={[styles.text, { marginBottom: 4 }]}>
+        Tangkapan peta berikut menampilkan polygon lahan beserta area sekitar.
+      </Text>
 
       {/* Map Image */}
       {showMap && data.mapImageUrl ? (
@@ -27,7 +30,7 @@ export const SPPTGPage4: React.FC<PageProps> = ({ data, config }) => {
         </View>
       ) : (
         <View style={[styles.mapContainer, { borderWidth: 1, borderColor: '#ccc', padding: 40, minHeight: 400 }]}>
-          <Text style={[styles.text, styles.textCenter, { marginTop: 100 }]}>
+          <Text style={[styles.text, styles.textCenter, { marginTop: 80 }]}>
             [Peta Lokasi Tanah]
           </Text>
           <Text style={[styles.text, styles.textCenter, { fontSize: 9, marginTop: 20 }]}>
@@ -42,7 +45,7 @@ export const SPPTGPage4: React.FC<PageProps> = ({ data, config }) => {
       {/* Footer */}
       <View style={styles.footer} fixed>
         <Text>
-          Surat Pernyataan Penguasaan Tanah Garapan - Halaman 4
+          Surat Pernyataan Penguasaan Tanah Garapan - Halaman 3
         </Text>
       </View>
     </Page>

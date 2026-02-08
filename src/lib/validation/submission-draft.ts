@@ -30,11 +30,14 @@ export type ResearchTeamMember = z.infer<typeof researchTeamMemberSchema>;
 
 export const boundaryWitnessSchema = z.object({
   id: z.string().optional(), // Client-generated
-  nama: z.string().min(2, 'Nama minimal 2 karakter'),
+  nama: z.string().trim().min(2, 'Nama minimal 2 karakter'),
   sisi: z.enum(['Utara', 'Timur', 'Selatan', 'Barat', 'Timur Laut', 'Tenggara', 'Barat Daya', 'Barat Laut'], {
     error: (e) => ({ message: `value :${e.input} causes: ${e.message}` }),
   }),
-  penggunaanLahanBatas: z.string().optional(), // Land use at boundary
+  penggunaanLahanBatas: z
+    .string()
+    .trim()
+    .min(2, 'Penggunaan batas lahan minimal 2 karakter'),
 });
 
 export type BoundaryWitness = z.infer<typeof boundaryWitnessSchema>;
@@ -267,6 +270,7 @@ export const submissionDraftPayloadSchema = z.object({
         kawasanId: z.number().int(),
         namaKawasan: z.string(),
         jenisKawasan: z.string(),
+        sumber: z.enum(['ProhibitedArea', 'Submission']).optional(),
         luasOverlap: z.number(),
         percentageOverlap: z.number().optional(),
       })
@@ -314,13 +318,14 @@ export const saveStep4Schema = z.object({
 
 export type SaveStep4 = z.infer<typeof saveStep4Schema>;
 
-// Union type for all step saves
-export const saveDraftStepSchema = z.discriminatedUnion('currentStep', [
-  saveStep1Schema,
-  saveStep2Schema,
-  saveStep3Schema,
-  saveStep4Schema,
-]);
+const saveDraftPayloadSchema = z.object({}).passthrough();
+
+// Save draft should accept partial data to avoid blocking in-progress work
+export const saveDraftStepSchema = z.object({
+  draftId: z.number().int(),
+  currentStep: z.number().int().min(1).max(4),
+  payload: saveDraftPayloadSchema,
+});
 
 export type SaveDraftStep = z.infer<typeof saveDraftStepSchema>;
 

@@ -67,7 +67,7 @@ export function FileUploadField({
 
     try {
       // Step 1: Create document record and get s3Key
-      const { documentId, publicUrl, s3Key } = await createUploadUrlMutation.mutateAsync({
+      const { documentId, s3Key } = await createUploadUrlMutation.mutateAsync({
         draftId,
         category,
         filename: file.name,
@@ -102,10 +102,10 @@ export function FileUploadField({
       });
 
       toast.success('Dokumen berhasil diunggah.');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Upload error:', error);
       // Provide user-friendly error messages
-      if (error.message) {
+      if (error instanceof Error && error.message) {
         toast.error(error.message);
       } else {
         toast.error('Gagal mengunggah dokumen. Silakan coba lagi atau hubungi administrator jika masalah berlanjut.');
@@ -133,9 +133,9 @@ export function FileUploadField({
     try {
       const { signedUrl } = await getTemplateUrlMutation.mutateAsync({ templateType });
       window.open(signedUrl, '_blank');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Template download error:', error);
-      toast.error(error?.message || 'Gagal mengunduh template. Silakan coba lagi.');
+      toast.error(error instanceof Error ? error.message : 'Gagal mengunduh template. Silakan coba lagi.');
     }
   };
 

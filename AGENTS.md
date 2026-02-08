@@ -35,6 +35,7 @@ This is a **government land registry application** for Indonesian local governme
 | **Auth** | Clerk (with role-based access) |
 | **Storage** | S3-compatible (AWS S3 or Cloudflare R2) |
 | **Maps** | Google Maps API (@vis.gl/react-google-maps) |
+| **PDF** | @react-pdf/renderer, pdf-lib |
 | **Validation** | Zod v4 |
 | **Forms** | React Hook Form |
 
@@ -59,12 +60,17 @@ src/
 │   ├── maps/              # Google Maps components
 │   │   ├── DrawingMap.tsx # Polygon drawing for land boundaries
 │   │   └── ReadOnlyMap.tsx # Display submissions on map
+│   ├── pdf/               # SPPTG PDF rendering (react-pdf)
 │   ├── submission-steps/  # Multi-step form components
 │   │   ├── Step1DocumentUpload.tsx
 │   │   ├── Step2FieldValidation.tsx
 │   │   ├── Step3Results.tsx
 │   │   └── Step4Issuance.tsx
+│   ├── FileUploadField.tsx # Shared upload UI + template downloads
 │   └── *.tsx              # Feature components
+│
+├── data/                  # Mock data for UI development
+├── hooks/                 # Custom hooks (auth role, PDF generation, responsive)
 │
 ├── server/
 │   ├── db/
@@ -94,7 +100,16 @@ src/
 └── lib/
     ├── utils.ts           # Utility functions
     ├── map-utils.ts       # GeoJSON/coordinate helpers
+    ├── map-static-api.ts  # Google Static Maps helpers
+    ├── kmz-parser.ts      # KMZ/KML parsing for geospatial imports
+    ├── templates.ts       # Document template names
+    ├── pdf-generator.ts   # SPPTG PDF generation
+    ├── pdf-coordinates.ts # PDF coordinate mapping
+    ├── certificate-number-generator.ts # SPPTG number helpers
+    ├── number-to-words.ts # Terbilang helpers
     └── validation/        # Zod schemas
+
+src/proxy.ts               # Clerk middleware route protection
 ```
 
 ---
@@ -126,11 +141,14 @@ type StatusSPPTG =
   | 'SPPTG terdaftar'      // Registered/approved
   | 'SPPTG ditolak'        // Rejected
   | 'SPPTG ditinjau ulang' // Needs revision
+  | 'Terbit SPPTG'         // Certificate issued
 
 // Document categories
 type DocumentCategory = 
   | 'KTP' | 'KK' | 'Kwitansi' | 'Permohonan' 
-  | 'SK Kepala Desa' | 'Berita Acara' | 'SPPG' | ...
+  | 'SK Kepala Desa' | 'Berita Acara' | 'Pernyataan Jual Beli'
+  | 'Asal Usul' | 'Tidak Sengketa' | 'Foto Lahan'
+  | 'SPPG' | 'Lampiran Feedback' | 'Lainnya'
 ```
 
 ### Spatial Data
@@ -180,11 +198,19 @@ verifikatorProcedure // Requires Superadmin, Admin, or Verifikator
 | Router | Procedure | Description |
 |--------|-----------|-------------|
 | `drafts.getOrCreateCurrent` | query | Get user's current draft or create one |
+| `drafts.getById` | query | Load a draft by id |
 | `drafts.saveStep` | mutation | Save form progress per step |
 | `submissions.submitDraft` | mutation | Convert draft to final submission |
+| `submissions.getById` | query | Fetch a submission by id |
 | `submissions.list` | query | List submissions with filters |
+| `submissions.getOverlaps` | query | Fetch overlap results for a submission |
 | `submissions.checkOverlapsFromCoordinates` | mutation | Check polygon overlaps before submission |
 | `documents.uploadFile` | mutation | Upload file to S3 via server |
+| `documents.listByDraft` | query | List draft documents |
+| `documents.listBySubmission` | query | List submission documents |
+| `documents.delete` | mutation | Delete document record |
+| `documents.getTemplateUrl` | mutation | Get signed URL for template PDF |
+| `documents.fetchTemplatePDF` | mutation | Fetch template PDF as base64 |
 
 ---
 
@@ -247,6 +273,9 @@ Documents are uploaded to S3-compatible storage:
 
 Files are organized: `submissions/{category}/{timestamp}-{randomId}-{filename}`
 
+Template documents are stored at: `template-documents/{filename}` and retrieved via
+`documents.getTemplateUrl` (signed URL) or `documents.fetchTemplatePDF` (server-side base64).
+
 ---
 
 ## Indonesian Terminology Glossary
@@ -277,42 +306,32 @@ Files are organized: `submissions/{category}/{timestamp}-{randomId}-{filename}`
 
 | Priority | Issue | Location | Description |
 |----------|-------|----------|-------------|
-| 🔴 High | Status history bug | `src/server/db/queries/submissions.ts:110-119` | `statusBefore` is set to the NEW status instead of the original status before the change |
-| 🔴 High | Wrong redirect route | `src/components/SubmissionFlow.tsx:59` | Pushes to `/pengajuan/${id}` but should be `/app/pengajuan/${id}` |
-| 🔴 High | Status enum mismatch | `src/components/DetailPage.tsx:125-128` | Dropdown uses "SKT" prefix instead of "SPPTG" - values won't match the database enum |
+| 🔴 High | Status history bug | `src/server/db/queries/submissions.ts:110-115` | `statusBefore` is set to the NEW status instead of the original status before the change |
+| 🔴 High | Status enum mismatch | `src/components/DetailPage.tsx:125-134` | Dropdown uses "SKT" prefix instead of "SPPTG" - values won't match the database enum |
 
 ### Incomplete Features
 
 | Feature | Location | Issue |
 |---------|----------|-------|
-| Comments | `DetailPage.tsx:286-291` | "Kirim Komentar" button has no backend implementation |
+| Comments | `DetailPage.tsx:299` | "Kirim Komentar" button has no backend implementation |
 | Documents tab | `DetailPage.tsx:246-265` | Hardcoded PDF link, doesn't fetch actual submission documents |
-| S3 deletion | `Step1DocumentUpload.tsx:119-123` | `handleRemove` only clears local state, doesn't delete from S3 |
+| S3 deletion | `src/components/FileUploadField.tsx:117-122` | `handleRemove` only clears local state, doesn't call `documents.delete` or remove from S3 |
 | User management | `UsersTab.tsx` | Only updates local state, no backend mutations |
-| Delete prohibited area | N/A | No delete functionality implemented |
+| Delete prohibited area | `ProhibitedAreasTab.tsx:230-237` | UI deletes locally; `prohibitedAreas.delete` exists in tRPC but isn't called |
 
 ### Code Quality Issues
 
 | Issue | Location | Suggestion |
 |-------|----------|------------|
-| Multiple `as any` casts | `SubmissionFlow.tsx:187, 263, 477` | Create proper typed payload interfaces |
-| Unused state | `DrawingMap.tsx:395` | `setLoadError` is never called |
-| Duplicate component | `Step1DocumentUpload.tsx`, `Step2FieldValidation.tsx` | Extract shared `DocumentUploadField` component |
-| Linting warnings | `LandingPage.tsx`, `select.tsx` | Minor Tailwind CSS class syntax (cosmetic) |
-
-### React Hook Dependency Issues
-
-| Location | Issue |
-|----------|-------|
-| `SubmissionFlow.tsx:146` | `useEffect` missing `saveDraftToBackend` in deps |
-| `Step2FieldValidation.tsx:273-280` | `useEffect` missing `calculateArea`, `onUpdateDraft` in deps |
+| Multiple `as any` casts | `SubmissionFlow.tsx:88, 227` | Create proper typed payload interfaces |
+| Unused state | `DrawingMap.tsx:410` | `setLoadError` is never called |
+| Linting warnings | `src/components/ui/select.tsx` | Tailwind class syntax for CSS variable values (cosmetic) |
 
 ### State Management Issues
 
 | Issue | Description |
 |-------|-------------|
 | Local vs backend | `handleStatusChange` in `layout.tsx` updates local state but doesn't call backend API |
-| Draft duplication | Draft state managed in both `SubmissionFlow` and individual step components |
 | Village ID display | `DetailPage.tsx:99-101, 217` shows `villageId` number instead of village name |
 
 ### Performance/Security Concerns
@@ -335,8 +354,13 @@ pnpm dev
 # Database
 pnpm push:stag          # Push schema to staging
 pnpm push:prod          # Push schema to production
+pnpm pull:stag          # Pull schema from staging
+pnpm pull:prod          # Pull schema from production
 pnpm generate:stag      # Generate migrations for staging
+pnpm generate:prod      # Generate migrations for production
+pnpm generate-schema    # Generate from schema config (staging)
 pnpm migrate:stag       # Run migrations on staging
+pnpm migrate:prod       # Run migrations on production
 
 # Linting
 pnpm lint

@@ -63,15 +63,28 @@ export const usersRouter = router({
         }),
       })
     )
-    .mutation(async ({ input ,ctx}) => {
+    .mutation(async ({ input }) => {
       if (input.data.peran) {
-        const client = await clerkClient()
-        client.users.updateUserMetadata(ctx.appUser.clerkUserId, {
-          privateMetadata : {
-            "role" : input.data.peran
-          }
-        });
+        const targetUser = await queries.getUserById(input.id);
+        if (!targetUser) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Pengguna tidak ditemukan',
+          });
+        }
+
+        try {
+          const client = await clerkClient();
+          await client.users.updateUserMetadata(targetUser.clerkUserId, {
+            privateMetadata: {
+              role: input.data.peran,
+            },
+          });
+        } catch (error) {
+          console.error('Gagal memperbarui role di Clerk:', error);
+        }
       }
+
       return queries.updateUser(input.id, input.data);
     }),
 

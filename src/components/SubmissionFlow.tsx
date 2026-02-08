@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { trpc } from '@/trpc/client';
 import { useRouter } from 'next/navigation';
+import { buildDraftSavePayload } from '@/lib/draft-save-payload';
 
 interface SubmissionFlowProps {
   draftId: number;
@@ -85,7 +86,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
   // Sync draft from backend
   useEffect(() => {
     if (draftData) {
-      const payload = draftData.payload as any;
+      const payload = (draftData.payload ?? {}) as Partial<SubmissionDraft>;
       setDraft({
         id: draftData.id,
         currentStep: draftData.currentStep,
@@ -169,62 +170,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     return saveDraftMutation.mutateAsync({
       draftId: draft.id,
       currentStep: step,
-      payload: {
-        // Step 1: Applicant Data
-        namaPemohon: draft.namaPemohon,
-        nik: draft.nik,
-        tempatLahir: draft.tempatLahir,
-        tanggalLahir: draft.tanggalLahir,
-        pekerjaan: draft.pekerjaan,
-        alamatKTP: draft.alamatKTP,
-        persetujuanData: draft.persetujuanData,
-        // Step 2: Land Location & Details
-        villageId: draft.villageId,
-        namaJalan: draft.namaJalan,
-        namaGang: draft.namaGang,
-        nomorPersil: draft.nomorPersil,
-        rtrw: draft.rtrw,
-        dusun: draft.dusun,
-        kecamatan: draft.kecamatan,
-        kabupaten: draft.kabupaten,
-        penggunaanLahan: draft.penggunaanLahan,
-        tahunAwalGarap: draft.tahunAwalGarap,
-        namaKepalaDesa: draft.namaKepalaDesa,
-        saksiList: draft.saksiList || [],
-        coordinatesGeografis: draft.coordinatesGeografis || [],
-        coordinateSystem: draft.coordinateSystem,
-        fotoLahan: draft.fotoLahan || [],
-        overlapResults: draft.overlapResults || [],
-        luasLahan: draft.luasLahan,
-        luasManual: draft.luasManual,
-        kelilingLahan: draft.kelilingLahan,
-        // Documents
-        dokumenKTP: draft.dokumenKTP,
-        dokumenKK: draft.dokumenKK,
-        dokumenKwitansi: draft.dokumenKwitansi,
-        dokumenPermohonan: draft.dokumenPermohonan,
-        dokumenSKKepalaDesa: draft.dokumenSKKepalaDesa,
-        // Team Members
-        juruUkur: draft.juruUkur,
-        pihakBPD: draft.pihakBPD,
-        kepalaDusun: draft.kepalaDusun,
-        rtSetempat: draft.rtSetempat,
-        // Field Documents
-        dokumenBeritaAcara: draft.dokumenBeritaAcara,
-        dokumenPernyataanJualBeli: draft.dokumenPernyataanJualBeli,
-        dokumenAsalUsul: draft.dokumenAsalUsul,
-        dokumenTidakSengketa: draft.dokumenTidakSengketa,
-        // Step 3: Results
-        status: draft.status,
-        alasanStatus: draft.alasanStatus,
-        verifikator: draft.verifikator,
-        tanggalKeputusan: draft.tanggalKeputusan,
-        feedback: draft.feedback,
-        // Step 4: Issuance
-        dokumenSPPTG: draft.dokumenSPPTG,
-        nomorSPPTG: draft.nomorSPPTG,
-        tanggalTerbit: draft.tanggalTerbit,
-      } as any, // Using 'as any' because payload structure varies by step
+      payload: buildDraftSavePayload(draft),
     });
   }, [draft, saveDraftMutation]);
 
@@ -256,6 +202,21 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     }
 
     if (currentStep === 2) {
+      if (draft.saksiList.length < 1) {
+        toast.error('Minimal 1 saksi batas lahan diperlukan');
+        return;
+      }
+
+      const invalidWitness = draft.saksiList.find(
+        (w) => !w.nama?.trim() || !w.sisi || !w.penggunaanLahanBatas?.trim()
+      );
+      if (invalidWitness) {
+        toast.error(
+          'Lengkapi data saksi batas lahan: nama saksi, sisi batas, dan penggunaan batas lahan'
+        );
+        return;
+      }
+
       if (draft.coordinatesGeografis.length < 3) {
         toast.error('Minimal 3 titik koordinat diperlukan untuk membentuk polygon');
         return;

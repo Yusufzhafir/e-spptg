@@ -52,7 +52,7 @@ export function MapView({
           <p className="mb-2 font-semibold">{hoveredSubmission.namaPemilik}</p>
           <p className="text-sm text-gray-600 mb-1">ID: {hoveredSubmission.id}</p>
           <p className="text-sm text-gray-600 mb-1">
-            {(hoveredSubmission as any).desa ? `${(hoveredSubmission as any).desa}, ` : ''}{hoveredSubmission.kecamatan}
+            {hoveredSubmission.kecamatan}
           </p>
           <p className="text-sm text-gray-600 mb-2">Luas: {hoveredSubmission.luas.toLocaleString('id-ID')} m²</p>
           <StatusBadge status={hoveredSubmission.status} />

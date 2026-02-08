@@ -42,10 +42,20 @@ import { toast } from 'sonner';
 
 interface UsersTabProps {
   users: User[];
-  onUpdateUsers: (users: User[]) => void;
+  onUpdateUsers?: (users: User[]) => void;
+  onUpdateUser?: (
+    id: number,
+    data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'nomorHP' | 'status'>>
+  ) => void;
+  onToggleUserStatus?: (id: number) => void;
 }
 
-export function UsersTab({ users, onUpdateUsers }: UsersTabProps) {
+export function UsersTab({
+  users,
+  onUpdateUsers,
+  onUpdateUser,
+  onToggleUserStatus,
+}: UsersTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -106,7 +116,12 @@ export function UsersTab({ users, onUpdateUsers }: UsersTabProps) {
       terakhirMasuk: new Date(),
     };
 
-    onUpdateUsers([...users, newUser]);
+    if (onUpdateUsers) {
+      onUpdateUsers([...users, newUser]);
+    } else {
+      toast.error('Penambahan pengguna harus dilakukan melalui integrasi Clerk');
+      return;
+    }
     setIsAddDialogOpen(false);
     setFormData({});
     toast.success('Pengguna berhasil ditambahkan.');
@@ -115,11 +130,25 @@ export function UsersTab({ users, onUpdateUsers }: UsersTabProps) {
   const handleUpdateUser = () => {
     if (!selectedUser) return;
 
-    const updatedUsers = users.map((u) =>
-      u.id === selectedUser.id ? { ...u, ...formData } : u
-    );
+    if (onUpdateUser) {
+      onUpdateUser(selectedUser.id, {
+        nama: formData.nama,
+        nipNik: formData.nipNik,
+        email: formData.email,
+        peran: formData.peran as UserRole | undefined,
+        nomorHP: formData.nomorHP ?? null,
+        status: formData.status as UserStatus | undefined,
+      });
+    } else if (onUpdateUsers) {
+      const updatedUsers = users.map((u) =>
+        u.id === selectedUser.id ? { ...u, ...formData } : u
+      );
+      onUpdateUsers(updatedUsers);
+    } else {
+      toast.error('Pembaruan pengguna tidak tersedia');
+      return;
+    }
 
-    onUpdateUsers(updatedUsers);
     setIsEditDialogOpen(false);
     setSelectedUser(null);
     setFormData({});
@@ -128,6 +157,18 @@ export function UsersTab({ users, onUpdateUsers }: UsersTabProps) {
 
   const confirmDeactivate = () => {
     if (!selectedUser) return;
+
+    if (onToggleUserStatus) {
+      onToggleUserStatus(selectedUser.id);
+      setIsDeactivateDialogOpen(false);
+      setSelectedUser(null);
+      return;
+    }
+
+    if (!onUpdateUsers) {
+      toast.error('Perubahan status pengguna tidak tersedia');
+      return;
+    }
 
     const newStatus: UserStatus = selectedUser.status === 'Aktif' ? 'Nonaktif' : 'Aktif';
     const updatedUsers = users.map((u) =>

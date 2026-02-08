@@ -7,6 +7,34 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { KPIData, Submission } from '@/types';
 
+type SubmissionListItem = {
+  id: number;
+  namaPemilik: string;
+  nik: string;
+  alamat: string;
+  nomorHP: string;
+  email: string;
+  villageId: number;
+  kecamatan: string;
+  kabupaten: string;
+  luas: number;
+  penggunaanLahan: string;
+  catatan: string | null;
+  geoJSON?: Submission['geoJSON'];
+  status: Submission['status'];
+  tanggalPengajuan: string | Date;
+  verifikator: number | null;
+  riwayat?: Submission['riwayat'];
+  feedback: Submission['feedback'];
+  createdAt: string | Date;
+  updatedAt: string | Date;
+};
+
+type MonthlyStatItem = {
+  month: string;
+  count: number;
+};
+
 export default function DashboardPage() {
   const router = useRouter();
   const { handleNewSubmission } = useAppState();
@@ -28,7 +56,8 @@ export default function DashboardPage() {
   const { data: monthlyStatsData, isLoading: isLoadingMonthly } = trpc.submissions.monthlyStats.useQuery();
 
   // Transform submissions data
-  const submissions = (submissionsData?.items || []).map((s: any) => ({
+  const submissionItems = (submissionsData?.items || []) as SubmissionListItem[];
+  const submissions = submissionItems.map((s) => ({
     id: s.id, // Keep as number, not string
     namaPemilik: s.namaPemilik,
     nik: s.nik,
@@ -61,7 +90,8 @@ export default function DashboardPage() {
   };
 
   // Transform monthly data
-  const monthlyData = (monthlyStatsData || []).map((stat: any) => ({
+  const monthlyItems = (monthlyStatsData || []) as MonthlyStatItem[];
+  const monthlyData = monthlyItems.map((stat) => ({
     bulan: stat.month,
     pengajuan: stat.count,
   }));

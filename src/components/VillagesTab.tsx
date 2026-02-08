@@ -42,6 +42,11 @@ import { toast } from 'sonner';
 type CreateVillageInput = {
   kodeDesa: string;
   namaDesa: string;
+  namaKepalaDesa: string;
+  juruUkurNama: string;
+  juruUkurJabatan: string;
+  juruUkurInstansi?: string;
+  juruUkurNomorHP: string;
   kecamatan: string;
   kabupaten: string;
   provinsi: string;
@@ -116,6 +121,10 @@ export function VillagesTab({
     if (
       !formData.kodeDesa ||
       !formData.namaDesa ||
+      !formData.namaKepalaDesa ||
+      !formData.juruUkurNama ||
+      !formData.juruUkurJabatan ||
+      !formData.juruUkurNomorHP ||
       !formData.kecamatan ||
       !formData.kabupaten ||
       !formData.provinsi
@@ -129,6 +138,11 @@ export function VillagesTab({
       onCreateVillage({
         kodeDesa: formData.kodeDesa,
         namaDesa: formData.namaDesa,
+        namaKepalaDesa: formData.namaKepalaDesa,
+        juruUkurNama: formData.juruUkurNama,
+        juruUkurJabatan: formData.juruUkurJabatan,
+        juruUkurInstansi: formData.juruUkurInstansi || undefined,
+        juruUkurNomorHP: formData.juruUkurNomorHP,
         kecamatan: formData.kecamatan,
         kabupaten: formData.kabupaten,
         provinsi: formData.provinsi,
@@ -141,6 +155,11 @@ export function VillagesTab({
         id: new Date().getTime(),
         kodeDesa: formData.kodeDesa,
         namaDesa: formData.namaDesa,
+        namaKepalaDesa: formData.namaKepalaDesa,
+        juruUkurNama: formData.juruUkurNama,
+        juruUkurJabatan: formData.juruUkurJabatan,
+        juruUkurInstansi: formData.juruUkurInstansi || undefined,
+        juruUkurNomorHP: formData.juruUkurNomorHP,
         kecamatan: formData.kecamatan,
         kabupaten: formData.kabupaten,
         provinsi: formData.provinsi,
@@ -159,6 +178,10 @@ export function VillagesTab({
     if (
       !formData.kodeDesa ||
       !formData.namaDesa ||
+      !formData.namaKepalaDesa ||
+      !formData.juruUkurNama ||
+      !formData.juruUkurJabatan ||
+      !formData.juruUkurNomorHP ||
       !formData.kecamatan ||
       !formData.kabupaten ||
       !formData.provinsi
@@ -172,6 +195,11 @@ export function VillagesTab({
       onUpdateVillage(selectedVillage.id, {
         kodeDesa: formData.kodeDesa,
         namaDesa: formData.namaDesa,
+        namaKepalaDesa: formData.namaKepalaDesa,
+        juruUkurNama: formData.juruUkurNama,
+        juruUkurJabatan: formData.juruUkurJabatan,
+        juruUkurInstansi: formData.juruUkurInstansi || undefined,
+        juruUkurNomorHP: formData.juruUkurNomorHP,
         kecamatan: formData.kecamatan,
         kabupaten: formData.kabupaten,
         provinsi: formData.provinsi,
@@ -279,6 +307,7 @@ export function VillagesTab({
             <TableRow className="bg-gray-50">
               <TableHead>Kode Desa (BPS)</TableHead>
               <TableHead>Nama Desa</TableHead>
+              <TableHead>Kepala Desa</TableHead>
               <TableHead>Kecamatan</TableHead>
               <TableHead>Kabupaten/Kota</TableHead>
               <TableHead>Provinsi</TableHead>
@@ -289,7 +318,7 @@ export function VillagesTab({
           <TableBody>
             {filteredVillages.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+              <TableCell colSpan={8} className="text-center py-8 text-gray-500">
                   {searchQuery || kecamatanFilter !== 'all'
                     ? 'Tidak ada desa yang ditemukan'
                     : 'Belum ada data desa. Tambahkan desa terlebih dahulu.'}
@@ -300,6 +329,7 @@ export function VillagesTab({
                 <TableRow key={village.id}>
                   <TableCell className="text-gray-900">{village.kodeDesa}</TableCell>
                   <TableCell>{village.namaDesa}</TableCell>
+                  <TableCell className="text-gray-600">{village.namaKepalaDesa || '-'}</TableCell>
                   <TableCell className="text-gray-600">{village.kecamatan}</TableCell>
                   <TableCell className="text-gray-600">{village.kabupaten}</TableCell>
                   <TableCell className="text-gray-600">{village.provinsi}</TableCell>
@@ -365,6 +395,56 @@ export function VillagesTab({
                 onChange={(e) => setFormData({ ...formData, namaDesa: e.target.value })}
                 placeholder="Masukkan nama desa"
               />
+            </div>
+
+            <div>
+              <Label htmlFor="namaKepalaDesa">Nama Kepala Desa *</Label>
+              <Input
+                id="namaKepalaDesa"
+                value={formData.namaKepalaDesa || ''}
+                onChange={(e) => setFormData({ ...formData, namaKepalaDesa: e.target.value })}
+                placeholder="Masukkan nama kepala desa"
+              />
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+              <h4 className="text-sm text-gray-900">Tim Peneliti (Juru Ukur)</h4>
+              <div>
+                <Label htmlFor="juruUkurNama">Nama Juru Ukur *</Label>
+                <Input
+                  id="juruUkurNama"
+                  value={formData.juruUkurNama || ''}
+                  onChange={(e) => setFormData({ ...formData, juruUkurNama: e.target.value })}
+                  placeholder="Masukkan nama juru ukur"
+                />
+              </div>
+              <div>
+                <Label htmlFor="juruUkurJabatan">Jabatan *</Label>
+                <Input
+                  id="juruUkurJabatan"
+                  value={formData.juruUkurJabatan || ''}
+                  onChange={(e) => setFormData({ ...formData, juruUkurJabatan: e.target.value })}
+                  placeholder="Masukkan jabatan juru ukur"
+                />
+              </div>
+              <div>
+                <Label htmlFor="juruUkurInstansi">Instansi</Label>
+                <Input
+                  id="juruUkurInstansi"
+                  value={formData.juruUkurInstansi || ''}
+                  onChange={(e) => setFormData({ ...formData, juruUkurInstansi: e.target.value })}
+                  placeholder="Masukkan instansi (opsional)"
+                />
+              </div>
+              <div>
+                <Label htmlFor="juruUkurNomorHP">Nomor HP *</Label>
+                <Input
+                  id="juruUkurNomorHP"
+                  value={formData.juruUkurNomorHP || ''}
+                  onChange={(e) => setFormData({ ...formData, juruUkurNomorHP: e.target.value })}
+                  placeholder="08xxxxxxxxxx"
+                />
+              </div>
             </div>
 
             <div>
@@ -442,6 +522,51 @@ export function VillagesTab({
                 value={formData.namaDesa || ''}
                 onChange={(e) => setFormData({ ...formData, namaDesa: e.target.value })}
               />
+            </div>
+
+            <div>
+              <Label htmlFor="edit-namaKepalaDesa">Nama Kepala Desa *</Label>
+              <Input
+                id="edit-namaKepalaDesa"
+                value={formData.namaKepalaDesa || ''}
+                onChange={(e) => setFormData({ ...formData, namaKepalaDesa: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+              <h4 className="text-sm text-gray-900">Tim Peneliti (Juru Ukur)</h4>
+              <div>
+                <Label htmlFor="edit-juruUkurNama">Nama Juru Ukur *</Label>
+                <Input
+                  id="edit-juruUkurNama"
+                  value={formData.juruUkurNama || ''}
+                  onChange={(e) => setFormData({ ...formData, juruUkurNama: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-juruUkurJabatan">Jabatan *</Label>
+                <Input
+                  id="edit-juruUkurJabatan"
+                  value={formData.juruUkurJabatan || ''}
+                  onChange={(e) => setFormData({ ...formData, juruUkurJabatan: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-juruUkurInstansi">Instansi</Label>
+                <Input
+                  id="edit-juruUkurInstansi"
+                  value={formData.juruUkurInstansi || ''}
+                  onChange={(e) => setFormData({ ...formData, juruUkurInstansi: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-juruUkurNomorHP">Nomor HP *</Label>
+                <Input
+                  id="edit-juruUkurNomorHP"
+                  value={formData.juruUkurNomorHP || ''}
+                  onChange={(e) => setFormData({ ...formData, juruUkurNomorHP: e.target.value })}
+                />
+              </div>
             </div>
 
             <div>

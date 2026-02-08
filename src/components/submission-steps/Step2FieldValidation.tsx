@@ -3,7 +3,6 @@ import { useState, useEffect, useCallback } from 'react';
 import proj4 from 'proj4';
 import {
   SubmissionDraft,
-  ResearchTeamMember,
   BoundaryWitness,
   GeographicCoordinate,
   BoundaryDirection,
@@ -58,11 +57,24 @@ interface Step2Props {
   onUpdateDraft: (updates: Partial<SubmissionDraft>) => void;
 }
 
-type NewWitness = { nama?: string, sisi?: BoundaryDirection };
+type NewWitnessWithUsage = {
+  nama?: string;
+  sisi?: BoundaryDirection;
+  penggunaanLahanBatas?: string;
+};
 
 export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
   const [isOverlapDialogOpen, setIsOverlapDialogOpen] = useState(false);
-  const [newWitness, setNewWitness] = useState<NewWitness>({ nama: '', sisi: '' as BoundaryDirection });
+  const [newWitness, setNewWitness] = useState<NewWitnessWithUsage>({
+    nama: '',
+    sisi: '' as BoundaryDirection,
+    penggunaanLahanBatas: '',
+  });
+  const { data: villagesData } = trpc.villages.list.useQuery({
+    limit: 1000,
+    offset: 0,
+  });
+  const villages = villagesData ?? [];
   
   // Local state for UTM coordinates to prevent rounding issues during editing
   // We sync this with draft.coordinatesGeografis whenever draft changes or user edits
@@ -118,6 +130,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
             ...converted
         };
       });
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setUtmCoordinates(newUtmCoords);
     }
   }, [draft.coordinatesGeografis, coordinateSystem, toUTM]);
@@ -137,14 +150,24 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
       return;
     }
 
+    if (!newWitness.penggunaanLahanBatas?.trim()) {
+      toast.error('Penggunaan batas lahan harus diisi');
+      return;
+    }
+
     const witness: BoundaryWitness = {
       id: `W-${Date.now()}`,
-      nama: newWitness.nama,
+      nama: newWitness.nama.trim(),
       sisi: newWitness.sisi,
+      penggunaanLahanBatas: newWitness.penggunaanLahanBatas.trim(),
     };
 
     onUpdateDraft({ saksiList: [...draft.saksiList, witness] });
-    setNewWitness({ nama: '', sisi: '' as BoundaryDirection  });
+    setNewWitness({
+      nama: '',
+      sisi: '' as BoundaryDirection,
+      penggunaanLahanBatas: '',
+    });
     toast.success('Saksi berhasil ditambahkan');
   };
 
@@ -174,7 +197,11 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
     onUpdateDraft({ coordinatesGeografis: updated });
   };
 
-  const handleUpdateUTM = (id: string, field: keyof LocalUTMCoordinate, value: any) => {
+  const handleUpdateUTM = (
+    id: string,
+    field: keyof LocalUTMCoordinate,
+    value: string | number
+  ) => {
     // Update local UTM state first
     const updatedUtm = utmCoordinates.map(c => 
         c.id === id ? { ...c, [field]: value } : c
@@ -226,6 +253,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
           kawasanId: o.kawasanId,
           namaKawasan: o.namaKawasan,
           jenisKawasan: o.jenisKawasan,
+          sumber: o.sumber,
           luasOverlap: o.luasOverlap,
           percentageOverlap: o.percentageOverlap,
         }))
@@ -253,6 +281,30 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
 
   const luas = calculateArea();
 
+  const handleVillageChange = (value: string) => {
+    const villageId = Number(value);
+    const selectedVillage = villages.find((v) => v.id === villageId);
+    const juruUkur =
+      selectedVillage &&
+      selectedVillage.juruUkurNama &&
+      selectedVillage.juruUkurJabatan &&
+      selectedVillage.juruUkurNomorHP
+        ? {
+            nama: selectedVillage.juruUkurNama,
+            jabatan: selectedVillage.juruUkurJabatan,
+            instansi: selectedVillage.juruUkurInstansi || undefined,
+            nomorHP: selectedVillage.juruUkurNomorHP,
+          }
+        : undefined;
+    onUpdateDraft({
+      villageId,
+      kecamatan: selectedVillage?.kecamatan,
+      kabupaten: selectedVillage?.kabupaten,
+      namaKepalaDesa: selectedVillage?.namaKepalaDesa || undefined,
+      juruUkur,
+    });
+  };
+
   // Update luasLahan when coordinates change
   useEffect(() => {
     if (draft.coordinatesGeografis.length >= 3) {
@@ -272,63 +324,46 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
         </p>
       </div>
 
-      {/* Research Team */}
+      {/* Research Team (read-only from village settings) */}
       <div className="space-y-4">
-        <h3 className="text-gray-900">Tim Peneliti</h3>
-
-        <div className="max-w-3xl">
-          <div className="space-y-3 p-4 border border-gray-200 rounded-lg">
-            <h4 className="text-sm text-gray-900">Juru Ukur</h4>
-            <Input
-              placeholder="Nama"
-              value={draft.juruUkur?.nama || ''}
-              onChange={(e) =>
-                onUpdateDraft({
-                  juruUkur: { ...draft.juruUkur, nama: e.target.value } as ResearchTeamMember,
-                })
-              }
-            />
-            <Input
-              placeholder="Jabatan"
-              value={draft.juruUkur?.jabatan || ''}
-              onChange={(e) =>
-                onUpdateDraft({
-                  juruUkur: { ...draft.juruUkur, jabatan: e.target.value } as ResearchTeamMember,
-                })
-              }
-            />
-            <Input
-              placeholder="Instansi"
-              value={draft.juruUkur?.instansi || ''}
-              onChange={(e) =>
-                onUpdateDraft({
-                  juruUkur: { ...draft.juruUkur, instansi: e.target.value } as ResearchTeamMember,
-                })
-              }
-            />
-            <Input
-              placeholder="Nomor HP"
-              value={draft.juruUkur?.nomorHP || ''}
-              onChange={(e) =>
-                onUpdateDraft({
-                  juruUkur: { ...draft.juruUkur, nomorHP: e.target.value } as ResearchTeamMember,
-                })
-              }
-            />
+        <h3 className="text-gray-900">Tim Peneliti (Juru Ukur)</h3>
+        {draft.juruUkur ? (
+          <div className="max-w-3xl">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
+              <div>
+                <p className="text-xs text-gray-600">Nama</p>
+                <p className="text-sm text-gray-900">{draft.juruUkur.nama}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-600">Jabatan</p>
+                <p className="text-sm text-gray-900">{draft.juruUkur.jabatan}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-600">Instansi</p>
+                <p className="text-sm text-gray-900">{draft.juruUkur.instansi || '-'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-600">Nomor HP</p>
+                <p className="text-sm text-gray-900">{draft.juruUkur.nomorHP}</p>
+              </div>
+            </div>
           </div>
-        </div>
+        ) : (
+          <p className="text-sm text-gray-500">
+            Pilih desa untuk memuat data tim peneliti dari pengaturan.
+          </p>
+        )}
       </div>
 
       {/* Boundary Witnesses */}
       <div className="space-y-4 pt-4 border-t border-gray-200">
         <h3 className="text-gray-900">Saksi Batas Lahan</h3>
 
-        <div className="flex gap-2">
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_200px_1fr_auto] gap-2">
           <Input
             placeholder="Nama saksi"
             value={newWitness.nama}
             onChange={(e) => setNewWitness({ ...newWitness, nama: e.target.value })}
-            className="flex-1"
           />
           <Select
             value={newWitness.sisi}
@@ -336,8 +371,8 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
               setNewWitness({ ...newWitness, sisi: value as BoundaryDirection })
             }
           >
-            <SelectTrigger className="w-32">
-              <SelectValue />
+            <SelectTrigger>
+              <SelectValue placeholder="Sisi batas" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="Utara">Utara</SelectItem>
@@ -350,6 +385,13 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
               <SelectItem value="Barat Laut">Barat Laut</SelectItem>
             </SelectContent>
           </Select>
+          <Input
+            placeholder="Penggunaan batas lahan"
+            value={newWitness.penggunaanLahanBatas}
+            onChange={(e) =>
+              setNewWitness({ ...newWitness, penggunaanLahanBatas: e.target.value })
+            }
+          />
           <Button onClick={handleAddWitness}>
             <Plus className="w-4 h-4 mr-2" />
             Tambah
@@ -363,6 +405,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                 <TableRow className="bg-gray-50">
                   <TableHead>Nama Saksi</TableHead>
                   <TableHead>Sisi Batas</TableHead>
+                  <TableHead>Penggunaan Batas</TableHead>
                   <TableHead className="text-right">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
@@ -373,6 +416,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                     <TableCell>
                       <Badge variant="outline">{witness.sisi}</Badge>
                     </TableCell>
+                    <TableCell>{witness.penggunaanLahanBatas || '-'}</TableCell>
                     <TableCell className="text-right">
                       <Button
                         variant="ghost"
@@ -394,6 +438,25 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
       {/* Land Location & Details */}
       <div className="space-y-4 pt-4 border-t border-gray-200">
         <h3 className="text-gray-900">Lokasi dan Detail Lahan</h3>
+
+        <div>
+          <Label htmlFor="villageId">Desa *</Label>
+          <Select
+            value={draft.villageId ? String(draft.villageId) : ''}
+            onValueChange={handleVillageChange}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Pilih desa" />
+            </SelectTrigger>
+            <SelectContent>
+              {villages.map((village) => (
+                <SelectItem key={village.id} value={String(village.id)}>
+                  {village.namaDesa}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -756,6 +819,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                       <TableRow className="bg-gray-50">
                         <TableHead>Nama Kawasan</TableHead>
                         <TableHead>Jenis</TableHead>
+                        <TableHead>Sumber</TableHead>
                         <TableHead>Luas Overlap</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -765,6 +829,11 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                           <TableCell>{overlap.namaKawasan}</TableCell>
                           <TableCell>
                             <Badge variant="outline">{overlap.jenisKawasan}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">
+                              {overlap.sumber === 'Submission' ? 'SPPTG Eksisting' : 'Kawasan Non-SPPTG'}
+                            </Badge>
                           </TableCell>
                           <TableCell>{overlap.luasOverlap} m²</TableCell>
                         </TableRow>

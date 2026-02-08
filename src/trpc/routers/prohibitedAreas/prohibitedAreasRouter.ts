@@ -127,7 +127,7 @@ export const prohibitedAreasRouter = router({
       }
 
       // Convert GeoJSON to geometry if provided
-      const updateData: any = { ...input.data };
+      const updateData: Record<string, unknown> = { ...input.data };
       if (input.data.geomGeoJSON) {
         // Use direct SQL update for geometry conversion
         const area = await queries.getProhibitedAreaById(input.id);
