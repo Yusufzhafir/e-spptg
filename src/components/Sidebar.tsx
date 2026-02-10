@@ -11,7 +11,6 @@ interface SidebarProps {
 const menuItems = [
   { id: 'beranda', label: 'Beranda', icon: Home },
   { id: 'pengajuan', label: 'Pengajuan', icon: FileText },
-  { id: 'verifikasi', label: 'Verifikasi', icon: CheckSquare },
   { id: 'pengaturan', label: 'Pengaturan', icon: Settings },
 ];
 
