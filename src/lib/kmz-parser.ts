@@ -36,8 +36,6 @@ export async function parseKMLFile(file: File): Promise<ParseResult> {
       };
     }
 
-    console.log(coordinates);
-
     const validation = validatePolygonCoordinates(coordinates);
     if (!validation.valid) {
       return {
@@ -200,7 +198,6 @@ export async function parseKMZFile(file: File): Promise<KMZParseResult> {
 
     // Find and read the KML file inside the zip
     let kmlContent: string | null = null;
-    console.log(kmlContent);
     for (const filename in zipData.files) {
       if (filename.endsWith('.kml')) {
         const kmlFile = zipData.files[filename];
@@ -260,55 +257,79 @@ export async function parseKMZFile(file: File): Promise<KMZParseResult> {
 function parseKMLCoordinates(
   kmlContent: string
 ): Array<{ id: string; latitude: number; longitude: number }> {
-  try {
-    console.log(kmlContent);
-    // Parse XML
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(kmlContent, 'text/xml');
+  // Parse XML
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(kmlContent, 'text/xml');
 
-    if (xmlDoc.getElementsByTagName('parsererror').length > 0) {
-      throw new Error('Invalid KML format');
-    }
-
-    const coordinates: Array<{
-      id: string;
-      latitude: number;
-      longitude: number;
-    }> = [];
-
-    // Find all LinearRing elements (polygon boundaries)
-    const placemarks = xmlDoc.getElementsByTagName("Placemark");
-
-    for (let i = 0; i < placemarks.length; i++) {
-      const polygonElements = placemarks[i].getElementsByTagName("Polygon");
-      if (polygonElements.length > 1){
-        throw new Error("Placemark tidak boleh memiliki lebih dari 1 polygon");
-      }
-        const coordsString = polygonElements[0].getElementsByTagName("coordinates")[0].textContent ||
-          "";
-        const path = processCoordinates(coordsString);
-        console.log(path);
-        coordinates.push(...path.map(e=>({
-          id: `placemark-${i}-polygon-${0}`,
-          latitude: e.lat,
-          longitude: e.lng,
-        })));
-    }
-
-    console.log(coordinates);
-    return coordinates;
-  } catch (error) {
-    console.error('Error parsing KML coordinates:', error);
-    return [];
+  if (xmlDoc.getElementsByTagName('parsererror').length > 0) {
+    throw new Error('Format KML tidak valid');
   }
+
+  // Find all placemarks and enforce exactly one polygon across file
+  const placemarks = xmlDoc.getElementsByTagName('Placemark');
+  let selectedPolygon: Element | null = null;
+  let selectedPlacemarkIndex = -1;
+  let polygonCount = 0;
+
+  for (let i = 0; i < placemarks.length; i++) {
+    const polygonElements = placemarks[i].getElementsByTagName('Polygon');
+    if (polygonElements.length === 0) {
+      continue;
+    }
+
+    if (polygonElements.length > 1) {
+      throw new Error('Placemark tidak boleh memiliki lebih dari 1 polygon');
+    }
+
+    polygonCount += 1;
+    if (polygonCount > 1) {
+      throw new Error('File KML/KMZ harus berisi tepat 1 polygon');
+    }
+
+    selectedPolygon = polygonElements[0];
+    selectedPlacemarkIndex = i;
+  }
+
+  if (!selectedPolygon || polygonCount === 0) {
+    throw new Error('File KML/KMZ harus berisi tepat 1 polygon');
+  }
+
+  const coordinateElements = selectedPolygon.getElementsByTagName('coordinates');
+  if (coordinateElements.length === 0) {
+    throw new Error('Elemen coordinates pada polygon tidak ditemukan');
+  }
+
+  const coordsString = coordinateElements[0].textContent?.trim() || '';
+  if (!coordsString) {
+    throw new Error('Koordinat polygon kosong');
+  }
+
+  const path = processCoordinates(coordsString);
+  if (path.length === 0) {
+    throw new Error('Tidak ada koordinat valid pada polygon');
+  }
+
+  return path.map((coord, index) => ({
+    id: `placemark-${selectedPlacemarkIndex}-polygon-0-point-${index}`,
+    latitude: coord.lat,
+    longitude: coord.lng,
+  }));
 }
 
-const processCoordinates = (coordsString: string) => {
+const processCoordinates = (coordsString: string): Array<{ lat: number; lng: number }> => {
   return coordsString
     .trim()
-    .split(" ")
-    .map((coord) => {
-      const [lng, lat] = coord.split(",").map(Number);
+    .split(/\s+/)
+    .filter((coord) => coord.length > 0)
+    .map((coord, index) => {
+      const [lngRaw, latRaw] = coord.split(',');
+      const lng = Number(lngRaw);
+      const lat = Number(latRaw);
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        throw new Error(`Koordinat tidak valid pada titik ke-${index + 1}`);
+      }
+
       return { lat, lng };
     });
 };
