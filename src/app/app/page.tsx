@@ -1,7 +1,6 @@
 'use client';
 
 import { Dashboard } from '@/components/Dashboard';
-import { useAppState } from './layout';
 import { trpc } from '@/trpc/client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';

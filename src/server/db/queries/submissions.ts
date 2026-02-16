@@ -21,23 +21,20 @@ export async function getSubmissionById(
         eq(submissions.id, id),
     ).limit(1)
 
-    if (!result){
-        throw new Error("no result")
-    }
-
-    return result
+    return result ?? null
 }
 
 export async function listSubmissions(filters: {
     search?: string;
     status?: string;
+    ownerUserId?: number;
     limit?: number;
     offset?: number;
 },
     tx?: DBTransaction
 ) {
     const queryDb = tx || db
-    const { search, status, limit = 50, offset = 0 } = filters;
+    const { search, status, ownerUserId, limit = 50, offset = 0 } = filters;
 
     const conditions = [];
 
@@ -54,6 +51,11 @@ export async function listSubmissions(filters: {
     if (status && status !== 'all') {
         conditions.push(eq(submissions.status, status as StatusSPPTG));
     }
+
+    if (ownerUserId !== undefined) {
+        conditions.push(eq(submissions.verifikator, ownerUserId));
+    }
+
     const {geom,...restOfTheColumn} = getTableColumns(submissions)
     const items = await queryDb.select(restOfTheColumn)
         .from(submissions)

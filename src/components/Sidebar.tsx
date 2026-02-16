@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { Home, FileText, CheckSquare, Settings } from 'lucide-react';
+import { Home, FileText, Settings } from 'lucide-react';
 import { useAuthRole } from './AuthRoleProvider';
 import Image from 'next/image';
 

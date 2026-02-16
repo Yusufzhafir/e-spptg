@@ -184,7 +184,7 @@ export const submissionsRouter = router({
 
     byId: protectedProcedure
         .input(z.object({ id: z.number().int() }))
-        .query(async ({ input }) => {
+        .query(async ({ ctx, input }) => {
             const submission = await submissionQueries.getSubmissionById(input.id);
             if (!submission) {
                 throw new TRPCError({
@@ -192,15 +192,26 @@ export const submissionsRouter = router({
                     message: 'Pengajuan tidak ditemukan',
                 });
             }
+
+            const isViewer = ctx.appUser!.peran === 'Viewer';
+            if (isViewer && submission.verifikator !== ctx.appUser!.id) {
+                throw new TRPCError({
+                    code: 'NOT_FOUND',
+                    message: 'Pengajuan tidak ditemukan',
+                });
+            }
+
             return submission;
         }),
 
     list: protectedProcedure
         .input(listSubmissionsSchema)
-        .query(async ({ input }) => {
+        .query(async ({ ctx, input }) => {
+            const isViewer = ctx.appUser!.peran === 'Viewer';
             return submissionQueries.listSubmissions({
                 search: input.search,
                 status: input.status,
+                ownerUserId: isViewer ? ctx.appUser!.id : undefined,
                 limit: input.limit,
                 offset: input.offset,
             });

@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { createUploadUrlSchema, listDocumentsSchema, uploadFileSchema, getTemplateUrlSchema } from '@/lib/validation/index';
 import * as queries from '@/server/db/queries/documents';
 import * as draftQueries from '@/server/db/queries/drafts';
-import { generateUploadUrl, uploadFileToS3, getTemplateSignedUrl, fetchTemplatePDF } from '@/server/s3/s3';
+import * as submissionQueries from '@/server/db/queries/submissions';
+import { generateUploadUrl, uploadFileToS3, getTemplateSignedUrl, fetchTemplatePDF, getDownloadUrl, extractS3KeyFromDocumentUrl } from '@/server/s3/s3';
 import { TRPCError } from '@trpc/server';
 import { adminProcedure, protectedProcedure, router } from '@/trpc/init';
 
@@ -200,10 +201,26 @@ export const documentsRouter = router({
    */
   listBySubmission: protectedProcedure
     .input(z.object({ submissionId: z.number().int() }))
-    .query(async ({ input }) => {
-      const documents = await queries.listDocumentsBySubmission(
-        input.submissionId
-      );
+    .query(async ({ ctx, input }) => {
+      const submission = await submissionQueries.getSubmissionById(input.submissionId);
+      if (!submission) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Pengajuan tidak ditemukan',
+        });
+      }
+
+      const isViewer = ctx.appUser!.peran === 'Viewer';
+      if (isViewer && submission.verifikator !== ctx.appUser!.id) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Pengajuan tidak ditemukan',
+        });
+      }
+
+      const documents = await queries.listDocumentsBySubmission(input.submissionId, {
+        uploadedBy: isViewer ? ctx.appUser!.id : undefined,
+      });
 
       return documents.map((d) => ({
         id: d.id,
@@ -214,6 +231,49 @@ export const documentsRouter = router({
         category: d.category,
         uploadedAt: d.uploadedAt,
       }));
+    }),
+
+  getSignedDownloadUrl: protectedProcedure
+    .input(z.object({ documentId: z.number().int() }))
+    .mutation(async ({ ctx, input }) => {
+      const document = await queries.getDocumentById(input.documentId);
+      if (!document || !document.submissionId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Dokumen tidak ditemukan',
+        });
+      }
+
+      const submission = await submissionQueries.getSubmissionById(document.submissionId);
+      if (!submission) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Pengajuan tidak ditemukan',
+        });
+      }
+
+      const isViewer = ctx.appUser!.peran === 'Viewer';
+      if (
+        isViewer &&
+        (submission.verifikator !== ctx.appUser!.id || document.uploadedBy !== ctx.appUser!.id)
+      ) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Dokumen tidak ditemukan',
+        });
+      }
+
+      try {
+        const s3Key = extractS3KeyFromDocumentUrl(document.url);
+        const expiresIn = 604800;
+        const signedUrl = await getDownloadUrl(s3Key, expiresIn);
+        return { signedUrl, expiresIn };
+      } catch {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Gagal membuat tautan dokumen',
+        });
+      }
     }),
 
   /**

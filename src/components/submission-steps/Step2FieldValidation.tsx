@@ -132,7 +132,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
             ...converted
         };
       });
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setUtmCoordinates(newUtmCoords);
     }
   }, [draft.coordinatesGeografis, coordinateSystem, toUTM]);

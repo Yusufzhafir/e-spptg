@@ -1,7 +1,7 @@
 import { DocumentCategoryEnum } from '@/types';
 import { db, DBTransaction } from '../db';
 import { submissions_documents } from '../schema';
-import { eq, and, isNull } from 'drizzle-orm';
+import { eq, and, isNull, desc } from 'drizzle-orm';
 
 export async function createDocument(
   data: typeof submissions_documents.$inferInsert,
@@ -30,11 +30,23 @@ export async function listDocumentsByDraft(draftId: number, tx?: DBTransaction) 
   });
 }
 
-export async function listDocumentsBySubmission(submissionId: number, tx?: DBTransaction) {
+export async function listDocumentsBySubmission(
+  submissionId: number,
+  filters?: {
+    uploadedBy?: number;
+  },
+  tx?: DBTransaction
+) {
   const queryDb = tx || db;
+  const conditions = [eq(submissions_documents.submissionId, submissionId)];
+
+  if (filters?.uploadedBy !== undefined) {
+    conditions.push(eq(submissions_documents.uploadedBy, filters.uploadedBy));
+  }
 
   return queryDb.query.submissions_documents.findMany({
-    where: eq(submissions_documents.submissionId, submissionId),
+    where: and(...conditions),
+    orderBy: [desc(submissions_documents.uploadedAt)],
   });
 }
 
