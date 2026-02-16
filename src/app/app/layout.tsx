@@ -10,7 +10,6 @@ import { usePathname, useRouter } from 'next/navigation';
 export type AppStateContextValue = {
   setSearchQuery: (q: string) => void;
   setStatusFilter: (s: string) => void;
-  handleNewSubmission: () => void;
   handleSubmitForm: (data: Partial<Submission>) => void;
   handleStatusChange: (id: number, status: StatusSPPTG, alasan: string) => void;
   handleCompleteSubmission: (draft: SubmissionDraft) => void;
@@ -43,10 +42,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         : 'beranda';
 
   // === Handlers that navigate between pages ===
-
-  const handleNewSubmission = () => {
-    router.push('/app/pengajuan/form');
-  };
 
   const handleSubmitForm = (data: Partial<Submission>) => {
     const newSubmission: Submission = {
@@ -146,7 +141,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const contextValue: AppStateContextValue = {
     setSearchQuery,
     setStatusFilter,
-    handleNewSubmission,
     handleSubmitForm,
     handleStatusChange,
     handleCompleteSubmission,

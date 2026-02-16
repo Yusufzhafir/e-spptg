@@ -37,7 +37,6 @@ type MonthlyStatItem = {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { handleNewSubmission } = useAppState();
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -120,7 +119,6 @@ export default function DashboardPage() {
       monthlyData={monthlyData}
       statusFilter={statusFilter}
       onStatusFilterChange={setStatusFilter}
-      onNewSubmission={handleNewSubmission}
       onViewDetail={handleViewDetail}
       onEdit={handleEditSubmission}
     />

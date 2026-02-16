@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type ChangeEvent } from 'react';
 import proj4 from 'proj4';
 import {
   SubmissionDraft,
@@ -10,6 +10,7 @@ import {
 } from '../../types';
 import { trpc } from '@/trpc/client';
 import { DrawingMap } from '../maps/DrawingMap';
+import { parseKMLFile } from '@/lib/kmz-parser';
 
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
@@ -65,6 +66,7 @@ type NewWitnessWithUsage = {
 
 export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
   const [isOverlapDialogOpen, setIsOverlapDialogOpen] = useState(false);
+  const [isParsingKml, setIsParsingKml] = useState(false);
   const [newWitness, setNewWitness] = useState<NewWitnessWithUsage>({
     nama: '',
     sisi: '' as BoundaryDirection,
@@ -226,6 +228,71 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
     onUpdateDraft({
       coordinatesGeografis: draft.coordinatesGeografis.filter((c) => c.id !== id),
     });
+  };
+
+  const normalizeImportedCoordinates = (
+    coordinates: Array<{ latitude: number; longitude: number }>
+  ): GeographicCoordinate[] => {
+    const sanitized = coordinates.filter(
+      (coord) => Number.isFinite(coord.latitude) && Number.isFinite(coord.longitude)
+    );
+
+    if (sanitized.length >= 2) {
+      const first = sanitized[0];
+      const last = sanitized[sanitized.length - 1];
+      if (first.latitude === last.latitude && first.longitude === last.longitude) {
+        sanitized.pop();
+      }
+    }
+
+    const importId = Date.now();
+    return sanitized.map((coord, index) => ({
+      id: `C-${importId}-${index}-${crypto.randomUUID().slice(0, 8)}`,
+      latitude: coord.latitude,
+      longitude: coord.longitude,
+    }));
+  };
+
+  const handleKmlUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.kml')) {
+      toast.error('Format file tidak didukung. Harap unggah file .kml');
+      input.value = '';
+      return;
+    }
+
+    setIsParsingKml(true);
+    try {
+      const result = await parseKMLFile(file);
+
+      if (!result.success) {
+        toast.error(result.error || 'Gagal memproses file KML');
+        return;
+      }
+
+      const normalizedCoordinates = normalizeImportedCoordinates(result.coordinates);
+      if (normalizedCoordinates.length < 3) {
+        toast.error('File KML harus berisi minimal 3 titik koordinat');
+        return;
+      }
+
+      onUpdateDraft({ coordinatesGeografis: normalizedCoordinates });
+      toast.success(
+        `File KML berhasil diimpor. ${normalizedCoordinates.length} titik koordinat dimuat.`
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? `Gagal memproses file KML: ${error.message}`
+          : 'Gagal memproses file KML'
+      );
+    } finally {
+      setIsParsingKml(false);
+      input.value = '';
+    }
   };
 
   const calculateArea = () => {
@@ -549,6 +616,21 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
             <Plus className="w-4 h-4 mr-2" />
             Tambah Titik
           </Button>
+        </div>
+
+        <div className="space-y-1">
+          <Label htmlFor="kml-coordinate-file">Impor KML (Opsional)</Label>
+          <Input
+            id="kml-coordinate-file"
+            type="file"
+            accept=".kml"
+            onChange={handleKmlUpload}
+            disabled={isParsingKml}
+          />
+          <p className="text-xs text-gray-500">
+            Unggah file KML untuk menggantikan seluruh titik koordinat saat ini.
+          </p>
+          {isParsingKml && <p className="text-xs text-blue-600">Memproses file...</p>}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -6,10 +6,9 @@ import { Download, FileUp, PlusCircle } from 'lucide-react';
 interface FilterPanelProps {
   statusFilter: string;
   onStatusFilterChange: (value: string) => void;
-  onNewSubmission: () => void;
 }
 
-export function FilterPanel({ statusFilter, onStatusFilterChange, onNewSubmission }: FilterPanelProps) {
+export function FilterPanel({ statusFilter, onStatusFilterChange }: FilterPanelProps) {
   return (
     <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-4">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -48,16 +47,8 @@ export function FilterPanel({ statusFilter, onStatusFilterChange, onNewSubmissio
 
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm">
-            <FileUp className="w-4 h-4 mr-2" />
-            Impor GeoJSON
-          </Button>
-          <Button variant="outline" size="sm">
             <Download className="w-4 h-4 mr-2" />
             Ekspor CSV
-          </Button>
-          <Button onClick={onNewSubmission} size="sm">
-            <PlusCircle className="w-4 h-4 mr-2" />
-            Ajukan Plot Lahan
           </Button>
         </div>
       </div>
