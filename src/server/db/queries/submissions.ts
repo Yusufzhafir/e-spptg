@@ -145,21 +145,6 @@ export async function getSubmissionOverlaps(submissionId: number, tx?: DBTransac
     });
 }
 
-export async function getKPIData(tx?: DBTransaction) {
-    const queryDb = tx || db;
-    const scopeConditions = buildScopeConditions({});
-    const result = await queryDb
-        .select({
-            status: submissions.status,
-            count: sql`count(*)`.mapWith(String),
-        })
-        .from(submissions)
-        .where(scopeConditions.length > 0 ? and(...scopeConditions) : undefined)
-        .groupBy(submissions.status);
-
-    return result;
-}
-
 export async function getKPIDataScoped(filters: SubmissionScopeFilters, tx?: DBTransaction) {
     const queryDb = tx || db;
     const conditions = buildScopeConditions(filters);

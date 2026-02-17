@@ -302,7 +302,7 @@ export const documentsRouter = router({
 
   getById: protectedProcedure
     .input(z.object({ documentId: z.number().int() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const document = await queries.getDocumentById(input.documentId);
       if (!document) {
         throw new TRPCError({
@@ -310,6 +310,32 @@ export const documentsRouter = router({
           message: 'Dokumen tidak ditemukan',
         });
       }
+
+      if (document.submissionId) {
+        const submission = await submissionQueries.getSubmissionById(document.submissionId);
+        if (!submission) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Pengajuan tidak ditemukan' });
+        }
+        assertCanAccessSubmission(ctx.appUser!, {
+          ownerUserId: submission.ownerUserId,
+          villageId: submission.villageId,
+        });
+      } else if (document.draftId) {
+        const draft = await draftQueries.getDraftById(document.draftId);
+        if (!draft) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Draft tidak ditemukan' });
+        }
+        assertCanAccessDraft(ctx.appUser!, {
+          userId: draft.userId,
+          villageId: draft.villageId,
+        });
+      } else {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Anda tidak memiliki akses ke dokumen ini',
+        });
+      }
+
       return document;
     }),
 
@@ -327,8 +353,21 @@ export const documentsRouter = router({
         });
       }
 
-      // Verify ownership (if draft, check user)
-      if (document.draftId) {
+      // Verify ownership via linked submission/draft
+      if (document.submissionId) {
+        const submission = await submissionQueries.getSubmissionById(document.submissionId);
+        if (!submission) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Pengajuan tidak ditemukan',
+          });
+        }
+
+        assertCanAccessSubmission(ctx.appUser!, {
+          ownerUserId: submission.ownerUserId,
+          villageId: submission.villageId,
+        });
+      } else if (document.draftId) {
         const draft = await draftQueries.getDraftById(document.draftId);
         if (!draft) {
           throw new TRPCError({
@@ -340,6 +379,11 @@ export const documentsRouter = router({
         assertCanAccessDraft(ctx.appUser!, {
           userId: draft.userId,
           villageId: draft.villageId,
+        });
+      } else {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Anda tidak memiliki akses ke dokumen ini',
         });
       }
 
