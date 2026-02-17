@@ -25,7 +25,11 @@ type SubmissionListResult = Awaited<
   ReturnType<typeof submissionQueries.listSubmissions>
 >;
 
-function createCtx(peran: 'Viewer' | 'Admin', userId: number) {
+function createCtx(
+  peran: 'Viewer' | 'Admin',
+  userId: number,
+  assignedVillageId: number | null = null
+) {
   const appUser: NonNullable<TRPCContext['appUser']> = {
     id: userId,
     nama: 'Test User',
@@ -33,6 +37,7 @@ function createCtx(peran: 'Viewer' | 'Admin', userId: number) {
     clerkUserId: `clerk-${userId}`,
     nipNik: '12345',
     peran,
+    assignedVillageId,
     status: 'Aktif',
     nomorHP: null,
     terakhirMasuk: null,
@@ -55,6 +60,8 @@ describe('submissionsRouter access hardening', () => {
   it('allows byId for viewer on owned submission', async () => {
     getSubmissionByIdMock.mockResolvedValue({
       id: 1,
+      ownerUserId: 77,
+      villageId: 10,
       verifikator: 77,
       status: 'SPPTG terdata',
     } as SubmissionRecord);
@@ -68,6 +75,8 @@ describe('submissionsRouter access hardening', () => {
   it('throws NOT_FOUND for viewer on non-owned submission', async () => {
     getSubmissionByIdMock.mockResolvedValue({
       id: 2,
+      ownerUserId: 10,
+      villageId: 10,
       verifikator: 10,
       status: 'SPPTG terdata',
     } as SubmissionRecord);
@@ -92,24 +101,26 @@ describe('submissionsRouter access hardening', () => {
       search: undefined,
       status: undefined,
       ownerUserId: 88,
+      villageId: undefined,
       limit: 50,
       offset: 0,
     });
   });
 
-  it('does not pass ownerUserId filter for staff list', async () => {
+  it('passes villageId filter for staff list', async () => {
     listSubmissionsMock.mockResolvedValue({
       items: [],
       total: 0,
     } as SubmissionListResult);
 
-    const caller = submissionsRouter.createCaller(createCtx('Admin', 99));
+    const caller = submissionsRouter.createCaller(createCtx('Admin', 99, 5));
     await caller.list({ status: undefined, search: undefined, limit: 50, offset: 0 });
 
     expect(listSubmissionsMock).toHaveBeenCalledWith({
       search: undefined,
       status: undefined,
       ownerUserId: undefined,
+      villageId: 5,
       limit: 50,
       offset: 0,
     });

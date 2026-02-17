@@ -4,6 +4,14 @@ import { Input } from '../ui/input';
 import { Checkbox } from '../ui/checkbox';
 import { FileUploadField } from '../FileUploadField';
 import { Textarea } from '../ui/textarea';
+import { trpc } from '@/trpc/client';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../ui/select';
 
 interface Step1Props {
   draft: SubmissionDraft;
@@ -11,6 +19,37 @@ interface Step1Props {
 }
 
 export function Step1DocumentUpload({ draft, onUpdateDraft }: Step1Props) {
+  const { data: villagesData } = trpc.villages.list.useQuery({
+    limit: 1000,
+    offset: 0,
+  });
+  const villages = villagesData ?? [];
+
+  const handleVillageChange = (value: string) => {
+    const villageId = Number(value);
+    const selectedVillage = villages.find((v) => v.id === villageId);
+    const juruUkur =
+      selectedVillage &&
+      selectedVillage.juruUkurNama &&
+      selectedVillage.juruUkurJabatan &&
+      selectedVillage.juruUkurNomorHP
+        ? {
+            nama: selectedVillage.juruUkurNama,
+            jabatan: selectedVillage.juruUkurJabatan,
+            instansi: selectedVillage.juruUkurInstansi || undefined,
+            nomorHP: selectedVillage.juruUkurNomorHP,
+          }
+        : undefined;
+
+    onUpdateDraft({
+      villageId,
+      kecamatan: selectedVillage?.kecamatan,
+      kabupaten: selectedVillage?.kabupaten,
+      namaKepalaDesa: selectedVillage?.namaKepalaDesa || undefined,
+      juruUkur,
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -92,6 +131,29 @@ export function Step1DocumentUpload({ draft, onUpdateDraft }: Step1Props) {
             />
           </div>
 
+          <div>
+            <Label htmlFor="villageId">
+              Desa <span className="text-red-600">*</span>
+            </Label>
+            <Select
+              value={draft.villageId ? String(draft.villageId) : ''}
+              onValueChange={handleVillageChange}
+            >
+              <SelectTrigger id="villageId">
+                <SelectValue placeholder="Pilih desa" />
+              </SelectTrigger>
+              <SelectContent>
+                {villages.map((village) => (
+                  <SelectItem key={village.id} value={String(village.id)}>
+                    {village.namaDesa}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4">
           <div>
             <Label htmlFor="alamatKTP">Alamat KTP</Label>
             <Textarea

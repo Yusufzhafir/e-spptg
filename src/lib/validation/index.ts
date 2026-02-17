@@ -18,6 +18,7 @@ export const createUserSchema = z.object({
     .min(5, 'NIP/NIK minimal 5 karakter')
     .max(20, 'NIP/NIK maksimal 20 karakter'),
   peran: z.enum(['Superadmin', 'Admin', 'Verifikator', 'Viewer']).optional(),
+  assignedVillageId: z.number().int().nullable().optional(),
 });
 
 export const updateUserSchema = createUserSchema.partial();

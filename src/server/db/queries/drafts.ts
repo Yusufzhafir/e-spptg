@@ -1,6 +1,6 @@
 import { db, DBTransaction } from '../db';
-import { submissionDrafts } from '../schema';
-import { eq, desc, sql } from 'drizzle-orm';
+import { submissionDrafts, users, villages } from '../schema';
+import { and, desc, eq, or, sql } from 'drizzle-orm';
 
 export async function getOrCreateDraft(userId: number, tx?: DBTransaction) {
   const queryDb = tx || db;
@@ -39,29 +39,22 @@ export async function createDraft(userId: number, tx?: DBTransaction) {
   return created[0];
 }
 
-export async function getDraftById(id: number, userId: number,tx?: DBTransaction) {
+export async function getDraftById(id: number, tx?: DBTransaction) {
   const queryDb = tx || db;
-  const draft = await queryDb.query.submissionDrafts.findFirst({
+  return queryDb.query.submissionDrafts.findFirst({
     where: eq(submissionDrafts.id, id),
   });
-
-  if (draft && draft.userId !== userId) {
-    throw new Error('Unauthorized');
-  }
-
-  return draft;
 }
 
 export async function saveDraftStep(
   draftId: number,
-  userId: number,
   currentStep: number,
   payloadUpdate: object,
   tx?: DBTransaction
 ) {
   const queryDb = tx || db;
 
-  const draft = await getDraftById(draftId, userId,tx);
+  const draft = await getDraftById(draftId, tx);
 
   if (!draft) {
     throw new Error('Draft not found');
@@ -73,11 +66,19 @@ export async function saveDraftStep(
     ...payloadUpdate,
     currentStep,
   };
+  const villageCandidate = (payloadUpdate as { villageId?: unknown }).villageId;
+  const nextVillageId =
+    typeof villageCandidate === 'number'
+      ? villageCandidate
+      : villageCandidate === null
+        ? null
+        : draft.villageId;
 
   const result = await queryDb
     .update(submissionDrafts)
     .set({
       payload: updatedPayload,
+      villageId: nextVillageId,
       currentStep,
       lastSaved: new Date(),
       updatedAt: new Date(),
@@ -88,12 +89,42 @@ export async function saveDraftStep(
   return result[0];
 }
 
-export async function listUserDrafts(userId: number, tx?: DBTransaction) {
+export async function listAccessibleDrafts(
+  scope: {
+    userId: number;
+    role: 'Superadmin' | 'Admin' | 'Verifikator' | 'Viewer';
+    assignedVillageId?: number;
+  },
+  tx?: DBTransaction
+) {
   const queryDb = tx || db;
+  const isSuperadmin = scope.role === 'Superadmin';
+  const isViewer = scope.role === 'Viewer';
+
+  const conditions = [];
+  if (isViewer) {
+    conditions.push(eq(submissionDrafts.userId, scope.userId));
+  } else if (!isSuperadmin) {
+    if (scope.assignedVillageId == null) {
+      throw new Error('Admin/Verifikator harus ditetapkan ke desa');
+    }
+
+    conditions.push(
+      or(
+        eq(submissionDrafts.userId, scope.userId),
+        eq(submissionDrafts.villageId, scope.assignedVillageId)
+      )
+    );
+  }
 
   return queryDb
     .select({
       id: submissionDrafts.id,
+      ownerUserId: submissionDrafts.userId,
+      ownerName: users.nama,
+      villageId: submissionDrafts.villageId,
+      villageName: villages.namaDesa,
+      payload: submissionDrafts.payload,
       currentStep: submissionDrafts.currentStep,
       lastSaved: submissionDrafts.lastSaved,
       createdAt: submissionDrafts.createdAt,
@@ -103,13 +134,15 @@ export async function listUserDrafts(userId: number, tx?: DBTransaction) {
       nik: sql<string | null>`${submissionDrafts.payload}->>'nik'`,
     })
     .from(submissionDrafts)
-    .where(eq(submissionDrafts.userId, userId))
+    .leftJoin(users, eq(users.id, submissionDrafts.userId))
+    .leftJoin(villages, eq(villages.id, submissionDrafts.villageId))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(submissionDrafts.updatedAt));
 }
 
-export async function deleteDraft(draftId: number, userId: number,tx?: DBTransaction) {
+export async function deleteDraft(draftId: number, tx?: DBTransaction) {
   const queryDb = tx || db;
-  const draft = await getDraftById(draftId, userId,tx);
+  const draft = await getDraftById(draftId, tx);
 
   if (!draft) {
     throw new Error('Draft not found');

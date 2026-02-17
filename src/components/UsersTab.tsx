@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { User, UserRole, UserStatus } from '../types';
+import { User, UserRole, UserStatus, Village } from '../types';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -42,16 +42,20 @@ import { toast } from 'sonner';
 
 interface UsersTabProps {
   users: User[];
+  villages: Village[];
+  canManageVillageAssignment?: boolean;
   onUpdateUsers?: (users: User[]) => void;
   onUpdateUser?: (
     id: number,
-    data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'nomorHP' | 'status'>>
+    data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'nomorHP' | 'status'>>
   ) => void;
   onToggleUserStatus?: (id: number) => void;
 }
 
 export function UsersTab({
   users,
+  villages,
+  canManageVillageAssignment = false,
   onUpdateUsers,
   onUpdateUser,
   onToggleUserStatus,
@@ -82,6 +86,7 @@ export function UsersTab({
   const handleAddUser = () => {
     setFormData({
       peran: 'Viewer',
+      assignedVillageId: null,
       status: 'Aktif',
     });
     setIsAddDialogOpen(true);
@@ -104,12 +109,21 @@ export function UsersTab({
       return;
     }
 
+    if (
+      (formData.peran === 'Admin' || formData.peran === 'Verifikator') &&
+      typeof formData.assignedVillageId !== 'number'
+    ) {
+      toast.error('Desa penugasan wajib dipilih untuk Admin/Verifikator');
+      return;
+    }
+
     const newUser: User = {
       id: new Date().getTime(),
       nama: formData.nama,
       nipNik: formData.nipNik,
       email: formData.email,
       peran: formData.peran as UserRole,
+      assignedVillageId: formData.assignedVillageId ?? null,
       status: (formData.status as UserStatus) || 'Aktif',
       nomorHP: formData.nomorHP || null,
       clerkUserId: '',
@@ -130,12 +144,21 @@ export function UsersTab({
   const handleUpdateUser = () => {
     if (!selectedUser) return;
 
+    if (
+      (formData.peran === 'Admin' || formData.peran === 'Verifikator') &&
+      typeof formData.assignedVillageId !== 'number'
+    ) {
+      toast.error('Desa penugasan wajib dipilih untuk Admin/Verifikator');
+      return;
+    }
+
     if (onUpdateUser) {
       onUpdateUser(selectedUser.id, {
         nama: formData.nama,
         nipNik: formData.nipNik,
         email: formData.email,
         peran: formData.peran as UserRole | undefined,
+        assignedVillageId: formData.assignedVillageId ?? null,
         nomorHP: formData.nomorHP ?? null,
         status: formData.status as UserStatus | undefined,
       });
@@ -386,19 +409,67 @@ export function UsersTab({
               <Label htmlFor="peran">Peran *</Label>
               <Select
                 value={formData.peran}
-                onValueChange={(value) => setFormData({ ...formData, peran: value as UserRole })}
+                onValueChange={(value) =>
+                  setFormData({
+                    ...formData,
+                    peran: value as UserRole,
+                    assignedVillageId:
+                      value === 'Admin' || value === 'Verifikator'
+                        ? formData.assignedVillageId ?? null
+                        : null,
+                  })
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Pilih peran" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Superadmin">Superadmin</SelectItem>
-                  <SelectItem value="Admin">Admin</SelectItem>
-                  <SelectItem value="Verifikator">Verifikator</SelectItem>
+                  <SelectItem value="Superadmin" disabled={!canManageVillageAssignment}>
+                    Superadmin
+                  </SelectItem>
+                  <SelectItem value="Admin" disabled={!canManageVillageAssignment}>
+                    Admin
+                  </SelectItem>
+                  <SelectItem value="Verifikator" disabled={!canManageVillageAssignment}>
+                    Verifikator
+                  </SelectItem>
                   <SelectItem value="Viewer">Viewer</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {(formData.peran === 'Admin' || formData.peran === 'Verifikator') && (
+              <div>
+                <Label htmlFor="assignedVillageId">Desa Penugasan *</Label>
+                <Select
+                  disabled={!canManageVillageAssignment}
+                  value={
+                    typeof formData.assignedVillageId === 'number'
+                      ? String(formData.assignedVillageId)
+                      : ''
+                  }
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, assignedVillageId: Number(value) })
+                  }
+                >
+                  <SelectTrigger id="assignedVillageId">
+                    <SelectValue placeholder="Pilih desa penugasan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {villages.map((village) => (
+                      <SelectItem key={village.id} value={String(village.id)}>
+                        {village.namaDesa}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!canManageVillageAssignment && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Hanya superadmin yang dapat mengubah penugasan desa.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div>
               <Label htmlFor="nomorHP">Nomor HP</Label>
@@ -463,19 +534,67 @@ export function UsersTab({
               <Label htmlFor="edit-peran">Peran *</Label>
               <Select
                 value={formData.peran}
-                onValueChange={(value) => setFormData({ ...formData, peran: value as UserRole })}
+                onValueChange={(value) =>
+                  setFormData({
+                    ...formData,
+                    peran: value as UserRole,
+                    assignedVillageId:
+                      value === 'Admin' || value === 'Verifikator'
+                        ? formData.assignedVillageId ?? null
+                        : null,
+                  })
+                }
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Superadmin">Superadmin</SelectItem>
-                  <SelectItem value="Admin">Admin</SelectItem>
-                  <SelectItem value="Verifikator">Verifikator</SelectItem>
+                  <SelectItem value="Superadmin" disabled={!canManageVillageAssignment}>
+                    Superadmin
+                  </SelectItem>
+                  <SelectItem value="Admin" disabled={!canManageVillageAssignment}>
+                    Admin
+                  </SelectItem>
+                  <SelectItem value="Verifikator" disabled={!canManageVillageAssignment}>
+                    Verifikator
+                  </SelectItem>
                   <SelectItem value="Viewer">Viewer</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {(formData.peran === 'Admin' || formData.peran === 'Verifikator') && (
+              <div>
+                <Label htmlFor="edit-assignedVillageId">Desa Penugasan *</Label>
+                <Select
+                  disabled={!canManageVillageAssignment}
+                  value={
+                    typeof formData.assignedVillageId === 'number'
+                      ? String(formData.assignedVillageId)
+                      : ''
+                  }
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, assignedVillageId: Number(value) })
+                  }
+                >
+                  <SelectTrigger id="edit-assignedVillageId">
+                    <SelectValue placeholder="Pilih desa penugasan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {villages.map((village) => (
+                      <SelectItem key={village.id} value={String(village.id)}>
+                        {village.namaDesa}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!canManageVillageAssignment && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Hanya superadmin yang dapat mengubah penugasan desa.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div>
               <Label htmlFor="edit-nomorHP">Nomor HP</Label>

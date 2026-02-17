@@ -115,6 +115,7 @@ export default function PengaturanPage() {
       nipNik: u.nipNik,
       email: u.email,
       peran: u.peran,
+      assignedVillageId: u.assignedVillageId ?? null,
       status: u.status,
       nomorHP: u.nomorHP || null,
       terakhirMasuk: u.terakhirMasuk ? new Date(u.terakhirMasuk) : null,
@@ -162,7 +163,7 @@ export default function PengaturanPage() {
 
   const handleUpdateUser = (
     id: number,
-    data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'nomorHP' | 'status'>>
+    data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'nomorHP' | 'status'>>
   ) => {
     updateUserMutation.mutate({
       id,
@@ -171,6 +172,7 @@ export default function PengaturanPage() {
         nipNik: data.nipNik,
         email: data.email,
         peran: data.peran,
+        assignedVillageId: data.assignedVillageId,
         status: data.status,
         nomorHP: data.nomorHP || undefined,
       },

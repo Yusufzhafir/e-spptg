@@ -37,9 +37,11 @@ export default function DraftsListPage() {
   const router = useRouter();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [draftToDelete, setDraftToDelete] = useState<number | null>(null);
+  const { data: currentUser } = trpc.auth.me.useQuery();
+  const isPrivilegedView = currentUser ? currentUser.peran !== 'Viewer' : false;
 
   // Fetch user's drafts
-  const { data: drafts, isLoading, refetch } = trpc.drafts.listMy.useQuery();
+  const { data: drafts, isLoading, error, refetch } = trpc.drafts.listMy.useQuery();
 
   // Create draft mutation
   const createDraftMutation = trpc.drafts.create.useMutation({
@@ -152,13 +154,20 @@ export default function DraftsListPage() {
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
             <span className="ml-3 text-gray-600">Memuat draft...</span>
           </div>
+        ) : error ? (
+          <div className="px-6 py-10 text-center">
+            <p className="text-red-600">{error.message}</p>
+          </div>
         ) : drafts && drafts.length > 0 ? (
           <Table>
             <TableHeader>
               <TableRow>
+                {isPrivilegedView && <TableHead>Pemilik</TableHead>}
                 <TableHead>Nama Pemohon</TableHead>
                 <TableHead>NIK</TableHead>
+                {isPrivilegedView && <TableHead>Desa</TableHead>}
                 <TableHead>Tahap</TableHead>
+                {isPrivilegedView && <TableHead>Validasi Step 1</TableHead>}
                 <TableHead>Terakhir Disimpan</TableHead>
                 <TableHead className="text-right">Aksi</TableHead>
               </TableRow>
@@ -166,6 +175,18 @@ export default function DraftsListPage() {
             <TableBody>
               {drafts.map((draft) => (
                 <TableRow key={draft.id}>
+                  {isPrivilegedView && (
+                    <TableCell>
+                      <div className="space-y-1">
+                        <p className="font-medium text-gray-900">{draft.ownerName || '-'}</p>
+                        {draft.isOwnDraft && (
+                          <span className="inline-flex rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-800">
+                            Draft Saya
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                  )}
                   <TableCell className="font-medium">
                     {draft.namaPemohon || (
                       <span className="text-gray-400 italic">Draft Baru</span>
@@ -176,11 +197,31 @@ export default function DraftsListPage() {
                       <span className="text-gray-400">-</span>
                     )}
                   </TableCell>
+                  {isPrivilegedView && (
+                    <TableCell>
+                      {draft.villageName || (
+                        <span className="text-gray-400">Belum dipilih</span>
+                      )}
+                    </TableCell>
+                  )}
                   <TableCell>
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                       {getStepLabel(draft.currentStep)}
                     </span>
                   </TableCell>
+                  {isPrivilegedView && (
+                    <TableCell>
+                      <span
+                        className={`inline-flex items-center rounded px-2 py-0.5 text-xs ${
+                          draft.isStep1Validated
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}
+                      >
+                        {draft.isStep1Validated ? 'Valid' : 'Belum'}
+                      </span>
+                    </TableCell>
+                  )}
                   <TableCell className="text-gray-600">
                     {formatDate(draft.lastSaved)}
                   </TableCell>
@@ -256,4 +297,3 @@ export default function DraftsListPage() {
     </div>
   );
 }
-

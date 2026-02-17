@@ -12,6 +12,14 @@ import { computeOverlaps } from '@/server/postgis';
 import { sql } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { normalizeOverlapRows } from '@/lib/overlap-results';
+import {
+    assertCanAccessDraft,
+    assertCanAccessSubmission,
+    getSubmissionScopeForUser,
+    isPrivilegedProcessor,
+    isViewer,
+    requireAssignedVillageId,
+} from '@/server/authz';
 
 export const submissionsRouter = router({
     /**
@@ -25,16 +33,24 @@ export const submissionsRouter = router({
             // This ensures that if any operation fails, all changes are rolled back
             return await ctx.db.transaction(async (tx) => {
                 try {
-                    const draft = await draftQueries.getDraftById(
-                        input.draftId,
-                        ctx.appUser!.id,
-                        tx
-                    );
+                    const draft = await draftQueries.getDraftById(input.draftId, tx);
 
                     if (!draft) {
                         throw new TRPCError({
                             code: 'NOT_FOUND',
                             message: 'Draft tidak ditemukan',
+                        });
+                    }
+
+                    assertCanAccessDraft(ctx.appUser!, {
+                        userId: draft.userId,
+                        villageId: draft.villageId,
+                    });
+
+                    if (isViewer(ctx.appUser!)) {
+                        throw new TRPCError({
+                            code: 'FORBIDDEN',
+                            message: 'Viewer tidak dapat melanjutkan pengajuan ke tahap ini.',
                         });
                     }
 
@@ -70,6 +86,27 @@ export const submissionsRouter = router({
                         });
                     }
 
+                    const draftVillageId =
+                        draft.villageId ??
+                        (typeof payload.villageId === 'number' ? payload.villageId : null);
+
+                    if (!draftVillageId) {
+                        throw new TRPCError({
+                            code: 'BAD_REQUEST',
+                            message: 'Desa pada Step 1 wajib dipilih sebelum submit.',
+                        });
+                    }
+
+                    if (isPrivilegedProcessor(ctx.appUser!)) {
+                        const assignedVillageId = requireAssignedVillageId(ctx.appUser!);
+                        if (assignedVillageId !== draftVillageId) {
+                            throw new TRPCError({
+                                code: 'FORBIDDEN',
+                                message: 'Anda hanya dapat memproses draft pada desa yang ditetapkan.',
+                            });
+                        }
+                    }
+
                     // Build submission data
                     // Use status from draft payload if valid, otherwise default to 'SPPTG terdata'
                     const validStatuses = ['SPPTG terdata', 'SPPTG terdaftar', 'SPPTG ditolak', 'SPPTG ditinjau ulang'] as const;
@@ -83,7 +120,7 @@ export const submissionsRouter = router({
                         alamat: payload.alamat || '',
                         nomorHP: payload.juruUkur?.nomorHP || '',
                         email: payload.email || '',
-                        villageId: payload.villageId || 1, // Default to first village
+                        villageId: draftVillageId,
                         kecamatan: payload.kecamatan || '',
                         kabupaten: payload.kabupaten || 'Cirebon',
                         luas: payload.luasLahan || 0,
@@ -92,6 +129,7 @@ export const submissionsRouter = router({
                         catatan: payload.catatan ?? null,
                         status: submissionStatus,
                         tanggalPengajuan: new Date(),
+                        ownerUserId: draft.userId,
                         verifikator: ctx.appUser!.id,
                         geoJSON: buildGeometryFromCoordinates(payload),
                         riwayat: [
@@ -158,7 +196,7 @@ export const submissionsRouter = router({
                     
                     // Delete draft after successful submission
                     // Documents have already been moved to submission, so only delete the draft record
-                    await draftQueries.deleteDraft(input.draftId, ctx.appUser!.id, tx);
+                    await draftQueries.deleteDraft(input.draftId, tx);
                     
                     return {
                         submissionId,
@@ -193,13 +231,10 @@ export const submissionsRouter = router({
                 });
             }
 
-            const isViewer = ctx.appUser!.peran === 'Viewer';
-            if (isViewer && submission.verifikator !== ctx.appUser!.id) {
-                throw new TRPCError({
-                    code: 'NOT_FOUND',
-                    message: 'Pengajuan tidak ditemukan',
-                });
-            }
+            assertCanAccessSubmission(ctx.appUser!, {
+                ownerUserId: submission.ownerUserId,
+                villageId: submission.villageId,
+            });
 
             return submission;
         }),
@@ -207,11 +242,12 @@ export const submissionsRouter = router({
     list: protectedProcedure
         .input(listSubmissionsSchema)
         .query(async ({ ctx, input }) => {
-            const isViewer = ctx.appUser!.peran === 'Viewer';
+            const scope = getSubmissionScopeForUser(ctx.appUser!);
             return submissionQueries.listSubmissions({
                 search: input.search,
                 status: input.status,
-                ownerUserId: isViewer ? ctx.appUser!.id : undefined,
+                ownerUserId: scope.ownerUserId,
+                villageId: scope.villageId,
                 limit: input.limit,
                 offset: input.offset,
             });
@@ -219,7 +255,20 @@ export const submissionsRouter = router({
 
     getOverlaps: protectedProcedure
         .input(z.object({ submissionId: z.number().int() }))
-        .query(async ({ input }) => {
+        .query(async ({ ctx, input }) => {
+            const submission = await submissionQueries.getSubmissionById(input.submissionId);
+            if (!submission) {
+                throw new TRPCError({
+                    code: 'NOT_FOUND',
+                    message: 'Pengajuan tidak ditemukan',
+                });
+            }
+
+            assertCanAccessSubmission(ctx.appUser!, {
+                ownerUserId: submission.ownerUserId,
+                villageId: submission.villageId,
+            });
+
             const overlaps = await submissionQueries.getSubmissionOverlaps(
                 input.submissionId
             );
@@ -240,6 +289,10 @@ export const submissionsRouter = router({
             })).min(3),
         }))
         .mutation(async ({ ctx, input }) => {
+            if (isPrivilegedProcessor(ctx.appUser!)) {
+                requireAssignedVillageId(ctx.appUser!);
+            }
+
             // Build GeoJSON polygon from coordinates
             const coords = input.coordinates.map((c) => [c.longitude, c.latitude]);
             const closedCoords = [...coords, coords[0]];
@@ -306,6 +359,19 @@ export const submissionsRouter = router({
         .input(updateSubmissionStatusSchema)
         .mutation(async ({ ctx, input }) => {
             try {
+                const submission = await submissionQueries.getSubmissionById(input.submissionId);
+                if (!submission) {
+                    throw new TRPCError({
+                        code: 'NOT_FOUND',
+                        message: 'Pengajuan tidak ditemukan',
+                    });
+                }
+
+                assertCanAccessSubmission(ctx.appUser!, {
+                    ownerUserId: submission.ownerUserId,
+                    villageId: submission.villageId,
+                });
+
                 const result = await submissionQueries.updateSubmissionStatus(
                     input.submissionId,
                     input.newStatus,
@@ -318,6 +384,9 @@ export const submissionsRouter = router({
                     submission: result,
                 };
             } catch (error) {
+                if (error instanceof TRPCError) {
+                    throw error;
+                }
                 throw new TRPCError({
                     code: 'INTERNAL_SERVER_ERROR',
                     message: 'Gagal memperbarui status',
@@ -326,7 +395,8 @@ export const submissionsRouter = router({
         }),
 
     kpi: protectedProcedure.query(async ({ ctx }) => {
-        const data = await submissionQueries.getKPIData();
+        const scope = getSubmissionScopeForUser(ctx.appUser!);
+        const data = await submissionQueries.getKPIDataScoped(scope);
         const kpi = {
             'SPPTG terdata': 0,
             'SPPTG terdaftar': 0,
@@ -347,7 +417,8 @@ export const submissionsRouter = router({
     }),
 
     monthlyStats: protectedProcedure.query(async ({ ctx }) => {
-        return submissionQueries.getMonthlyStats();
+        const scope = getSubmissionScopeForUser(ctx.appUser!);
+        return submissionQueries.getMonthlyStats(scope);
     }),
 });
 

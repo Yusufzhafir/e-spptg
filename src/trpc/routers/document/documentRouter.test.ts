@@ -44,7 +44,11 @@ type SubmissionDocuments = Awaited<
   ReturnType<typeof documentQueries.listDocumentsBySubmission>
 >;
 
-function createCtx(peran: 'Viewer' | 'Admin', userId: number) {
+function createCtx(
+  peran: 'Viewer' | 'Admin',
+  userId: number,
+  assignedVillageId: number | null = null
+) {
   const appUser: NonNullable<TRPCContext['appUser']> = {
     id: userId,
     nama: 'Test User',
@@ -52,6 +56,7 @@ function createCtx(peran: 'Viewer' | 'Admin', userId: number) {
     clerkUserId: `clerk-${userId}`,
     nipNik: '12345',
     peran,
+    assignedVillageId,
     status: 'Aktif',
     nomorHP: null,
     terakhirMasuk: null,
@@ -74,6 +79,8 @@ describe('documentsRouter.listBySubmission', () => {
   it('returns all documents for staff role', async () => {
     getSubmissionByIdMock.mockResolvedValue({
       id: 11,
+      ownerUserId: 101,
+      villageId: 55,
       verifikator: 101,
     } as SubmissionRecord);
     listDocumentsBySubmissionMock.mockResolvedValue([
@@ -88,21 +95,21 @@ describe('documentsRouter.listBySubmission', () => {
       },
     ] as SubmissionDocuments);
 
-    const caller = documentsRouter.createCaller(createCtx('Admin', 500));
+    const caller = documentsRouter.createCaller(createCtx('Admin', 500, 55));
     const result = await caller.listBySubmission({ submissionId: 11 });
 
     expect(getSubmissionByIdMock).toHaveBeenCalledWith(11);
-    expect(listDocumentsBySubmissionMock).toHaveBeenCalledWith(11, {
-      uploadedBy: undefined,
-    });
+    expect(listDocumentsBySubmissionMock).toHaveBeenCalledWith(11);
     expect(result).toHaveLength(1);
     expect(result[0]?.filename).toBe('ktp.pdf');
   });
 
-  it('returns only viewer-uploaded documents for owned submission', async () => {
+  it('returns documents for viewer on owned submission', async () => {
     getSubmissionByIdMock.mockResolvedValue({
       id: 20,
-      verifikator: 300,
+      ownerUserId: 300,
+      villageId: 9,
+      verifikator: 999,
     } as SubmissionRecord);
     listDocumentsBySubmissionMock.mockResolvedValue([
       {
@@ -119,9 +126,7 @@ describe('documentsRouter.listBySubmission', () => {
     const caller = documentsRouter.createCaller(createCtx('Viewer', 300));
     const result = await caller.listBySubmission({ submissionId: 20 });
 
-    expect(listDocumentsBySubmissionMock).toHaveBeenCalledWith(20, {
-      uploadedBy: 300,
-    });
+    expect(listDocumentsBySubmissionMock).toHaveBeenCalledWith(20);
     expect(result).toHaveLength(1);
     expect(result[0]?.filename).toBe('kk.pdf');
   });
@@ -129,6 +134,8 @@ describe('documentsRouter.listBySubmission', () => {
   it('throws NOT_FOUND for viewer accessing non-owned submission', async () => {
     getSubmissionByIdMock.mockResolvedValue({
       id: 21,
+      ownerUserId: 999,
+      villageId: 9,
       verifikator: 999,
     } as SubmissionRecord);
 
@@ -166,12 +173,14 @@ describe('documentsRouter.getSignedDownloadUrl', () => {
     } as DocumentRecord);
     getSubmissionByIdMock.mockResolvedValue({
       id: 10,
+      ownerUserId: 100,
+      villageId: 55,
       verifikator: 100,
     } as SubmissionRecord);
     extractS3KeyFromDocumentUrlMock.mockReturnValue('submissions/KTP/file.pdf');
     getDownloadUrlMock.mockResolvedValue('https://signed.example.com/file.pdf');
 
-    const caller = documentsRouter.createCaller(createCtx('Admin', 500));
+    const caller = documentsRouter.createCaller(createCtx('Admin', 500, 55));
     const result = await caller.getSignedDownloadUrl({ documentId: 5 });
 
     expect(extractS3KeyFromDocumentUrlMock).toHaveBeenCalledWith(
@@ -184,7 +193,7 @@ describe('documentsRouter.getSignedDownloadUrl', () => {
     });
   });
 
-  it('returns signed URL for viewer on owned submission and own upload', async () => {
+  it('returns signed URL for viewer on owned submission', async () => {
     getDocumentByIdMock.mockResolvedValue({
       id: 6,
       submissionId: 11,
@@ -193,7 +202,9 @@ describe('documentsRouter.getSignedDownloadUrl', () => {
     } as DocumentRecord);
     getSubmissionByIdMock.mockResolvedValue({
       id: 11,
-      verifikator: 300,
+      ownerUserId: 300,
+      villageId: 12,
+      verifikator: 777,
     } as SubmissionRecord);
     extractS3KeyFromDocumentUrlMock.mockReturnValue('submissions/KK/file2.pdf');
     getDownloadUrlMock.mockResolvedValue('https://signed.example.com/file2.pdf');
@@ -202,25 +213,6 @@ describe('documentsRouter.getSignedDownloadUrl', () => {
     const result = await caller.getSignedDownloadUrl({ documentId: 6 });
 
     expect(result.signedUrl).toBe('https://signed.example.com/file2.pdf');
-  });
-
-  it('throws NOT_FOUND when viewer is not document uploader', async () => {
-    getDocumentByIdMock.mockResolvedValue({
-      id: 7,
-      submissionId: 12,
-      uploadedBy: 999,
-      url: 'https://example.com/bucket/file3.pdf',
-    } as DocumentRecord);
-    getSubmissionByIdMock.mockResolvedValue({
-      id: 12,
-      verifikator: 300,
-    } as SubmissionRecord);
-
-    const caller = documentsRouter.createCaller(createCtx('Viewer', 300));
-    const promise = caller.getSignedDownloadUrl({ documentId: 7 });
-
-    await expect(promise).rejects.toMatchObject({ code: 'NOT_FOUND' });
-    expect(getDownloadUrlMock).not.toHaveBeenCalled();
   });
 
   it('throws NOT_FOUND when viewer does not own submission', async () => {
@@ -232,6 +224,8 @@ describe('documentsRouter.getSignedDownloadUrl', () => {
     } as DocumentRecord);
     getSubmissionByIdMock.mockResolvedValue({
       id: 13,
+      ownerUserId: 999,
+      villageId: 12,
       verifikator: 999,
     } as SubmissionRecord);
 
@@ -277,13 +271,15 @@ describe('documentsRouter.getSignedDownloadUrl', () => {
     } as DocumentRecord);
     getSubmissionByIdMock.mockResolvedValue({
       id: 15,
+      ownerUserId: 1,
+      villageId: 55,
       verifikator: 1,
     } as SubmissionRecord);
     extractS3KeyFromDocumentUrlMock.mockImplementation(() => {
       throw new Error('parse failed');
     });
 
-    const caller = documentsRouter.createCaller(createCtx('Admin', 1));
+    const caller = documentsRouter.createCaller(createCtx('Admin', 1, 55));
     const promise = caller.getSignedDownloadUrl({ documentId: 10 });
 
     await expect(promise).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });

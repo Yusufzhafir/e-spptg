@@ -1,0 +1,14 @@
+{
+  "currentUserId": 35,
+  "otherUserId": 1,
+  "villageAId": 1,
+  "villageBId": 34,
+  "draftOwnAId": 117,
+  "draftOtherAId": 118,
+  "draftOtherBId": 119,
+  "draftLegacyNullId": 120,
+  "subOwnAId": 164,
+  "subOtherBId": 165,
+  "legacyNullOwnerSubId": 131,
+  "existingDraftForStepUi": 116
+}
