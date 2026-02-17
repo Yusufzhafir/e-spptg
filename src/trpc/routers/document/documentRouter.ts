@@ -6,6 +6,7 @@ import * as submissionQueries from '@/server/db/queries/submissions';
 import { generateUploadUrl, uploadFileToS3, getTemplateSignedUrl, fetchTemplatePDF, getDownloadUrl, extractS3KeyFromDocumentUrl } from '@/server/s3/s3';
 import { TRPCError } from '@trpc/server';
 import { adminProcedure, protectedProcedure, router } from '@/trpc/init';
+import { assertCanAccessDraft, assertCanAccessSubmission } from '@/server/authz';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ACCEPTED_MIME_TYPES = [
@@ -38,11 +39,8 @@ export const documentsRouter = router({
         });
       }
 
-      // Verify draft belongs to user
-      const draft = await draftQueries.getDraftById(
-        input.draftId,
-        ctx.appUser!.id
-      );
+      // Verify draft is accessible by user scope
+      const draft = await draftQueries.getDraftById(input.draftId);
 
       if (!draft) {
         throw new TRPCError({
@@ -50,6 +48,11 @@ export const documentsRouter = router({
           message: 'Draft tidak ditemukan',
         });
       }
+
+      assertCanAccessDraft(ctx.appUser!, {
+        userId: draft.userId,
+        villageId: draft.villageId,
+      });
 
       // Generate S3 key and public URL (no presigned URL - uploads handled server-side)
       const { publicUrl, s3Key } = await generateUploadUrl(
@@ -99,11 +102,8 @@ export const documentsRouter = router({
         });
       }
 
-      // Verify draft belongs to user
-      const draft = await draftQueries.getDraftById(
-        input.draftId,
-        ctx.appUser!.id
-      );
+      // Verify draft is accessible by user scope
+      const draft = await draftQueries.getDraftById(input.draftId);
 
       if (!draft) {
         throw new TRPCError({
@@ -111,6 +111,11 @@ export const documentsRouter = router({
           message: 'Draft tidak ditemukan',
         });
       }
+
+      assertCanAccessDraft(ctx.appUser!, {
+        userId: draft.userId,
+        villageId: draft.villageId,
+      });
 
       // Verify document exists and belongs to draft
       const document = await queries.getDocumentById(input.documentId);
@@ -170,11 +175,8 @@ export const documentsRouter = router({
   listByDraft: protectedProcedure
     .input(z.object({ draftId: z.number().int() }))
     .query(async ({ ctx, input }) => {
-      // Verify draft belongs to user
-      const draft = await draftQueries.getDraftById(
-        input.draftId,
-        ctx.appUser!.id
-      );
+      // Verify draft is accessible by user scope
+      const draft = await draftQueries.getDraftById(input.draftId);
 
       if (!draft) {
         throw new TRPCError({
@@ -182,6 +184,11 @@ export const documentsRouter = router({
           message: 'Draft tidak ditemukan',
         });
       }
+
+      assertCanAccessDraft(ctx.appUser!, {
+        userId: draft.userId,
+        villageId: draft.villageId,
+      });
 
       const documents = await queries.listDocumentsByDraft(input.draftId);
 
@@ -210,17 +217,12 @@ export const documentsRouter = router({
         });
       }
 
-      const isViewer = ctx.appUser!.peran === 'Viewer';
-      if (isViewer && submission.verifikator !== ctx.appUser!.id) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Pengajuan tidak ditemukan',
-        });
-      }
-
-      const documents = await queries.listDocumentsBySubmission(input.submissionId, {
-        uploadedBy: isViewer ? ctx.appUser!.id : undefined,
+      assertCanAccessSubmission(ctx.appUser!, {
+        ownerUserId: submission.ownerUserId,
+        villageId: submission.villageId,
       });
+
+      const documents = await queries.listDocumentsBySubmission(input.submissionId);
 
       return documents.map((d) => ({
         id: d.id,
@@ -252,16 +254,10 @@ export const documentsRouter = router({
         });
       }
 
-      const isViewer = ctx.appUser!.peran === 'Viewer';
-      if (
-        isViewer &&
-        (submission.verifikator !== ctx.appUser!.id || document.uploadedBy !== ctx.appUser!.id)
-      ) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Dokumen tidak ditemukan',
-        });
-      }
+      assertCanAccessSubmission(ctx.appUser!, {
+        ownerUserId: submission.ownerUserId,
+        villageId: submission.villageId,
+      });
 
       try {
         const s3Key = extractS3KeyFromDocumentUrl(document.url);
@@ -314,6 +310,32 @@ export const documentsRouter = router({
           message: 'Dokumen tidak ditemukan',
         });
       }
+
+      if (document.submissionId) {
+        const submission = await submissionQueries.getSubmissionById(document.submissionId);
+        if (!submission) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Pengajuan tidak ditemukan' });
+        }
+        assertCanAccessSubmission(ctx.appUser!, {
+          ownerUserId: submission.ownerUserId,
+          villageId: submission.villageId,
+        });
+      } else if (document.draftId) {
+        const draft = await draftQueries.getDraftById(document.draftId);
+        if (!draft) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Draft tidak ditemukan' });
+        }
+        assertCanAccessDraft(ctx.appUser!, {
+          userId: draft.userId,
+          villageId: draft.villageId,
+        });
+      } else {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Anda tidak memiliki akses ke dokumen ini',
+        });
+      }
+
       return document;
     }),
 
@@ -331,18 +353,38 @@ export const documentsRouter = router({
         });
       }
 
-      // Verify ownership (if draft, check user)
-      if (document.draftId) {
-        const draft = await draftQueries.getDraftById(
-          document.draftId,
-          ctx.appUser!.id
-        );
+      // Verify ownership via linked submission/draft
+      if (document.submissionId) {
+        const submission = await submissionQueries.getSubmissionById(document.submissionId);
+        if (!submission) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Pengajuan tidak ditemukan',
+          });
+        }
+
+        assertCanAccessSubmission(ctx.appUser!, {
+          ownerUserId: submission.ownerUserId,
+          villageId: submission.villageId,
+        });
+      } else if (document.draftId) {
+        const draft = await draftQueries.getDraftById(document.draftId);
         if (!draft) {
           throw new TRPCError({
             code: 'FORBIDDEN',
             message: 'Anda tidak memiliki akses ke dokumen ini',
           });
         }
+
+        assertCanAccessDraft(ctx.appUser!, {
+          userId: draft.userId,
+          villageId: draft.villageId,
+        });
+      } else {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Anda tidak memiliki akses ke dokumen ini',
+        });
       }
 
       await queries.deleteDocument(input.documentId);

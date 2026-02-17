@@ -59,6 +59,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       catatan: data.catatan || null,
       status: 'SPPTG terdata',
       tanggalPengajuan: new Date(),
+      ownerUserId: null,
       verifikator: null, // Should come from authenticated user
       riwayat: [
         {
@@ -119,6 +120,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       catatan: null,
       status: draft.status || 'SPPTG terdata',
       tanggalPengajuan: new Date(),
+      ownerUserId: null,
       verifikator: draft.verifikator || null,
       riwayat: [
         {

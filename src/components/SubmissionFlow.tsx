@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { trpc } from '@/trpc/client';
 import { useRouter } from 'next/navigation';
 import { buildDraftSavePayload } from '@/lib/draft-save-payload';
+import { useAuthRole } from './AuthRoleProvider';
 
 interface SubmissionFlowProps {
   draftId: number;
@@ -35,6 +36,8 @@ const steps = [
 
 export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlowProps) {
   const router = useRouter();
+  const { hasRole } = useAuthRole();
+  const isViewer = hasRole('Viewer');
   const [currentStep, setCurrentStep] = useState(1);
   const [lastSaved, setLastSaved] = useState<string>('');
   const isSubmittingFromStep3 = useRef(false);
@@ -87,9 +90,10 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
   useEffect(() => {
     if (draftData) {
       const payload = (draftData.payload ?? {}) as Partial<SubmissionDraft>;
+      const allowedStep = isViewer ? 1 : draftData.currentStep;
       setDraft({
         id: draftData.id,
-        currentStep: draftData.currentStep,
+        currentStep: allowedStep,
         lastSaved: draftData.lastSaved,
         // Step 1: Applicant Data
         namaPemohon: payload.namaPemohon || '',
@@ -146,13 +150,13 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         nomorSPPTG: payload.nomorSPPTG,
         tanggalTerbit: payload.tanggalTerbit,
       });
-      setCurrentStep(draftData.currentStep);
+      setCurrentStep(allowedStep);
       if (draftData.lastSaved) {
         const time = new Date(draftData.lastSaved).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
         setLastSaved(time);
       }
     }
-  }, [draftData]);
+  }, [draftData, isViewer]);
 
   // Handle draft errors
   useEffect(() => {
@@ -194,11 +198,24 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         toast.error('Harap lengkapi nama dan NIK (16 digit) terlebih dahulu');
         return;
       }
+      if (!draft.villageId) {
+        toast.error('Harap pilih desa terlebih dahulu');
+        return;
+      }
+      if (!draft.dokumenKTP || !draft.dokumenKK) {
+        toast.error('Dokumen KTP dan KK wajib diunggah sebelum lanjut');
+        return;
+      }
       if (!draft.persetujuanData) {
         toast.error('Harap setujui pernyataan data terlebih dahulu');
         return;
       }
       await saveDraftToBackend(1);
+
+      if (isViewer) {
+        toast.info('Step 1 tersimpan. Peran Viewer tidak dapat melanjutkan ke Step 2.');
+        return;
+      }
     }
 
     if (currentStep === 2) {
@@ -391,7 +408,9 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
             const Icon = step.icon;
             const isCompleted = currentStep > step.id;
             const isActive = currentStep === step.id;
-            const isLocked = step.id === 4 && !canAccessStep4;
+            const isLocked =
+              (isViewer && step.id > 1) ||
+              (step.id === 4 && !canAccessStep4);
 
             return (
               <div key={step.id} className="flex items-center flex-1">
@@ -520,9 +539,11 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                 className="bg-blue-600 hover:bg-blue-700"
                 disabled={isLoadingDraft || saveDraftMutation.isPending}
               >
-                {currentStep === 3 && draft.status === 'SPPTG terdaftar'
-                  ? 'Lanjut ke Penerbitan SPPTG'
-                  : 'Berikutnya'}
+                {isViewer && currentStep === 1
+                  ? 'Simpan Step 1'
+                  : currentStep === 3 && draft.status === 'SPPTG terdaftar'
+                    ? 'Lanjut ke Penerbitan SPPTG'
+                    : 'Berikutnya'}
               </Button>
             )
           ) : (

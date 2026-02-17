@@ -129,6 +129,14 @@ src/proxy.ts               # Clerk middleware route protection
 | `overlap_results` | Cached overlap calculations |
 | `status_history` | Audit trail of status changes |
 
+### Access Control Columns (2026-02 Update)
+
+| Table | Column | Purpose |
+|-------|--------|---------|
+| `users` | `assigned_village_id` | Single-desa assignment for `Admin`/`Verifikator` scoping |
+| `submission_drafts` | `village_id` | Materialized desa for secure draft filtering/routing |
+| `submissions` | `owner_user_id` | Submission owner (draft creator), distinct from `verifikator` (processor) |
+
 ### Key Enums
 
 ```typescript
@@ -191,6 +199,7 @@ publicProcedure     // No auth required
 protectedProcedure  // Requires logged-in user
 adminProcedure      // Requires Superadmin or Admin role
 verifikatorProcedure // Requires Superadmin, Admin, or Verifikator
+superadminProcedure // Requires Superadmin only
 ```
 
 ### Key Endpoints
@@ -200,6 +209,7 @@ verifikatorProcedure // Requires Superadmin, Admin, or Verifikator
 | `drafts.getOrCreateCurrent` | query | Get user's current draft or create one |
 | `drafts.getById` | query | Load a draft by id |
 | `drafts.saveStep` | mutation | Save form progress per step |
+| `drafts.listMy` | query | List accessible drafts (own for Viewer, desa-scoped for Admin/Verifikator, all for Superadmin) |
 | `submissions.submitDraft` | mutation | Convert draft to final submission |
 | `submissions.getById` | query | Fetch a submission by id |
 | `submissions.list` | query | List submissions with filters |
@@ -231,9 +241,18 @@ Superadmin > Admin > Verifikator > Viewer
 | Role | Permissions |
 |------|-------------|
 | Superadmin | Full access to all features |
-| Admin | Manage users, villages, prohibited areas |
-| Verifikator | Review and approve/reject submissions |
-| Viewer | View-only access |
+| Admin | Desa-scoped access to drafts/submissions; requires `assigned_village_id` |
+| Verifikator | Desa-scoped access to drafts/submissions; requires `assigned_village_id` |
+| Viewer | Own drafts only; cannot progress past Step 1 |
+
+### Role + Desa Gating Rules (Implemented)
+
+| Role | Draft Access | Step Progression | Submission Access |
+|------|--------------|------------------|-------------------|
+| Superadmin | All drafts | Step 1–4 | All submissions |
+| Admin | Own + assigned desa drafts | Step 1–4 | Assigned desa submissions |
+| Verifikator | Own + assigned desa drafts | Step 1–4 | Assigned desa submissions |
+| Viewer | Own drafts only | Step 1 only | Own submissions (`owner_user_id`) |
 
 ---
 
@@ -241,7 +260,7 @@ Superadmin > Admin > Verifikator > Viewer
 
 The submission process has 4 steps:
 
-1. **Berkas (Documents)** - Upload KTP, KK, and supporting documents
+1. **Berkas (Documents)** - Select desa, fill applicant data, upload mandatory KTP + KK
 2. **Lapangan (Field Validation)** - Enter coordinates, witnesses, survey team
 3. **Hasil (Results)** - Set status decision (approve/reject/revise)
 4. **Terbitkan SPPTG (Issuance)** - Generate final certificate (only if approved)
@@ -259,6 +278,13 @@ Draft data is stored as JSONB in `submission_drafts.payload` and validated per-s
     3.  `saveDraftMutation` called with current step data (including `luasManual`).
     4.  On success, `currentStep` state updates to next step.
     5.  Final submission reads from `submission_drafts.payload`.
+
+### Authorization Implementation Notes (2026-02)
+
+* Centralized authorization helpers are in `src/server/authz.ts` and should be reused across routers.
+* `submissions.owner_user_id` is now the source of truth for Viewer visibility (not `verifikator`).
+* `verifikator` remains the processor/auditor user who handled the submission.
+* `documentsRouter` access now follows shared draft/submission authz predicates.
 
 ---
 
@@ -365,6 +391,13 @@ pnpm migrate:prod       # Run migrations on production
 # Linting
 pnpm lint
 ```
+
+### Migration / DB Gotchas
+
+* Prefer `pnpm migrate:stag` / `pnpm migrate:prod` for production-like updates.
+* `pnpm push:stag` can fail on existing environments with PostGIS typmod conflicts (e.g. `Geometry type (Polygon) does not match column type (Point)`).
+* If new authz columns are missing, authenticated pages can fail with HTTP 500 on `auth.me` / `drafts.getById`.
+* Legacy schema naming is mixed-case for submission village column (`submissions."villageId"`). Raw SQL and indexes must quote `"villageId"` exactly.
 
 ## Environment Variables
 

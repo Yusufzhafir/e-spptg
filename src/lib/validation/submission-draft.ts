@@ -72,9 +72,11 @@ export const step1BerkasSchema = z.object({
     .length(16, 'NIK harus 16 karakter')
     .regex(/^[0-9]{16}$/, 'NIK hanya boleh angka'),
 
+  villageId: z.number().int('Desa harus dipilih'),
+
   // Documents
-  dokumenKTP: uploadedDocumentSchema.optional(),
-  dokumenKK: uploadedDocumentSchema.optional(),
+  dokumenKTP: uploadedDocumentSchema,
+  dokumenKK: uploadedDocumentSchema,
   dokumenKwitansi: uploadedDocumentSchema.optional(),
   dokumenPermohonan: uploadedDocumentSchema.optional(),
   dokumenPernyataanJualBeli: uploadedDocumentSchema.optional(),
@@ -82,7 +84,7 @@ export const step1BerkasSchema = z.object({
   dokumenTidakSengketa: uploadedDocumentSchema.optional(),
 
   // Consent
-  persetujuanData: z.boolean({
+  persetujuanData: z.literal(true, {
     error: () => ({
       message: 'Anda harus menyetujui pernyataan data',
     }),

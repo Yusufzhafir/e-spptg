@@ -72,11 +72,6 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
     sisi: '' as BoundaryDirection,
     penggunaanLahanBatas: '',
   });
-  const { data: villagesData } = trpc.villages.list.useQuery({
-    limit: 1000,
-    offset: 0,
-  });
-  const villages = villagesData ?? [];
   
   // Local state for UTM coordinates to prevent rounding issues during editing
   // We sync this with draft.coordinatesGeografis whenever draft changes or user edits
@@ -348,30 +343,6 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
 
   const luas = calculateArea();
 
-  const handleVillageChange = (value: string) => {
-    const villageId = Number(value);
-    const selectedVillage = villages.find((v) => v.id === villageId);
-    const juruUkur =
-      selectedVillage &&
-      selectedVillage.juruUkurNama &&
-      selectedVillage.juruUkurJabatan &&
-      selectedVillage.juruUkurNomorHP
-        ? {
-            nama: selectedVillage.juruUkurNama,
-            jabatan: selectedVillage.juruUkurJabatan,
-            instansi: selectedVillage.juruUkurInstansi || undefined,
-            nomorHP: selectedVillage.juruUkurNomorHP,
-          }
-        : undefined;
-    onUpdateDraft({
-      villageId,
-      kecamatan: selectedVillage?.kecamatan,
-      kabupaten: selectedVillage?.kabupaten,
-      namaKepalaDesa: selectedVillage?.namaKepalaDesa || undefined,
-      juruUkur,
-    });
-  };
-
   // Update luasLahan when coordinates change
   useEffect(() => {
     if (draft.coordinatesGeografis.length >= 3) {
@@ -506,23 +477,14 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
       <div className="space-y-4 pt-4 border-t border-gray-200">
         <h3 className="text-gray-900">Lokasi dan Detail Lahan</h3>
 
-        <div>
-          <Label htmlFor="villageId">Desa *</Label>
-          <Select
-            value={draft.villageId ? String(draft.villageId) : ''}
-            onValueChange={handleVillageChange}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Pilih desa" />
-            </SelectTrigger>
-            <SelectContent>
-              {villages.map((village) => (
-                <SelectItem key={village.id} value={String(village.id)}>
-                  {village.namaDesa}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <p className="text-xs text-gray-600">Desa (ditentukan pada Step 1)</p>
+          <p className="text-sm text-gray-900">
+            {draft.villageId ? `ID Desa ${draft.villageId}` : 'Belum dipilih'}
+          </p>
+          <p className="text-xs text-gray-600">
+            {draft.kecamatan || '-'}, {draft.kabupaten || '-'}
+          </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

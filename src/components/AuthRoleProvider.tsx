@@ -11,6 +11,7 @@ type User = {
   nama: string;
   email: string;
   peran: UserRole;
+  assignedVillageId: number | null;
   clerkUserId: string;
 };
 

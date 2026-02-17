@@ -107,12 +107,16 @@ export const users = pgTable(
     nipNik: varchar('nip_nik', { length: 20 }).notNull(),
     email: varchar('email', { length: 255 }).notNull(),
     peran: userRoleEnum('peran').notNull(),
+    assignedVillageId: bigint('assigned_village_id', { mode: 'number' }),
     status: userStatusEnum('status').notNull().default('Aktif'),
     nomorHP: varchar('nomor_hp', { length: 15 }),
     terakhirMasuk: timestamp('terakhir_masuk'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
+  (t) => [
+    index('users_assigned_village_idx').on(t.assignedVillageId),
+  ]
 );
 
 
@@ -204,6 +208,7 @@ export const submissionDrafts = pgTable(
     }),
     userId: bigint('user_id',{mode:"number"})
       .notNull(),
+    villageId: bigint('village_id', { mode: 'number' }),
     currentStep: integer('current_step').notNull().default(1),
     
     // Entire SubmissionDraft as JSONB
@@ -214,6 +219,9 @@ export const submissionDrafts = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
+  (t) => [
+    index('submission_drafts_village_idx').on(t.villageId),
+  ]
 );
 
 // ============================================================================
@@ -256,6 +264,7 @@ export const submissions = pgTable(
     // Status
     status: statusSPPTGEnum('status').notNull(),
     tanggalPengajuan: timestamp('tanggal_pengajuan').notNull(),
+    ownerUserId: bigint('owner_user_id', { mode: 'number' }),
     verifikator: bigint({mode:"number"}).notNull(),
     
     // Riwayat (History - mostly read-only, so JSONB is fine)
@@ -270,6 +279,8 @@ export const submissions = pgTable(
   },
   (t) => [
     index('submissions_geom_idx').using('gist', t.geom),
+    index('submissions_owner_user_idx').on(t.ownerUserId),
+    index('submissions_village_idx').on(t.villageId),
   ]
 );
 

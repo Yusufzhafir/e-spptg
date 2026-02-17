@@ -35,6 +35,7 @@ export interface Submission {
   // Status
   status: StatusSPPTG;
   tanggalPengajuan: Date;
+  ownerUserId: number | null;
   verifikator: number | null;
   
   // Riwayat
@@ -84,6 +85,7 @@ export interface User {
   nipNik: string;
   email: string;
   peran: UserRole;
+  assignedVillageId: number | null;
   status: UserStatus;
   nomorHP: string | null;
   terakhirMasuk: Date | null;
