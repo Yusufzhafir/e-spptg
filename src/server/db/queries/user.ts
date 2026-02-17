@@ -27,7 +27,8 @@ export async function createUser(data: {
   email: string;
   nama: string;
   nipNik: string;
-  peran?: UserRole
+  peran?: UserRole;
+  assignedVillageId?: number | null;
   nomorHP?: string;
   status?: UserStatus;
 }, tx?: DBTransaction) {
@@ -41,6 +42,7 @@ export async function createUser(data: {
       nama: data.nama,
       nipNik: data.nipNik,
       peran: data.peran || 'Viewer',
+      assignedVillageId: data.assignedVillageId ?? null,
       status: data.status || 'Aktif',
       nomorHP: data.nomorHP || null,
     })

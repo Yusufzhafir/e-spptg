@@ -39,7 +39,7 @@ interface SettingsProps {
   onUpdateUsers?: (users: User[]) => void;
   onUpdateUser?: (
     id: number,
-    data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'nomorHP' | 'status'>>
+    data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'nomorHP' | 'status'>>
   ) => void;
   onToggleUserStatus?: (id: number) => void;
   onUpdateVillages?: (villages: Village[]) => void; // Keep for backward compatibility
@@ -146,6 +146,8 @@ export function Settings({
         <TabsContent value="users" className="mt-6">
           <UsersTab
             users={users}
+            villages={villages}
+            canManageVillageAssignment={isSuperadmin}
             onUpdateUsers={onUpdateUsers}
             onUpdateUser={onUpdateUser}
             onToggleUserStatus={onToggleUserStatus}

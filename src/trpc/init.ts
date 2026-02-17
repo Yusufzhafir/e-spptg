@@ -38,3 +38,7 @@ export const adminProcedure = protectedProcedure.use(
 export const verifikatorProcedure = protectedProcedure.use(
   hasRole(['Superadmin', 'Admin', 'Verifikator'])
 );
+
+export const superadminProcedure = protectedProcedure.use(
+  hasRole(['Superadmin'])
+);

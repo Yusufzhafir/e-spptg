@@ -10,7 +10,6 @@ import { usePathname, useRouter } from 'next/navigation';
 export type AppStateContextValue = {
   setSearchQuery: (q: string) => void;
   setStatusFilter: (s: string) => void;
-  handleNewSubmission: () => void;
   handleSubmitForm: (data: Partial<Submission>) => void;
   handleStatusChange: (id: number, status: StatusSPPTG, alasan: string) => void;
   handleCompleteSubmission: (draft: SubmissionDraft) => void;
@@ -44,10 +43,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   // === Handlers that navigate between pages ===
 
-  const handleNewSubmission = () => {
-    router.push('/app/pengajuan/form');
-  };
-
   const handleSubmitForm = (data: Partial<Submission>) => {
     const newSubmission: Submission = {
       id: 0, // Will be replaced by database
@@ -64,6 +59,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       catatan: data.catatan || null,
       status: 'SPPTG terdata',
       tanggalPengajuan: new Date(),
+      ownerUserId: null,
       verifikator: null, // Should come from authenticated user
       riwayat: [
         {
@@ -124,6 +120,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       catatan: null,
       status: draft.status || 'SPPTG terdata',
       tanggalPengajuan: new Date(),
+      ownerUserId: null,
       verifikator: draft.verifikator || null,
       riwayat: [
         {
@@ -146,7 +143,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const contextValue: AppStateContextValue = {
     setSearchQuery,
     setStatusFilter,
-    handleNewSubmission,
     handleSubmitForm,
     handleStatusChange,
     handleCompleteSubmission,

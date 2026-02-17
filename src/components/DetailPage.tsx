@@ -6,12 +6,13 @@ import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { MapView } from './MapView';
 import { StatusBadge } from './StatusBadge';
-import { ChevronLeft, FileText, Clock, MessageSquare, File } from 'lucide-react';
+import { ChevronLeft, FileText, Clock, MessageSquare, File, Download, Loader2 } from 'lucide-react';
 import { StatusSPPTG, Submission } from '@/types';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { geomGeoJSONPolygonSchema } from '@/lib/validation';
 import { findCenter } from '@/lib/utils';
+import { trpc } from '@/trpc/client';
 
 interface DetailPageProps {
   submission: Submission;
@@ -22,6 +23,29 @@ interface DetailPageProps {
 export function DetailPage({ submission, onBack, onStatusChange }: DetailPageProps) {
   const [newStatus, setNewStatus] = useState<StatusSPPTG | ''>('');
   const [alasan, setAlasan] = useState('');
+  const [openingDocumentId, setOpeningDocumentId] = useState<number | null>(null);
+  const {
+    data: documents,
+    isLoading: isDocumentsLoading,
+    isError: isDocumentsError,
+    error: documentsError,
+    refetch: refetchDocuments,
+  } = trpc.documents.listBySubmission.useQuery({ submissionId: submission.id });
+  const openDocumentMutation = trpc.documents.getSignedDownloadUrl.useMutation();
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const formatUploadedAt = (dateValue: Date | string) => {
+    const date = new Date(dateValue);
+    if (Number.isNaN(date.getTime())) {
+      return '-';
+    }
+    return date.toLocaleString('id-ID');
+  };
 
   const handleStatusChange = () => {
     if (!newStatus) {
@@ -38,6 +62,27 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
     toast.success('Perubahan status berhasil disimpan');
     setNewStatus('');
     setAlasan('');
+  };
+
+  const handleOpenDocument = async (documentId: number) => {
+    const previewTab = window.open('', '_blank', 'noopener,noreferrer');
+    setOpeningDocumentId(documentId);
+
+    try {
+      const { signedUrl } = await openDocumentMutation.mutateAsync({ documentId });
+      if (previewTab) {
+        previewTab.location.href = signedUrl;
+      } else {
+        window.open(signedUrl, '_blank', 'noopener,noreferrer');
+      }
+    } catch (error) {
+      if (previewTab) {
+        previewTab.close();
+      }
+      toast.error(error instanceof Error ? error.message : 'Gagal membuka dokumen.');
+    } finally {
+      setOpeningDocumentId(null);
+    }
   };
 
   return (
@@ -254,23 +299,82 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
             </TabsContent>
 
             <TabsContent value="dokumen" className="mt-4">
-              <div className="p-8 text-center bg-gray-50 rounded-lg">
-                <FileText className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                <p className="text-gray-600">Dokumen pendukung</p>
-                <Button variant="link" className="mt-2">
-                  Lihat Dokumen
-                </Button>
+              <div className="bg-gray-50 rounded-lg p-6">
+                <h3 className="mb-4 text-gray-900">Dokumen pendukung</h3>
 
-                <a
-                  href="/E-SPPTG dan Lampiran.pdf"
-                  download
-                  className='w-full bg-white border rounded-2xl border-dashed flex p-4 cursor-pointer'
-                >
-                  <File />
-                  <div className='w-full'>
-                    dokumen spptg
+                {isDocumentsLoading && (
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
+                    <span>Memuat dokumen...</span>
                   </div>
-                </a>
+                )}
+
+                {isDocumentsError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                    <p>
+                      {documentsError?.message || 'Gagal memuat dokumen.'}
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      onClick={() => refetchDocuments()}
+                    >
+                      Coba Lagi
+                    </Button>
+                  </div>
+                )}
+
+                {!isDocumentsLoading && !isDocumentsError && documents?.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center">
+                    <FileText className="mx-auto mb-2 h-10 w-10 text-gray-400" />
+                    <p className="text-sm text-gray-600">
+                      Belum ada dokumen untuk pengajuan ini.
+                    </p>
+                  </div>
+                )}
+
+                {!isDocumentsLoading && !isDocumentsError && documents && documents.length > 0 && (
+                  <div className="space-y-3">
+                    {documents.map((doc) => (
+                      <div
+                        key={doc.id}
+                        className="flex items-center justify-between gap-3 rounded-lg border bg-white p-4"
+                      >
+                        <div className="flex min-w-0 items-start gap-3">
+                          <File className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600" />
+                          <div className="min-w-0">
+                            <p className="truncate text-sm text-gray-900">{doc.filename}</p>
+                            <p className="text-xs text-gray-500">
+                              {doc.category} • {formatFileSize(doc.size)} • Diunggah{' '}
+                              {formatUploadedAt(doc.uploadedAt)}
+                            </p>
+                          </div>
+                        </div>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleOpenDocument(doc.id)}
+                          disabled={openingDocumentId === doc.id}
+                          className="inline-flex items-center gap-2"
+                        >
+                          {openingDocumentId === doc.id ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Membuka...
+                            </>
+                          ) : (
+                            <>
+                              <Download className="h-4 w-4" />
+                              Buka
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </TabsContent>
 

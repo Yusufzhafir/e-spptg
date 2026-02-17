@@ -14,7 +14,6 @@ interface DashboardProps {
   monthlyData: {}[];
   statusFilter: string;
   onStatusFilterChange: (value: string) => void;
-  onNewSubmission: () => void;
   onViewDetail: (submission: Submission) => void;
   onEdit: (submission: Submission) => void;
 }
@@ -25,7 +24,6 @@ export function Dashboard({
   monthlyData,
   statusFilter,
   onStatusFilterChange,
-  onNewSubmission,
   onViewDetail,
   onEdit,
 }: DashboardProps) {
@@ -109,7 +107,6 @@ export function Dashboard({
       <FilterPanel
         statusFilter={statusFilter}
         onStatusFilterChange={onStatusFilterChange}
-        onNewSubmission={onNewSubmission}
       />
 
       {/* Submissions Table */}

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type ChangeEvent } from 'react';
 import proj4 from 'proj4';
 import {
   SubmissionDraft,
@@ -10,6 +10,7 @@ import {
 } from '../../types';
 import { trpc } from '@/trpc/client';
 import { DrawingMap } from '../maps/DrawingMap';
+import { parseKMLFile } from '@/lib/kmz-parser';
 
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
@@ -65,16 +66,12 @@ type NewWitnessWithUsage = {
 
 export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
   const [isOverlapDialogOpen, setIsOverlapDialogOpen] = useState(false);
+  const [isParsingKml, setIsParsingKml] = useState(false);
   const [newWitness, setNewWitness] = useState<NewWitnessWithUsage>({
     nama: '',
     sisi: '' as BoundaryDirection,
     penggunaanLahanBatas: '',
   });
-  const { data: villagesData } = trpc.villages.list.useQuery({
-    limit: 1000,
-    offset: 0,
-  });
-  const villages = villagesData ?? [];
   
   // Local state for UTM coordinates to prevent rounding issues during editing
   // We sync this with draft.coordinatesGeografis whenever draft changes or user edits
@@ -130,7 +127,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
             ...converted
         };
       });
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setUtmCoordinates(newUtmCoords);
     }
   }, [draft.coordinatesGeografis, coordinateSystem, toUTM]);
@@ -228,6 +225,71 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
     });
   };
 
+  const normalizeImportedCoordinates = (
+    coordinates: Array<{ latitude: number; longitude: number }>
+  ): GeographicCoordinate[] => {
+    const sanitized = coordinates.filter(
+      (coord) => Number.isFinite(coord.latitude) && Number.isFinite(coord.longitude)
+    );
+
+    if (sanitized.length >= 2) {
+      const first = sanitized[0];
+      const last = sanitized[sanitized.length - 1];
+      if (first.latitude === last.latitude && first.longitude === last.longitude) {
+        sanitized.pop();
+      }
+    }
+
+    const importId = Date.now();
+    return sanitized.map((coord, index) => ({
+      id: `C-${importId}-${index}-${crypto.randomUUID().slice(0, 8)}`,
+      latitude: coord.latitude,
+      longitude: coord.longitude,
+    }));
+  };
+
+  const handleKmlUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.kml')) {
+      toast.error('Format file tidak didukung. Harap unggah file .kml');
+      input.value = '';
+      return;
+    }
+
+    setIsParsingKml(true);
+    try {
+      const result = await parseKMLFile(file);
+
+      if (!result.success) {
+        toast.error(result.error || 'Gagal memproses file KML');
+        return;
+      }
+
+      const normalizedCoordinates = normalizeImportedCoordinates(result.coordinates);
+      if (normalizedCoordinates.length < 3) {
+        toast.error('File KML harus berisi minimal 3 titik koordinat');
+        return;
+      }
+
+      onUpdateDraft({ coordinatesGeografis: normalizedCoordinates });
+      toast.success(
+        `File KML berhasil diimpor. ${normalizedCoordinates.length} titik koordinat dimuat.`
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? `Gagal memproses file KML: ${error.message}`
+          : 'Gagal memproses file KML'
+      );
+    } finally {
+      setIsParsingKml(false);
+      input.value = '';
+    }
+  };
+
   const calculateArea = () => {
     // Simplified area calculation (Shoelace formula)
     const coords = draft.coordinatesGeografis;
@@ -280,30 +342,6 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
   };
 
   const luas = calculateArea();
-
-  const handleVillageChange = (value: string) => {
-    const villageId = Number(value);
-    const selectedVillage = villages.find((v) => v.id === villageId);
-    const juruUkur =
-      selectedVillage &&
-      selectedVillage.juruUkurNama &&
-      selectedVillage.juruUkurJabatan &&
-      selectedVillage.juruUkurNomorHP
-        ? {
-            nama: selectedVillage.juruUkurNama,
-            jabatan: selectedVillage.juruUkurJabatan,
-            instansi: selectedVillage.juruUkurInstansi || undefined,
-            nomorHP: selectedVillage.juruUkurNomorHP,
-          }
-        : undefined;
-    onUpdateDraft({
-      villageId,
-      kecamatan: selectedVillage?.kecamatan,
-      kabupaten: selectedVillage?.kabupaten,
-      namaKepalaDesa: selectedVillage?.namaKepalaDesa || undefined,
-      juruUkur,
-    });
-  };
 
   // Update luasLahan when coordinates change
   useEffect(() => {
@@ -439,23 +477,14 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
       <div className="space-y-4 pt-4 border-t border-gray-200">
         <h3 className="text-gray-900">Lokasi dan Detail Lahan</h3>
 
-        <div>
-          <Label htmlFor="villageId">Desa *</Label>
-          <Select
-            value={draft.villageId ? String(draft.villageId) : ''}
-            onValueChange={handleVillageChange}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Pilih desa" />
-            </SelectTrigger>
-            <SelectContent>
-              {villages.map((village) => (
-                <SelectItem key={village.id} value={String(village.id)}>
-                  {village.namaDesa}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <p className="text-xs text-gray-600">Desa (ditentukan pada Step 1)</p>
+          <p className="text-sm text-gray-900">
+            {draft.villageId ? `ID Desa ${draft.villageId}` : 'Belum dipilih'}
+          </p>
+          <p className="text-xs text-gray-600">
+            {draft.kecamatan || '-'}, {draft.kabupaten || '-'}
+          </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -549,6 +578,21 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
             <Plus className="w-4 h-4 mr-2" />
             Tambah Titik
           </Button>
+        </div>
+
+        <div className="space-y-1">
+          <Label htmlFor="kml-coordinate-file">Impor KML (Opsional)</Label>
+          <Input
+            id="kml-coordinate-file"
+            type="file"
+            accept=".kml"
+            onChange={handleKmlUpload}
+            disabled={isParsingKml}
+          />
+          <p className="text-xs text-gray-500">
+            Unggah file KML untuk menggantikan seluruh titik koordinat saat ini.
+          </p>
+          {isParsingKml && <p className="text-xs text-blue-600">Memproses file...</p>}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -1,7 +1,6 @@
 'use client';
 
 import { Dashboard } from '@/components/Dashboard';
-import { useAppState } from './layout';
 import { trpc } from '@/trpc/client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -23,6 +22,7 @@ type SubmissionListItem = {
   geoJSON?: Submission['geoJSON'];
   status: Submission['status'];
   tanggalPengajuan: string | Date;
+  ownerUserId: number | null;
   verifikator: number | null;
   riwayat?: Submission['riwayat'];
   feedback: Submission['feedback'];
@@ -37,12 +37,11 @@ type MonthlyStatItem = {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { handleNewSubmission } = useAppState();
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch submissions from backend
-  const { data: submissionsData, isLoading: isLoadingSubmissions } = trpc.submissions.list.useQuery({
+  const { data: submissionsData, isLoading: isLoadingSubmissions, error: submissionsError } = trpc.submissions.list.useQuery({
     status: statusFilter === 'all' ? undefined : statusFilter,
     search: searchQuery || undefined,
     limit: 100,
@@ -50,10 +49,10 @@ export default function DashboardPage() {
   });
 
   // Fetch KPI data
-  const { data: kpiData, isLoading: isLoadingKPI } = trpc.submissions.kpi.useQuery();
+  const { data: kpiData, isLoading: isLoadingKPI, error: kpiError } = trpc.submissions.kpi.useQuery();
 
   // Fetch monthly stats
-  const { data: monthlyStatsData, isLoading: isLoadingMonthly } = trpc.submissions.monthlyStats.useQuery();
+  const { data: monthlyStatsData, isLoading: isLoadingMonthly, error: monthlyError } = trpc.submissions.monthlyStats.useQuery();
 
   // Transform submissions data
   const submissionItems = (submissionsData?.items || []) as SubmissionListItem[];
@@ -73,6 +72,7 @@ export default function DashboardPage() {
     geoJSON: s.geoJSON, // Use geoJSON instead of coordinates
     status: s.status,
     tanggalPengajuan: new Date(s.tanggalPengajuan), // Keep as Date, not string
+    ownerUserId: s.ownerUserId,
     verifikator: s.verifikator,
     riwayat: s.riwayat || [],
     feedback: s.feedback,
@@ -113,6 +113,15 @@ export default function DashboardPage() {
     );
   }
 
+  if (submissionsError || kpiError || monthlyError) {
+    const message = submissionsError?.message || kpiError?.message || monthlyError?.message;
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-red-700">
+        {message || 'Gagal memuat dashboard.'}
+      </div>
+    );
+  }
+
   return (
     <Dashboard
       submissions={submissions}
@@ -120,7 +129,6 @@ export default function DashboardPage() {
       monthlyData={monthlyData}
       statusFilter={statusFilter}
       onStatusFilterChange={setStatusFilter}
-      onNewSubmission={handleNewSubmission}
       onViewDetail={handleViewDetail}
       onEdit={handleEditSubmission}
     />

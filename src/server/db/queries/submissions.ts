@@ -8,6 +8,22 @@ import {
 } from '../schema';
 import { FeedbackData, StatusSPPTG } from '@/types';
 
+type SubmissionScopeFilters = {
+    ownerUserId?: number;
+    villageId?: number;
+};
+
+function buildScopeConditions(filters: SubmissionScopeFilters) {
+    const conditions = [];
+    if (filters.ownerUserId !== undefined) {
+        conditions.push(eq(submissions.ownerUserId, filters.ownerUserId));
+    }
+    if (filters.villageId !== undefined) {
+        conditions.push(eq(submissions.villageId, filters.villageId));
+    }
+    return conditions;
+}
+
 /**
  * Get submission by ID
  */
@@ -21,25 +37,23 @@ export async function getSubmissionById(
         eq(submissions.id, id),
     ).limit(1)
 
-    if (!result){
-        throw new Error("no result")
-    }
-
-    return result
+    return result ?? null
 }
 
 export async function listSubmissions(filters: {
     search?: string;
     status?: string;
+    ownerUserId?: number;
+    villageId?: number;
     limit?: number;
     offset?: number;
 },
     tx?: DBTransaction
 ) {
     const queryDb = tx || db
-    const { search, status, limit = 50, offset = 0 } = filters;
+    const { search, status, ownerUserId, villageId, limit = 50, offset = 0 } = filters;
 
-    const conditions = [];
+    const conditions = buildScopeConditions({ ownerUserId, villageId });
 
     if (search) {
         conditions.push(
@@ -54,6 +68,7 @@ export async function listSubmissions(filters: {
     if (status && status !== 'all') {
         conditions.push(eq(submissions.status, status as StatusSPPTG));
     }
+
     const {geom,...restOfTheColumn} = getTableColumns(submissions)
     const items = await queryDb.select(restOfTheColumn)
         .from(submissions)
@@ -130,27 +145,34 @@ export async function getSubmissionOverlaps(submissionId: number, tx?: DBTransac
     });
 }
 
-export async function getKPIData(tx?: DBTransaction) {
+export async function getKPIDataScoped(filters: SubmissionScopeFilters, tx?: DBTransaction) {
     const queryDb = tx || db;
+    const conditions = buildScopeConditions(filters);
     const result = await queryDb
         .select({
             status: submissions.status,
             count: sql`count(*)`.mapWith(String),
         })
         .from(submissions)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
         .groupBy(submissions.status);
 
     return result;
 }
 
-export async function getMonthlyStats(tx?: DBTransaction) {
+export async function getMonthlyStats(
+    filters: SubmissionScopeFilters = {},
+    tx?: DBTransaction
+) {
     const queryDb = tx || db;
+    const conditions = buildScopeConditions(filters);
     const result = await queryDb
         .select({
             month: sql<string>`TO_CHAR(${submissions.tanggalPengajuan}, 'YYYY-MM')`,
             count: sql<number>`count(*)`,
         })
         .from(submissions)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
         .groupBy(sql`TO_CHAR(${submissions.tanggalPengajuan}, 'YYYY-MM')`)
         .orderBy(sql`TO_CHAR(${submissions.tanggalPengajuan}, 'YYYY-MM')`);
 

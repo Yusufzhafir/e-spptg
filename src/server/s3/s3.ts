@@ -73,14 +73,59 @@ export async function uploadFileToS3(
   }
 }
 
-export async function getDownloadUrl(s3Key: string) {
+export function extractS3KeyFromDocumentUrl(documentUrl: string): string {
+  const bucket = process.env.S3_BUCKET_NAME;
+
+  if (!bucket) {
+    throw new Error('S3 bucket is not configured');
+  }
+
+  const normalizedBucket = bucket.replace(/^\/+|\/+$/g, '');
+  const normalizedUrl = documentUrl.trim();
+
+  const baseCandidates = [process.env.S3_PUBLIC_URL, process.env.S3_ENDPOINT]
+    .filter((base): base is string => Boolean(base))
+    .map((base) => base.replace(/\/+$/g, ''));
+
+  for (const base of baseCandidates) {
+    const prefix = `${base}/${normalizedBucket}/`;
+    if (normalizedUrl.startsWith(prefix)) {
+      const key = normalizedUrl.slice(prefix.length);
+      if (key) return decodeURIComponent(key);
+    }
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(normalizedUrl);
+  } catch {
+    throw new Error('Invalid document URL');
+  }
+
+  const normalizedPath = parsed.pathname.replace(/^\/+/, '');
+  const bucketToken = `${normalizedBucket}/`;
+  const bucketIndex = normalizedPath.indexOf(bucketToken);
+  if (bucketIndex !== -1) {
+    const key = normalizedPath.slice(bucketIndex + bucketToken.length);
+    if (key) return decodeURIComponent(key);
+  }
+
+  if (parsed.hostname.startsWith(`${normalizedBucket}.`)) {
+    const key = normalizedPath;
+    if (key) return decodeURIComponent(key);
+  }
+
+  throw new Error('Could not extract S3 key from document URL');
+}
+
+export async function getDownloadUrl(s3Key: string, expiresInSeconds = 3600) {
   const command = new GetObjectCommand({
     Bucket: process.env.S3_BUCKET_NAME!,
     Key: s3Key,
   });
 
   return getSignedUrl(s3Client, command, {
-    expiresIn: 3600,
+    expiresIn: expiresInSeconds,
   });
 }
 

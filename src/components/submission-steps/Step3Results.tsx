@@ -238,6 +238,7 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
       geoJSON,
       status: draft.status || 'SPPTG terdata',
       tanggalPengajuan: new Date(),
+      ownerUserId: null,
       verifikator: draft.verifikator || null,
       riwayat: [],
       feedback: null,
