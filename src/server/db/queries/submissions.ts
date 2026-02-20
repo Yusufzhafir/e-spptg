@@ -43,6 +43,10 @@ export async function getSubmissionById(
 export async function listSubmissions(filters: {
     search?: string;
     status?: string;
+    desaId?: number;
+    kecamatan?: string;
+    dateFrom?: string;
+    dateTo?: string;
     ownerUserId?: number;
     villageId?: number;
     limit?: number;
@@ -51,7 +55,18 @@ export async function listSubmissions(filters: {
     tx?: DBTransaction
 ) {
     const queryDb = tx || db
-    const { search, status, ownerUserId, villageId, limit = 50, offset = 0 } = filters;
+    const {
+        search,
+        status,
+        desaId,
+        kecamatan,
+        dateFrom,
+        dateTo,
+        ownerUserId,
+        villageId,
+        limit = 50,
+        offset = 0
+    } = filters;
 
     const conditions = buildScopeConditions({ ownerUserId, villageId });
 
@@ -67,6 +82,20 @@ export async function listSubmissions(filters: {
 
     if (status && status !== 'all') {
         conditions.push(eq(submissions.status, status as StatusSPPTG));
+    }
+
+    if (typeof desaId === 'number') {
+        conditions.push(eq(submissions.villageId, desaId));
+    } else if (kecamatan) {
+        conditions.push(sql`LOWER(${submissions.kecamatan}) = LOWER(${kecamatan})`);
+    }
+
+    if (dateFrom) {
+        conditions.push(sql`DATE(${submissions.tanggalPengajuan}) >= ${dateFrom}`);
+    }
+
+    if (dateTo) {
+        conditions.push(sql`DATE(${submissions.tanggalPengajuan}) <= ${dateTo}`);
     }
 
     const {geom,...restOfTheColumn} = getTableColumns(submissions)

@@ -246,6 +246,10 @@ export const submissionsRouter = router({
             return submissionQueries.listSubmissions({
                 search: input.search,
                 status: input.status,
+                desaId: input.desaId,
+                kecamatan: input.kecamatan,
+                dateFrom: input.dateFrom,
+                dateTo: input.dateTo,
                 ownerUserId: scope.ownerUserId,
                 villageId: scope.villageId,
                 limit: input.limit,
