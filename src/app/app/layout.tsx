@@ -8,8 +8,6 @@ import { toast } from 'sonner';
 import { usePathname, useRouter } from 'next/navigation';
 
 export type AppStateContextValue = {
-  setSearchQuery: (q: string) => void;
-  setStatusFilter: (s: string) => void;
   handleSubmitForm: (data: Partial<Submission>) => void;
   handleStatusChange: (id: number, status: StatusSPPTG, alasan: string) => void;
   handleCompleteSubmission: (draft: SubmissionDraft) => void;
@@ -26,9 +24,7 @@ export function useAppState() {
 }
 
 export default function AppLayout({ children }: { children: ReactNode }) {
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [, setSubmissions] = useState<Submission[]>([]);
 
   const pathname = usePathname();
   const router = useRouter();
@@ -141,8 +137,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   };
 
   const contextValue: AppStateContextValue = {
-    setSearchQuery,
-    setStatusFilter,
     handleSubmitForm,
     handleStatusChange,
     handleCompleteSubmission,
@@ -162,10 +156,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           onPageChange={handlePageChange}
         />
         <div className="flex-1 flex flex-col">
-          <Header
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-          />
+          <Header />
           <main className="flex-1 p-6">{children}</main>
         </div>
       </div>

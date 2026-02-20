@@ -95,11 +95,24 @@ describe('submissionsRouter access hardening', () => {
     } as SubmissionListResult);
 
     const caller = submissionsRouter.createCaller(createCtx('Viewer', 88));
-    await caller.list({ status: undefined, search: undefined, limit: 50, offset: 0 });
+    await caller.list({
+      status: undefined,
+      search: undefined,
+      desaId: undefined,
+      kecamatan: undefined,
+      dateFrom: undefined,
+      dateTo: undefined,
+      limit: 50,
+      offset: 0,
+    });
 
     expect(listSubmissionsMock).toHaveBeenCalledWith({
       search: undefined,
       status: undefined,
+      desaId: undefined,
+      kecamatan: undefined,
+      dateFrom: undefined,
+      dateTo: undefined,
       ownerUserId: 88,
       villageId: undefined,
       limit: 50,
@@ -114,11 +127,56 @@ describe('submissionsRouter access hardening', () => {
     } as SubmissionListResult);
 
     const caller = submissionsRouter.createCaller(createCtx('Admin', 99, 5));
-    await caller.list({ status: undefined, search: undefined, limit: 50, offset: 0 });
+    await caller.list({
+      status: undefined,
+      search: undefined,
+      desaId: undefined,
+      kecamatan: undefined,
+      dateFrom: undefined,
+      dateTo: undefined,
+      limit: 50,
+      offset: 0,
+    });
 
     expect(listSubmissionsMock).toHaveBeenCalledWith({
       search: undefined,
       status: undefined,
+      desaId: undefined,
+      kecamatan: undefined,
+      dateFrom: undefined,
+      dateTo: undefined,
+      ownerUserId: undefined,
+      villageId: 5,
+      limit: 50,
+      offset: 0,
+    });
+  });
+
+  it('forwards desaId, legacy kecamatan, and date range list filters', async () => {
+    listSubmissionsMock.mockResolvedValue({
+      items: [],
+      total: 0,
+    } as SubmissionListResult);
+
+    const caller = submissionsRouter.createCaller(createCtx('Admin', 99, 5));
+    await caller.list({
+      status: 'SPPTG terdaftar',
+      search: 'Budi',
+      desaId: 12,
+      kecamatan: 'Harjamukti',
+      dateFrom: '2026-01-01',
+      dateTo: '2026-01-31',
+      limit: 50,
+      offset: 0,
+    });
+
+    expect(listSubmissionsMock).toHaveBeenCalledWith({
+      search: 'Budi',
+      status: 'SPPTG terdaftar',
+      desaId: 12,
+      kecamatan: 'Harjamukti',
+      dateFrom: '2026-01-01',
+      dateTo: '2026-01-31',
       ownerUserId: undefined,
       villageId: 5,
       limit: 50,

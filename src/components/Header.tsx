@@ -1,32 +1,13 @@
-import { Search, Bell } from 'lucide-react';
-import { Input } from './ui/input';
+import { Bell } from 'lucide-react';
 import { Button } from './ui/button';
 import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton } from '@clerk/nextjs';
 
 
-interface HeaderProps {
-  searchQuery: string;
-  onSearchChange: (value: string) => void;
-}
-
-export function Header({ searchQuery, onSearchChange }: HeaderProps) {
+export function Header() {
   return (
       <header className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl text-gray-900">Dashboard</h1>
-
-          <div className="flex items-center gap-4 flex-1 max-w-2xl mx-8">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <Input
-                type="text"
-                placeholder="Cari nama pemilik, NIK, atau desa…"
-                value={searchQuery}
-                onChange={(e) => onSearchChange(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-          </div>
 
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" className="relative">

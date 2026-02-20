@@ -1,9 +1,10 @@
 'use client';
 
 import { Dashboard } from '@/components/Dashboard';
+import { buildDashboardSearchParams, type DashboardFilterPatch, parseDashboardFilters } from '@/lib/dashboard-filters';
 import { trpc } from '@/trpc/client';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useCallback, useMemo } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { KPIData, Submission } from '@/types';
 
 type SubmissionListItem = {
@@ -35,17 +36,83 @@ type MonthlyStatItem = {
   count: number;
 };
 
+type VillageListItem = {
+  id: number;
+  namaDesa: string;
+};
+
 export default function DashboardPage() {
   const router = useRouter();
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const filters = useMemo(() => parseDashboardFilters(searchParams), [searchParams]);
+
+  const updateFilterParams = useCallback(
+    (patch: DashboardFilterPatch) => {
+      const nextParams = buildDashboardSearchParams(searchParams, patch);
+      const queryString = nextParams.toString();
+      router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
+
+  const handleSearchSubmit = useCallback((value: string) => {
+    const nextSearch = value.trim();
+    if (nextSearch === filters.search) return;
+    updateFilterParams({ search: nextSearch });
+  }, [filters.search, updateFilterParams]);
+
+  const handleStatusFilterChange = useCallback(
+    (value: string) => {
+      updateFilterParams({ status: value });
+    },
+    [updateFilterParams]
+  );
+
+  const handleDateFromChange = useCallback(
+    (value: string) => {
+      updateFilterParams({ dateFrom: value });
+    },
+    [updateFilterParams]
+  );
+
+  const handleDateToChange = useCallback(
+    (value: string) => {
+      updateFilterParams({ dateTo: value });
+    },
+    [updateFilterParams]
+  );
+
+  const handleDesaFilterChange = useCallback(
+    (value: string) => {
+      updateFilterParams({ desaId: value });
+    },
+    [updateFilterParams]
+  );
+
+  const submissionsListInput = useMemo(
+    () => ({
+      status: filters.status === 'all' ? undefined : filters.status,
+      search: filters.search || undefined,
+      desaId: filters.desaId ? Number(filters.desaId) : undefined,
+      kecamatan: !filters.desaId && filters.kecamatan ? filters.kecamatan : undefined,
+      dateFrom: filters.dateFrom || undefined,
+      dateTo: filters.dateTo || undefined,
+      limit: 100,
+      offset: 0,
+    }),
+    [filters.dateFrom, filters.dateTo, filters.desaId, filters.kecamatan, filters.search, filters.status]
+  );
 
   // Fetch submissions from backend
-  const { data: submissionsData, isLoading: isLoadingSubmissions, error: submissionsError } = trpc.submissions.list.useQuery({
-    status: statusFilter === 'all' ? undefined : statusFilter,
-    search: searchQuery || undefined,
-    limit: 100,
-    offset: 0,
+  const {
+    data: submissionsData,
+    isLoading: isLoadingSubmissions,
+    isFetching: isFetchingSubmissions,
+    error: submissionsError,
+  } = trpc.submissions.list.useQuery(submissionsListInput, {
+    placeholderData: (previous) => previous,
   });
 
   // Fetch KPI data
@@ -53,6 +120,12 @@ export default function DashboardPage() {
 
   // Fetch monthly stats
   const { data: monthlyStatsData, isLoading: isLoadingMonthly, error: monthlyError } = trpc.submissions.monthlyStats.useQuery();
+
+  // Fetch villages for Desa filter options
+  const { data: villagesData, isLoading: isLoadingVillages, error: villagesError } = trpc.villages.list.useQuery({
+    limit: 1000,
+    offset: 0,
+  });
 
   // Transform submissions data
   const submissionItems = (submissionsData?.items || []) as SubmissionListItem[];
@@ -96,6 +169,11 @@ export default function DashboardPage() {
     pengajuan: stat.count,
   }));
 
+  const villageItems = (villagesData || []) as VillageListItem[];
+  const desaOptions = villageItems
+    .map((village) => ({ id: village.id, namaDesa: village.namaDesa }))
+    .sort((a, b) => a.namaDesa.localeCompare(b.namaDesa));
+
   const handleViewDetail = (submission: Submission) => {
     router.push(`/app/pengajuan/${submission.id}`);
   };
@@ -104,7 +182,13 @@ export default function DashboardPage() {
     router.push(`/app/pengajuan/${submission.id}`);
   };
 
-  if (isLoadingSubmissions || isLoadingKPI || isLoadingMonthly) {
+  const isInitialLoading =
+    (!submissionsData && isLoadingSubmissions) ||
+    (!kpiData && isLoadingKPI) ||
+    (!monthlyStatsData && isLoadingMonthly) ||
+    (!villagesData && isLoadingVillages);
+
+  if (isInitialLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -113,8 +197,8 @@ export default function DashboardPage() {
     );
   }
 
-  if (submissionsError || kpiError || monthlyError) {
-    const message = submissionsError?.message || kpiError?.message || monthlyError?.message;
+  if (submissionsError || kpiError || monthlyError || villagesError) {
+    const message = submissionsError?.message || kpiError?.message || monthlyError?.message || villagesError?.message;
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-red-700">
         {message || 'Gagal memuat dashboard.'}
@@ -127,8 +211,18 @@ export default function DashboardPage() {
       submissions={submissions}
       kpiData={transformedKpiData}
       monthlyData={monthlyData}
-      statusFilter={statusFilter}
-      onStatusFilterChange={setStatusFilter}
+      appliedSearch={filters.search}
+      onSearchSubmit={handleSearchSubmit}
+      statusFilter={filters.status}
+      onStatusFilterChange={handleStatusFilterChange}
+      dateFrom={filters.dateFrom}
+      onDateFromChange={handleDateFromChange}
+      dateTo={filters.dateTo}
+      onDateToChange={handleDateToChange}
+      desaFilter={filters.desaId}
+      onDesaFilterChange={handleDesaFilterChange}
+      desaOptions={desaOptions}
+      isRefreshing={isFetchingSubmissions}
       onViewDetail={handleViewDetail}
       onEdit={handleEditSubmission}
     />

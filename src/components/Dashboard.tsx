@@ -12,8 +12,18 @@ interface DashboardProps {
   kpiData: KPIData;
   /* eslint-disable @typescript-eslint/no-empty-object-type */
   monthlyData: {}[];
+  appliedSearch: string;
+  onSearchSubmit: (value: string) => void;
   statusFilter: string;
   onStatusFilterChange: (value: string) => void;
+  dateFrom: string;
+  onDateFromChange: (value: string) => void;
+  dateTo: string;
+  onDateToChange: (value: string) => void;
+  desaFilter: string;
+  onDesaFilterChange: (value: string) => void;
+  desaOptions: Array<{ id: number; namaDesa: string }>;
+  isRefreshing: boolean;
   onViewDetail: (submission: Submission) => void;
   onEdit: (submission: Submission) => void;
 }
@@ -22,8 +32,18 @@ export function Dashboard({
   submissions,
   kpiData,
   monthlyData,
+  appliedSearch,
+  onSearchSubmit,
   statusFilter,
   onStatusFilterChange,
+  dateFrom,
+  onDateFromChange,
+  dateTo,
+  onDateToChange,
+  desaFilter,
+  onDesaFilterChange,
+  desaOptions,
+  isRefreshing,
   onViewDetail,
   onEdit,
 }: DashboardProps) {
@@ -105,8 +125,19 @@ export function Dashboard({
 
       {/* Filter Panel */}
       <FilterPanel
+        key={`search-${appliedSearch}`}
+        appliedSearch={appliedSearch}
+        onSearchSubmit={onSearchSubmit}
         statusFilter={statusFilter}
         onStatusFilterChange={onStatusFilterChange}
+        dateFrom={dateFrom}
+        onDateFromChange={onDateFromChange}
+        dateTo={dateTo}
+        onDateToChange={onDateToChange}
+        desaFilter={desaFilter}
+        onDesaFilterChange={onDesaFilterChange}
+        desaOptions={desaOptions}
+        isRefreshing={isRefreshing}
       />
 
       {/* Submissions Table */}

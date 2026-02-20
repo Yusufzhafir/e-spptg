@@ -147,6 +147,10 @@ export const uploadFileSchema = z.object({
 export const listSubmissionsSchema = z.object({
   search: z.string().optional(),
   status: z.string().optional(),
+  desaId: z.number().int().positive().optional(),
+  kecamatan: z.string().optional(),
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   limit: z.number().int().positive().default(50),
   offset: z.number().int().nonnegative().default(0),
 });
