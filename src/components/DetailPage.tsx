@@ -65,20 +65,12 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
   };
 
   const handleOpenDocument = async (documentId: number) => {
-    const previewTab = window.open('', '_blank', 'noopener,noreferrer');
     setOpeningDocumentId(documentId);
 
     try {
       const { signedUrl } = await openDocumentMutation.mutateAsync({ documentId });
-      if (previewTab) {
-        previewTab.location.href = signedUrl;
-      } else {
-        window.open(signedUrl, '_blank', 'noopener,noreferrer');
-      }
+      window.open(signedUrl, '_blank', 'noopener,noreferrer');
     } catch (error) {
-      if (previewTab) {
-        previewTab.close();
-      }
       toast.error(error instanceof Error ? error.message : 'Gagal membuka dokumen.');
     } finally {
       setOpeningDocumentId(null);
