@@ -223,7 +223,7 @@ export function Step1DocumentUpload({ draft, onUpdateDraft }: Step1Props) {
             onChange={(doc) => onUpdateDraft({ dokumenTidakSengketa: doc })}
             category="Tidak Sengketa"
             draftId={draft.id}
-            templateType="surat_pernyataan_tidak_sengketa.pdf"
+            templateType="surat_pernyataan_tidak_sengketa.docx"
             required={false}
           />
         </div>

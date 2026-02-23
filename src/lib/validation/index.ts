@@ -170,8 +170,8 @@ export const getTemplateUrlSchema = z.object({
   templateType: z.enum(
      [
       'surat_pernyataan_permohonan.pdf',
-      'surat_pernyataan_tidak_sengketa.pdf',
-      'berita_acara_validasi_lapangan.pdf',
+      'surat_pernyataan_tidak_sengketa.docx',
+      'berita_acara_validasi_lapangan.docx',
       'spptg_template.pdf',
     ],
   )});
