@@ -1,5 +1,11 @@
 "use client";
-import { useState, useEffect, useCallback, type ChangeEvent, type KeyboardEvent } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  type ChangeEvent,
+  type KeyboardEvent,
+} from 'react';
 import {
   SubmissionDraft,
   BoundaryWitness,
@@ -85,9 +91,32 @@ function formatUtmValue(value: number): string {
   return value.toFixed(2);
 }
 
+function hasValidPolygonCoordinates(coordinates: GeographicCoordinate[]): boolean {
+  const validCoordinates = coordinates.filter(
+    (coord) => {
+      const latitude = Number(coord.latitude);
+      const longitude = Number(coord.longitude);
+
+      return (
+        Number.isFinite(latitude) &&
+        Number.isFinite(longitude) &&
+        latitude >= -90 &&
+        latitude <= 90 &&
+        longitude >= -180 &&
+        longitude <= 180
+      );
+    }
+  );
+
+  return validCoordinates.length >= 3;
+}
+
 export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
   const [isOverlapDialogOpen, setIsOverlapDialogOpen] = useState(false);
   const [isParsingKml, setIsParsingKml] = useState(false);
+  const [recenterSignal, setRecenterSignal] = useState(() =>
+    hasValidPolygonCoordinates(draft.coordinatesGeografis) ? 1 : 0
+  );
   const [newWitness, setNewWitness] = useState<NewWitnessWithUsage>({
     nama: '',
     sisi: '' as BoundaryDirection,
@@ -134,6 +163,10 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
   const handleSystemChange = (value: CoordinateSystem) => {
     onUpdateDraft({ coordinateSystem: value });
   };
+
+  const triggerMapRecenter = useCallback(() => {
+    setRecenterSignal((value) => value + 1);
+  }, []);
 
   const handleAddWitness = () => {
     if (!newWitness.nama) {
@@ -199,6 +232,19 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
     onUpdateDraft({ coordinatesGeografis: updated });
   };
 
+  const handleGeographicCoordinateBlur = () => {
+    triggerMapRecenter();
+  };
+
+  const handleGeographicCoordinateKeyDown = (
+    event: KeyboardEvent<HTMLInputElement>
+  ) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      event.currentTarget.blur();
+    }
+  };
+
   const resetUtmRowFromDraft = useCallback(
     (id: string | undefined, index: number) => {
       const draftMatcher = createCoordinateRowMatcher(draft.coordinatesGeografis, id, index);
@@ -219,27 +265,27 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
   );
 
   const commitUtmCoordinate = useCallback(
-    (id: string | undefined, index: number, override?: LocalUTMCoordinate) => {
+    (id: string | undefined, index: number, override?: LocalUTMCoordinate): boolean => {
       const utmMatcher = createCoordinateRowMatcher(utmCoordinates, id, index);
       const localRow =
         override ??
         utmCoordinates.find((coord, coordIndex) =>
           utmMatcher(coord, coordIndex)
         );
-      if (!localRow) return;
+      if (!localRow) return false;
 
       const parsed = parseUtmInputStrings(localRow);
       if (!parsed) {
         toast.error('Koordinat UTM tidak valid. Periksa zone, easting, dan northing.');
         resetUtmRowFromDraft(id, index);
-        return;
+        return false;
       }
 
       const latLon = toLatLonFromUtm(parsed);
       if (!latLon) {
         toast.error('Gagal mengonversi koordinat UTM. Periksa nilai yang dimasukkan.');
         resetUtmRowFromDraft(id, index);
-        return;
+        return false;
       }
 
       const draftMatcher = createCoordinateRowMatcher(draft.coordinatesGeografis, id, index);
@@ -249,6 +295,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
           : coord
       );
       onUpdateDraft({ coordinatesGeografis: updatedGeo });
+      return true;
     },
     [draft.coordinatesGeografis, onUpdateDraft, resetUtmRowFromDraft, utmCoordinates]
   );
@@ -286,7 +333,10 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
       return prev.map((coord, coordIndex) => (matcher(coord, coordIndex) ? nextRow : coord));
     });
 
-    commitUtmCoordinate(id, index, nextRow);
+    const didCommit = commitUtmCoordinate(id, index, nextRow);
+    if (didCommit) {
+      triggerMapRecenter();
+    }
   };
 
   const handleUtmBlur = (
@@ -306,18 +356,16 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
     });
 
     setEditingUtmField(null);
-    commitUtmCoordinate(id, index, nextRow);
+    const didCommit = commitUtmCoordinate(id, index, nextRow);
+    if (didCommit) {
+      triggerMapRecenter();
+    }
   };
 
-  const handleUtmKeyDown = (
-    event: KeyboardEvent<HTMLInputElement>,
-    id: string | undefined,
-    index: number,
-    field: UTMEditableField
-  ) => {
+  const handleUtmKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      handleUtmBlur(id, index, field, event.currentTarget.value);
+      event.currentTarget.blur();
     }
   };
 
@@ -380,6 +428,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
       }
 
       onUpdateDraft({ coordinatesGeografis: normalizedCoordinates });
+      triggerMapRecenter();
       toast.success(
         `File KML berhasil diimpor. ${normalizedCoordinates.length} titik koordinat dimuat.`
       );
@@ -773,6 +822,8 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                                     parseFloat(e.target.value) || 0
                                   )
                                 }
+                                onBlur={handleGeographicCoordinateBlur}
+                                onKeyDown={handleGeographicCoordinateKeyDown}
                                 placeholder="-6.9"
                               />
                             </TableCell>
@@ -789,6 +840,8 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                                     parseFloat(e.target.value) || 0
                                   )
                                 }
+                                onBlur={handleGeographicCoordinateBlur}
+                                onKeyDown={handleGeographicCoordinateKeyDown}
                                 placeholder="107.6"
                               />
                             </TableCell>
@@ -822,7 +875,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                                     onBlur={(e) =>
                                       handleUtmBlur(coord.id, index, 'zone', e.currentTarget.value)
                                     }
-                                    onKeyDown={(e) => handleUtmKeyDown(e, coord.id, index, 'zone')}
+                                    onKeyDown={handleUtmKeyDown}
                                     placeholder="48"
                                     className="w-16"
                                     data-testid={index === 0 ? 'utm-zone-input-0' : undefined}
@@ -854,7 +907,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                                 onBlur={(e) =>
                                   handleUtmBlur(coord.id, index, 'easting', e.currentTarget.value)
                                 }
-                                onKeyDown={(e) => handleUtmKeyDown(e, coord.id, index, 'easting')}
+                                onKeyDown={handleUtmKeyDown}
                                 placeholder="Easting"
                                 data-testid={index === 0 ? 'utm-easting-input-0' : undefined}
                               />
@@ -871,7 +924,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                                 onBlur={(e) =>
                                   handleUtmBlur(coord.id, index, 'northing', e.currentTarget.value)
                                 }
-                                onKeyDown={(e) => handleUtmKeyDown(e, coord.id, index, 'northing')}
+                                onKeyDown={handleUtmKeyDown}
                                 placeholder="Northing"
                                 data-testid={index === 0 ? 'utm-northing-input-0' : undefined}
                               />
@@ -922,6 +975,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
             <Label>Pratinjau Peta</Label>
             <DrawingMap
               coordinates={draft.coordinatesGeografis}
+              recenterSignal={recenterSignal}
               onCoordinatesChange={(coords) => {
                 // This callback is triggered when user draws/edits on the map
                 // The coordinates are already synced, just update the draft

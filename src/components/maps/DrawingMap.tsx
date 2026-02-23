@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { APIProvider, Map, useMap ,useMapsLibrary} from '@vis.gl/react-google-maps';
+import { APIProvider, Map, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { GeographicCoordinate } from '@/types';
 import {
   coordinatesToLatLng,
@@ -12,11 +12,18 @@ import { MapPin } from 'lucide-react';
 interface DrawingMapProps {
   coordinates: GeographicCoordinate[];
   onCoordinatesChange: (coords: GeographicCoordinate[]) => void;
+  recenterSignal?: number;
   center?: {
     lat: number;
-    lng: number;  
+    lng: number;
   };
   zoom?: number;
+}
+
+interface DrawingMapInternalProps {
+  coordinates: GeographicCoordinate[];
+  onCoordinatesChange: (coords: GeographicCoordinate[]) => void;
+  recenterSignal?: number;
 }
 
 type PolygonWithListeners = google.maps.Polygon & {
@@ -27,17 +34,14 @@ type PolygonWithListeners = google.maps.Polygon & {
 function DrawingMapInternal({
   coordinates,
   onCoordinatesChange,
-  center = {
-    lat: 0.6164979547396072,
-    lng: 117.32086147991855,
-  },
-  zoom = 13,
-}: DrawingMapProps) {
+  recenterSignal,
+}: DrawingMapInternalProps) {
   const map = useMap();
   const polygonRef = useRef<google.maps.Polygon | null>(null);
   const markersRef = useRef<google.maps.Marker[]>([]);
   const isUpdatingFromMapRef = useRef(false);
   const isUpdatingFromPropsRef = useRef(false);
+  const lastAppliedRecenterSignalRef = useRef(0);
   const drawingManagerRef = useRef<google.maps.drawing.DrawingManager | null>(
     null
   );
@@ -398,6 +402,53 @@ function DrawingMapInternal({
     };
   }, [coordinates, map, onCoordinatesChange, cleanupPolygon]);
 
+  // Recenter/fit map after coordinate updates from table-based inputs/imports.
+  useEffect(() => {
+    if (!map || recenterSignal === undefined || recenterSignal <= 0) return;
+    if (lastAppliedRecenterSignalRef.current === recenterSignal) return;
+
+    const google = window.google;
+    if (!google) return;
+
+    const validCoordinates = coordinates
+      .map((coord) => ({
+        latitude: Number(coord.latitude),
+        longitude: Number(coord.longitude),
+      }))
+      .filter(
+        (coord) =>
+          Number.isFinite(coord.latitude) &&
+          Number.isFinite(coord.longitude) &&
+          coord.latitude >= -90 &&
+          coord.latitude <= 90 &&
+          coord.longitude >= -180 &&
+          coord.longitude <= 180
+      );
+
+    if (validCoordinates.length < 3) return;
+
+    const bounds = new google.maps.LatLngBounds();
+    validCoordinates.forEach((coord) => {
+      bounds.extend({ lat: coord.latitude, lng: coord.longitude });
+    });
+
+    if (bounds.isEmpty()) return;
+    lastAppliedRecenterSignalRef.current = recenterSignal;
+
+    map.fitBounds(bounds, 64);
+
+    const idleListener = google.maps.event.addListenerOnce(map, 'idle', () => {
+      const currentZoom = map.getZoom();
+      if (typeof currentZoom === 'number' && currentZoom > 19) {
+        map.setZoom(19);
+      }
+    });
+
+    return () => {
+      google.maps.event.removeListener(idleListener);
+    };
+  }, [coordinates, map, recenterSignal]);
+
   return null;
 }
 
@@ -405,6 +456,7 @@ function DrawingMapInternal({
 export function DrawingMap({
   coordinates,
   onCoordinatesChange,
+  recenterSignal,
   center = {
     lat: 0.6164979547396072,
     lng: 117.32086147991855,
@@ -449,8 +501,7 @@ export function DrawingMap({
           <DrawingMapInternal
             coordinates={coordinates}
             onCoordinatesChange={onCoordinatesChange}
-            center={center}
-            zoom={zoom}
+            recenterSignal={recenterSignal}
           />
         </Map>
       </APIProvider>
