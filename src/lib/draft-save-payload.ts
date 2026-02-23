@@ -1,4 +1,5 @@
 import type { SubmissionDraft } from '@/types';
+import { normalizeCoordinateIds } from './coordinate-ids';
 
 /**
  * Builds a complete, serializable payload for draft persistence.
@@ -28,7 +29,7 @@ export function buildDraftSavePayload(draft: SubmissionDraft): Record<string, un
     tahunAwalGarap: draft.tahunAwalGarap,
     namaKepalaDesa: draft.namaKepalaDesa,
     saksiList: draft.saksiList || [],
-    coordinatesGeografis: draft.coordinatesGeografis || [],
+    coordinatesGeografis: normalizeCoordinateIds(draft.coordinatesGeografis || []),
     coordinateSystem: draft.coordinateSystem,
     fotoLahan: draft.fotoLahan || [],
     overlapResults: draft.overlapResults || [],

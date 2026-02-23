@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { trpc } from '@/trpc/client';
 import { useRouter } from 'next/navigation';
 import { buildDraftSavePayload } from '@/lib/draft-save-payload';
+import { normalizeCoordinateIds } from '@/lib/coordinate-ids';
 import { useAuthRole } from './AuthRoleProvider';
 
 interface SubmissionFlowProps {
@@ -90,6 +91,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
   useEffect(() => {
     if (draftData) {
       const payload = (draftData.payload ?? {}) as Partial<SubmissionDraft>;
+      const coordinatesGeografis = normalizeCoordinateIds(payload.coordinatesGeografis ?? []);
       const allowedStep = isViewer ? 1 : draftData.currentStep;
       setDraft({
         id: draftData.id,
@@ -117,7 +119,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         namaKepalaDesa: payload.namaKepalaDesa,
         saksiList: payload.saksiList || [],
         coordinateSystem: payload.coordinateSystem || 'geografis',
-        coordinatesGeografis: payload.coordinatesGeografis || [],
+        coordinatesGeografis,
         fotoLahan: payload.fotoLahan || [],
         overlapResults: payload.overlapResults || [],
         luasLahan: payload.luasLahan,
@@ -315,7 +317,15 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
   };
 
   const handleUpdateDraft = (updates: Partial<SubmissionDraft>) => {
-    setDraft((prev) => ({ ...prev, ...updates }));
+    const normalizedUpdates =
+      Array.isArray(updates.coordinatesGeografis)
+        ? {
+            ...updates,
+            coordinatesGeografis: normalizeCoordinateIds(updates.coordinatesGeografis),
+          }
+        : updates;
+
+    setDraft((prev) => ({ ...prev, ...normalizedUpdates }));
   };
 
   // Auto-save when status is updated
