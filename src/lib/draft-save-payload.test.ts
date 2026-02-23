@@ -51,4 +51,23 @@ describe('buildDraftSavePayload', () => {
     expect(payload.juruUkur).toEqual(draft.juruUkur);
     expect(payload.status).toBe('SPPTG terdaftar');
   });
+
+  it('normalizes coordinate ids before persistence', () => {
+    const draft = createDraftFixture();
+    draft.coordinatesGeografis = [
+      { id: 'C-1', latitude: -6.1, longitude: 107.1 },
+      { id: '' as unknown as string, latitude: -6.11, longitude: 107.11 },
+      { id: 'C-1', latitude: -6.12, longitude: 107.12 },
+    ];
+
+    const payload = buildDraftSavePayload(draft) as {
+      coordinatesGeografis: Array<{ id: string; latitude: number; longitude: number }>;
+    };
+
+    expect(payload.coordinatesGeografis.map((coord) => coord.id)).toEqual([
+      'C-1',
+      'C-2',
+      'C-1-2',
+    ]);
+  });
 });

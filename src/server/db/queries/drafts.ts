@@ -1,6 +1,38 @@
 import { db, DBTransaction } from '../db';
 import { submissionDrafts, users, villages } from '../schema';
 import { and, desc, eq, or, sql } from 'drizzle-orm';
+import {
+  coordinatesNeedIdNormalization,
+  normalizeCoordinateIds,
+  type CoordinateWithOptionalId,
+} from '@/lib/coordinate-ids';
+
+function normalizeDraftCoordinatesPayload(
+  payload: unknown
+): { payload: Record<string, unknown>; changed: boolean } {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return { payload: {}, changed: false };
+  }
+
+  const payloadObject = payload as Record<string, unknown>;
+  const rawCoordinates = payloadObject.coordinatesGeografis;
+  if (!Array.isArray(rawCoordinates)) {
+    return { payload: payloadObject, changed: false };
+  }
+
+  const coordinates = rawCoordinates as CoordinateWithOptionalId[];
+  if (!coordinatesNeedIdNormalization(coordinates)) {
+    return { payload: payloadObject, changed: false };
+  }
+
+  return {
+    payload: {
+      ...payloadObject,
+      coordinatesGeografis: normalizeCoordinateIds(coordinates),
+    },
+    changed: true,
+  };
+}
 
 export async function getOrCreateDraft(userId: number, tx?: DBTransaction) {
   const queryDb = tx || db;
@@ -41,9 +73,30 @@ export async function createDraft(userId: number, tx?: DBTransaction) {
 
 export async function getDraftById(id: number, tx?: DBTransaction) {
   const queryDb = tx || db;
-  return queryDb.query.submissionDrafts.findFirst({
+  const draft = await queryDb.query.submissionDrafts.findFirst({
     where: eq(submissionDrafts.id, id),
   });
+
+  if (!draft) return draft;
+
+  const normalized = normalizeDraftCoordinatesPayload(draft.payload);
+  if (!normalized.changed) {
+    return draft;
+  }
+
+  const updated = await queryDb
+    .update(submissionDrafts)
+    .set({
+      payload: normalized.payload,
+      updatedAt: new Date(),
+    })
+    .where(eq(submissionDrafts.id, id))
+    .returning();
+
+  return updated[0] ?? {
+    ...draft,
+    payload: normalized.payload,
+  };
 }
 
 export async function saveDraftStep(
@@ -61,11 +114,12 @@ export async function saveDraftStep(
   }
 
   // Merge payload
-  const updatedPayload = {
+  const mergedPayload = {
     ...draft.payload,
     ...payloadUpdate,
     currentStep,
   };
+  const normalizedPayload = normalizeDraftCoordinatesPayload(mergedPayload).payload;
   const villageCandidate = (payloadUpdate as { villageId?: unknown }).villageId;
   const nextVillageId =
     typeof villageCandidate === 'number'
@@ -77,7 +131,7 @@ export async function saveDraftStep(
   const result = await queryDb
     .update(submissionDrafts)
     .set({
-      payload: updatedPayload,
+      payload: normalizedPayload,
       villageId: nextVillageId,
       currentStep,
       lastSaved: new Date(),

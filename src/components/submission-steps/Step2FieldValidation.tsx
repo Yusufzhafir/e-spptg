@@ -1,6 +1,11 @@
 "use client";
-import { useState, useEffect, useCallback, type ChangeEvent } from 'react';
-import proj4 from 'proj4';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  type ChangeEvent,
+  type KeyboardEvent,
+} from 'react';
 import {
   SubmissionDraft,
   BoundaryWitness,
@@ -11,6 +16,16 @@ import {
 import { trpc } from '@/trpc/client';
 import { DrawingMap } from '../maps/DrawingMap';
 import { parseKMLFile } from '@/lib/kmz-parser';
+import {
+  coordinatesNeedIdNormalization,
+  normalizeCoordinateIds,
+} from '@/lib/coordinate-ids';
+import { createCoordinateRowMatcher } from '@/lib/coordinate-row-match';
+import {
+  parseUtmInputStrings,
+  toLatLonFromUtm,
+  toUtmFromLatLon,
+} from '@/lib/utm-conversion';
 
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
@@ -46,11 +61,19 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 // Define UTM type for local state/handling
 interface LocalUTMCoordinate {
-  id: string;
+  id?: string;
   zone: string;
   hemisphere: 'N' | 'S';
-  easting: number;
-  northing: number;
+  easting: string;
+  northing: string;
+}
+
+type UTMEditableField = 'zone' | 'easting' | 'northing';
+
+interface EditingUtmField {
+  id?: string;
+  index: number;
+  field: UTMEditableField;
 }
 
 interface Step2Props {
@@ -64,9 +87,36 @@ type NewWitnessWithUsage = {
   penggunaanLahanBatas?: string;
 };
 
+function formatUtmValue(value: number): string {
+  return value.toFixed(2);
+}
+
+function hasValidPolygonCoordinates(coordinates: GeographicCoordinate[]): boolean {
+  const validCoordinates = coordinates.filter(
+    (coord) => {
+      const latitude = Number(coord.latitude);
+      const longitude = Number(coord.longitude);
+
+      return (
+        Number.isFinite(latitude) &&
+        Number.isFinite(longitude) &&
+        latitude >= -90 &&
+        latitude <= 90 &&
+        longitude >= -180 &&
+        longitude <= 180
+      );
+    }
+  );
+
+  return validCoordinates.length >= 3;
+}
+
 export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
   const [isOverlapDialogOpen, setIsOverlapDialogOpen] = useState(false);
   const [isParsingKml, setIsParsingKml] = useState(false);
+  const [recenterSignal, setRecenterSignal] = useState(() =>
+    hasValidPolygonCoordinates(draft.coordinatesGeografis) ? 1 : 0
+  );
   const [newWitness, setNewWitness] = useState<NewWitnessWithUsage>({
     nama: '',
     sisi: '' as BoundaryDirection,
@@ -76,65 +126,47 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
   // Local state for UTM coordinates to prevent rounding issues during editing
   // We sync this with draft.coordinatesGeografis whenever draft changes or user edits
   const [utmCoordinates, setUtmCoordinates] = useState<LocalUTMCoordinate[]>([]);
+  const [editingUtmField, setEditingUtmField] = useState<EditingUtmField | null>(null);
 
   // Initialize coordinate system from draft or default to geografis
   const coordinateSystem = draft.coordinateSystem || 'geografis';
 
-  // Helper to convert Lat/Long to UTM
-  const toUTM = useCallback((lat: number, lon: number): Omit<LocalUTMCoordinate, 'id'> => {
-    // Calculate zone
-    const zone = Math.floor((lon + 180) / 6) + 1;
-    const hemisphere = lat >= 0 ? 'N' : 'S';
-    
-    // Define projection
-    const utmProj = `+proj=utm +zone=${zone} +${hemisphere === 'S' ? 'south' : 'north'} +ellps=WGS84 +datum=WGS84 +units=m +no_defs`;
-    const wgs84Proj = 'EPSG:4326';
-    
-    const [easting, northing] = proj4(wgs84Proj, utmProj, [lon, lat]);
-    
-    return {
-      zone: zone.toString(),
-      hemisphere,
-      easting: Number(easting.toFixed(2)),
-      northing: Number(northing.toFixed(2)),
-    };
-  }, []);
-
-  // Helper to convert UTM to Lat/Long
-  const toLatLon = useCallback((utm: LocalUTMCoordinate): { latitude: number; longitude: number } => {
-    const { zone, hemisphere, easting, northing } = utm;
-    const utmProj = `+proj=utm +zone=${zone} +${hemisphere === 'S' ? 'south' : 'north'} +ellps=WGS84 +datum=WGS84 +units=m +no_defs`;
-    const wgs84Proj = 'EPSG:4326';
-    
-    try {
-      const [lon, lat] = proj4(utmProj, wgs84Proj, [easting, northing]);
-      return { latitude: lat, longitude: lon };
-    } catch (e) {
-      console.error('Projection error:', e);
-      return { latitude: 0, longitude: 0 };
+  useEffect(() => {
+    if (!coordinatesNeedIdNormalization(draft.coordinatesGeografis)) {
+      return;
     }
+
+    onUpdateDraft({
+      coordinatesGeografis: normalizeCoordinateIds(draft.coordinatesGeografis),
+    });
+  }, [draft.coordinatesGeografis, onUpdateDraft]);
+
+  const toLocalUtmCoordinate = useCallback((geo: GeographicCoordinate): LocalUTMCoordinate => {
+    const converted = toUtmFromLatLon(geo.latitude, geo.longitude);
+
+    return {
+      id: geo.id,
+      zone: converted.zone.toString(),
+      hemisphere: converted.hemisphere,
+      easting: formatUtmValue(converted.easting),
+      northing: formatUtmValue(converted.northing),
+    };
   }, []);
 
   // Sync UTM local state when switching to UTM mode or when draft coordinates change externally (e.g. map draw)
   useEffect(() => {
-    if (coordinateSystem === 'utm') {
-      const newUtmCoords = draft.coordinatesGeografis.map(geo => {
-        // Check if we already have a matching UTM coord to preserve user input precision if possible
-        // But if the geo coord has changed significantly (e.g. map drag), we must re-convert
-        const converted = toUTM(geo.latitude, geo.longitude);
-        return {
-            id: geo.id,
-            ...converted
-        };
-      });
-       
-      setUtmCoordinates(newUtmCoords);
+    if (coordinateSystem === 'utm' && !editingUtmField) {
+      setUtmCoordinates(draft.coordinatesGeografis.map(toLocalUtmCoordinate));
     }
-  }, [draft.coordinatesGeografis, coordinateSystem, toUTM]);
+  }, [draft.coordinatesGeografis, coordinateSystem, toLocalUtmCoordinate, editingUtmField]);
 
   const handleSystemChange = (value: CoordinateSystem) => {
     onUpdateDraft({ coordinateSystem: value });
   };
+
+  const triggerMapRecenter = useCallback(() => {
+    setRecenterSignal((value) => value + 1);
+  }, []);
 
   const handleAddWitness = () => {
     if (!newWitness.nama) {
@@ -187,41 +219,162 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
     });
   };
 
-  const handleUpdateCoordinate = (id: string, field: 'latitude' | 'longitude', value: number) => {
-    const updated = draft.coordinatesGeografis.map((coord) =>
-      coord.id === id ? { ...coord, [field]: value } : coord
+  const handleUpdateCoordinate = (
+    id: string | undefined,
+    index: number,
+    field: 'latitude' | 'longitude',
+    value: number
+  ) => {
+    const matcher = createCoordinateRowMatcher(draft.coordinatesGeografis, id, index);
+    const updated = draft.coordinatesGeografis.map((coord, coordIndex) =>
+      matcher(coord, coordIndex) ? { ...coord, [field]: value } : coord
     );
     onUpdateDraft({ coordinatesGeografis: updated });
   };
 
-  const handleUpdateUTM = (
-    id: string,
-    field: keyof LocalUTMCoordinate,
-    value: string | number
-  ) => {
-    // Update local UTM state first
-    const updatedUtm = utmCoordinates.map(c => 
-        c.id === id ? { ...c, [field]: value } : c
-    );
-    setUtmCoordinates(updatedUtm);
+  const handleGeographicCoordinateBlur = () => {
+    triggerMapRecenter();
+  };
 
-    // Convert to Lat/Long and update draft
-    const changedCoord = updatedUtm.find(c => c.id === id);
-    if (changedCoord) {
-        const { latitude, longitude } = toLatLon(changedCoord);
-        const updatedGeo = draft.coordinatesGeografis.map(c => 
-            c.id === id ? { ...c, latitude, longitude } : c
-        );
-        // We only update draft if valid numbers
-        if (!isNaN(latitude) && !isNaN(longitude)) {
-            onUpdateDraft({ coordinatesGeografis: updatedGeo });
-        }
+  const handleGeographicCoordinateKeyDown = (
+    event: KeyboardEvent<HTMLInputElement>
+  ) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      event.currentTarget.blur();
     }
   };
 
-  const handleRemoveCoordinate = (id: string) => {
+  const resetUtmRowFromDraft = useCallback(
+    (id: string | undefined, index: number) => {
+      const draftMatcher = createCoordinateRowMatcher(draft.coordinatesGeografis, id, index);
+      const geoCoord = draft.coordinatesGeografis.find((coord, coordIndex) =>
+        draftMatcher(coord, coordIndex)
+      );
+      if (!geoCoord) return;
+
+      const resetValue = toLocalUtmCoordinate(geoCoord);
+      setUtmCoordinates((prev) => {
+        const utmMatcher = createCoordinateRowMatcher(prev, id, index);
+        return prev.map((coord, coordIndex) =>
+          utmMatcher(coord, coordIndex) ? resetValue : coord
+        );
+      });
+    },
+    [draft.coordinatesGeografis, toLocalUtmCoordinate]
+  );
+
+  const commitUtmCoordinate = useCallback(
+    (id: string | undefined, index: number, override?: LocalUTMCoordinate): boolean => {
+      const utmMatcher = createCoordinateRowMatcher(utmCoordinates, id, index);
+      const localRow =
+        override ??
+        utmCoordinates.find((coord, coordIndex) =>
+          utmMatcher(coord, coordIndex)
+        );
+      if (!localRow) return false;
+
+      const parsed = parseUtmInputStrings(localRow);
+      if (!parsed) {
+        toast.error('Koordinat UTM tidak valid. Periksa zone, easting, dan northing.');
+        resetUtmRowFromDraft(id, index);
+        return false;
+      }
+
+      const latLon = toLatLonFromUtm(parsed);
+      if (!latLon) {
+        toast.error('Gagal mengonversi koordinat UTM. Periksa nilai yang dimasukkan.');
+        resetUtmRowFromDraft(id, index);
+        return false;
+      }
+
+      const draftMatcher = createCoordinateRowMatcher(draft.coordinatesGeografis, id, index);
+      const updatedGeo = draft.coordinatesGeografis.map((coord, coordIndex) =>
+        draftMatcher(coord, coordIndex)
+          ? { ...coord, latitude: latLon.latitude, longitude: latLon.longitude }
+          : coord
+      );
+      onUpdateDraft({ coordinatesGeografis: updatedGeo });
+      return true;
+    },
+    [draft.coordinatesGeografis, onUpdateDraft, resetUtmRowFromDraft, utmCoordinates]
+  );
+
+  const getUtmRow = useCallback(
+    (id: string | undefined, index: number) => {
+      const matcher = createCoordinateRowMatcher(utmCoordinates, id, index);
+      return utmCoordinates.find((coord, coordIndex) => matcher(coord, coordIndex));
+    },
+    [utmCoordinates]
+  );
+
+  const handleUpdateUTMInput = (
+    id: string | undefined,
+    index: number,
+    field: UTMEditableField,
+    value: string
+  ) => {
+    setUtmCoordinates((prev) => {
+      const matcher = createCoordinateRowMatcher(prev, id, index);
+      return prev.map((coord, coordIndex) =>
+        matcher(coord, coordIndex) ? { ...coord, [field]: value } : coord
+      );
+    });
+  };
+
+  const handleHemisphereChange = (id: string | undefined, index: number, hemisphere: 'N' | 'S') => {
+    const currentRow = getUtmRow(id, index);
+    if (!currentRow) return;
+
+    const nextRow: LocalUTMCoordinate = { ...currentRow, hemisphere };
+
+    setUtmCoordinates((prev) => {
+      const matcher = createCoordinateRowMatcher(prev, id, index);
+      return prev.map((coord, coordIndex) => (matcher(coord, coordIndex) ? nextRow : coord));
+    });
+
+    const didCommit = commitUtmCoordinate(id, index, nextRow);
+    if (didCommit) {
+      triggerMapRecenter();
+    }
+  };
+
+  const handleUtmBlur = (
+    id: string | undefined,
+    index: number,
+    field: UTMEditableField,
+    value: string
+  ) => {
+    const currentRow = getUtmRow(id, index);
+    if (!currentRow) return;
+
+    const nextRow: LocalUTMCoordinate = { ...currentRow, [field]: value };
+
+    setUtmCoordinates((prev) => {
+      const matcher = createCoordinateRowMatcher(prev, id, index);
+      return prev.map((coord, coordIndex) => (matcher(coord, coordIndex) ? nextRow : coord));
+    });
+
+    setEditingUtmField(null);
+    const didCommit = commitUtmCoordinate(id, index, nextRow);
+    if (didCommit) {
+      triggerMapRecenter();
+    }
+  };
+
+  const handleUtmKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      event.currentTarget.blur();
+    }
+  };
+
+  const handleRemoveCoordinate = (id: string | undefined, index: number) => {
+    const matcher = createCoordinateRowMatcher(draft.coordinatesGeografis, id, index);
     onUpdateDraft({
-      coordinatesGeografis: draft.coordinatesGeografis.filter((c) => c.id !== id),
+      coordinatesGeografis: draft.coordinatesGeografis.filter(
+        (coord, coordIndex) => !matcher(coord, coordIndex)
+      ),
     });
   };
 
@@ -275,6 +428,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
       }
 
       onUpdateDraft({ coordinatesGeografis: normalizedCoordinates });
+      triggerMapRecenter();
       toast.success(
         `File KML berhasil diimpor. ${normalizedCoordinates.length} titik koordinat dimuat.`
       );
@@ -448,8 +602,9 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {draft.saksiList.map((witness) => (
-                  <TableRow key={witness.id}>
+                {draft.saksiList.map((witness,i) => {
+                  return (
+                  <TableRow key={`${witness.id}-${i}`}>
                     <TableCell>{witness.nama}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{witness.sisi}</Badge>
@@ -466,7 +621,8 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))}
+                )
+                })}
               </TableBody>
             </Table>
           </div>
@@ -606,11 +762,15 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                     className="flex space-x-4"
                 >
                     <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="geografis" id="cs-geografis" />
+                        <RadioGroupItem
+                          value="geografis"
+                          id="cs-geografis"
+                          data-testid="coordinate-system-geografis"
+                        />
                         <Label htmlFor="cs-geografis" className="cursor-pointer">Geografis (Lat/Lon)</Label>
                     </div>
                     <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="utm" id="cs-utm" />
+                        <RadioGroupItem value="utm" id="cs-utm" data-testid="coordinate-system-utm" />
                         <Label htmlFor="cs-utm" className="cursor-pointer">UTM</Label>
                     </div>
                 </RadioGroup>
@@ -647,7 +807,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                   <TableBody>
                     {coordinateSystem === 'geografis' ? (
                         draft.coordinatesGeografis.map((coord, index) => (
-                          <TableRow key={coord.id}>
+                          <TableRow key={`${coord.id}-${index}`}>
                             <TableCell>{index + 1}</TableCell>
                             <TableCell>
                               <Input
@@ -657,10 +817,13 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                                 onChange={(e) =>
                                   handleUpdateCoordinate(
                                     coord.id,
+                                    index,
                                     'latitude',
                                     parseFloat(e.target.value) || 0
                                   )
                                 }
+                                onBlur={handleGeographicCoordinateBlur}
+                                onKeyDown={handleGeographicCoordinateKeyDown}
                                 placeholder="-6.9"
                               />
                             </TableCell>
@@ -672,10 +835,13 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                                 onChange={(e) =>
                                   handleUpdateCoordinate(
                                     coord.id,
+                                    index,
                                     'longitude',
                                     parseFloat(e.target.value) || 0
                                   )
                                 }
+                                onBlur={handleGeographicCoordinateBlur}
+                                onKeyDown={handleGeographicCoordinateKeyDown}
                                 placeholder="107.6"
                               />
                             </TableCell>
@@ -683,7 +849,7 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => handleRemoveCoordinate(coord.id)}
+                                onClick={() => handleRemoveCoordinate(coord.id, index)}
                                 className="text-red-600 hover:text-red-700"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -693,23 +859,32 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                         ))
                     ) : (
                         utmCoordinates.map((coord, index) => (
-                          <TableRow key={coord.id}>
+                         <TableRow key={`${coord.id}-${index}`}>
                             <TableCell>{index + 1}</TableCell>
                             <TableCell>
                                 <Input 
                                     min="1"
                                     max="60"
-                                    type="number"
+                                    type="text"
+                                    inputMode="numeric"
                                     value={coord.zone}
-                                    onChange={(e) => handleUpdateUTM(coord.id, 'zone', e.target.value)}
+                                    onFocus={() =>
+                                      setEditingUtmField({ id: coord.id, index, field: 'zone' })
+                                    }
+                                    onChange={(e) => handleUpdateUTMInput(coord.id, index, 'zone', e.target.value)}
+                                    onBlur={(e) =>
+                                      handleUtmBlur(coord.id, index, 'zone', e.currentTarget.value)
+                                    }
+                                    onKeyDown={handleUtmKeyDown}
                                     placeholder="48"
                                     className="w-16"
+                                    data-testid={index === 0 ? 'utm-zone-input-0' : undefined}
                                 />
                             </TableCell>
                             <TableCell>
                                 <Select 
                                     value={coord.hemisphere}
-                                    onValueChange={(val) => handleUpdateUTM(coord.id, 'hemisphere', val)}
+                                    onValueChange={(val) => handleHemisphereChange(coord.id, index, val as 'N' | 'S')}
                                 >
                                     <SelectTrigger>
                                         <SelectValue />
@@ -722,29 +897,43 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
                             </TableCell>
                             <TableCell>
                               <Input
-                                type="number"
+                                type="text"
+                                inputMode="decimal"
                                 value={coord.easting || ''}
-                                onChange={(e) =>
-                                  handleUpdateUTM(coord.id, 'easting', parseFloat(e.target.value) || 0)
+                                onFocus={() =>
+                                  setEditingUtmField({ id: coord.id, index, field: 'easting' })
                                 }
+                                onChange={(e) => handleUpdateUTMInput(coord.id, index, 'easting', e.target.value)}
+                                onBlur={(e) =>
+                                  handleUtmBlur(coord.id, index, 'easting', e.currentTarget.value)
+                                }
+                                onKeyDown={handleUtmKeyDown}
                                 placeholder="Easting"
+                                data-testid={index === 0 ? 'utm-easting-input-0' : undefined}
                               />
                             </TableCell>
                             <TableCell>
                               <Input
-                                type="number"
+                                type="text"
+                                inputMode="decimal"
                                 value={coord.northing || ''}
-                                onChange={(e) =>
-                                  handleUpdateUTM(coord.id, 'northing', parseFloat(e.target.value) || 0)
+                                onFocus={() =>
+                                  setEditingUtmField({ id: coord.id, index, field: 'northing' })
                                 }
+                                onChange={(e) => handleUpdateUTMInput(coord.id, index, 'northing', e.target.value)}
+                                onBlur={(e) =>
+                                  handleUtmBlur(coord.id, index, 'northing', e.currentTarget.value)
+                                }
+                                onKeyDown={handleUtmKeyDown}
                                 placeholder="Northing"
+                                data-testid={index === 0 ? 'utm-northing-input-0' : undefined}
                               />
                             </TableCell>
                             <TableCell>
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => handleRemoveCoordinate(coord.id)}
+                                onClick={() => handleRemoveCoordinate(coord.id, index)}
                                 className="text-red-600 hover:text-red-700"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -786,11 +975,12 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
             <Label>Pratinjau Peta</Label>
             <DrawingMap
               coordinates={draft.coordinatesGeografis}
+              recenterSignal={recenterSignal}
               onCoordinatesChange={(coords) => {
                 // This callback is triggered when user draws/edits on the map
                 // The coordinates are already synced, just update the draft
                 onUpdateDraft({
-                  coordinatesGeografis: coords,
+                  coordinatesGeografis: normalizeCoordinateIds(coords),
                 });
               }}
             />
