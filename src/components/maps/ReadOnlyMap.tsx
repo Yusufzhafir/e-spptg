@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
-import { Submission, StatusSPPTG } from '@/types';
-import { geoJSONToLatLng } from '@/lib/map-utils';;
+import { GeoJSONPolygon, Submission, StatusSPPTG } from '@/types';
+import { geoJSONToLatLng } from '@/lib/map-utils';
 import { MapPin } from 'lucide-react';
 import { renderToString } from 'react-dom/server';
 
 interface ReadOnlyMapProps {
   submissions: Submission[];
+  villageBoundaryGeoJSON?: GeoJSONPolygon | null;
   selectedSubmission?: Submission | null;
   height?: string;
   center?: {
@@ -37,12 +38,14 @@ function getPolygonColor(status: StatusSPPTG): string {
 // Internal component that uses the map instance
 function ReadOnlyMapInternal({
   submissions,
+  villageBoundaryGeoJSON,
   selectedSubmission,
   onPolygonClick,
 }: Omit<ReadOnlyMapProps, 'height' | 'center' | 'zoom'>) {
   const map = useMap();
   const polygonsRef = useRef<google.maps.Polygon[]>([]);
   const infoWindowsRef = useRef<google.maps.InfoWindow[]>([]);
+  const villageBoundaryPolygonRef = useRef<google.maps.Polygon | null>(null);
 
   useEffect(() => {
     if (!map) return;
@@ -53,8 +56,29 @@ function ReadOnlyMapInternal({
     // Clear existing polygons and info windows
     polygonsRef.current.forEach((polygon) => polygon.setMap(null));
     infoWindowsRef.current.forEach((infoWindow) => infoWindow.close());
+    villageBoundaryPolygonRef.current?.setMap(null);
     polygonsRef.current = [];
     infoWindowsRef.current = [];
+    villageBoundaryPolygonRef.current = null;
+
+    // Render village boundary first as guidance (under submission polygons).
+    const boundaryLatLngs = geoJSONToLatLng(villageBoundaryGeoJSON);
+    if (boundaryLatLngs.length >= 3) {
+      const boundaryPolygon = new google.maps.Polygon({
+        paths: boundaryLatLngs,
+        fillColor: '#16a34a',
+        fillOpacity: 0.08,
+        strokeColor: '#16a34a',
+        strokeWeight: 2,
+        strokeOpacity: 0.9,
+        clickable: false,
+        editable: false,
+        draggable: false,
+        zIndex: 1,
+      });
+      boundaryPolygon.setMap(map);
+      villageBoundaryPolygonRef.current = boundaryPolygon;
+    }
 
     // Create polygons for each submission
     submissions.forEach((submission) => {
@@ -73,6 +97,7 @@ function ReadOnlyMapInternal({
         strokeColor: color,
         strokeWeight: isSelected ? 3 : 2,
         strokeOpacity: 1,
+        zIndex: isSelected ? 11 : 10,
       });
 
       polygon.setMap(map);
@@ -127,8 +152,9 @@ function ReadOnlyMapInternal({
     return () => {
       polygonsRef.current.forEach((polygon) => polygon.setMap(null));
       infoWindowsRef.current.forEach((infoWindow) => infoWindow.close());
+      villageBoundaryPolygonRef.current?.setMap(null);
     };
-  }, [submissions, selectedSubmission, map, onPolygonClick]);
+  }, [submissions, selectedSubmission, map, onPolygonClick, villageBoundaryGeoJSON]);
 
   return null;
 }
@@ -136,6 +162,7 @@ function ReadOnlyMapInternal({
 // Main component with API provider
 export function ReadOnlyMap({
   submissions,
+  villageBoundaryGeoJSON,
   selectedSubmission,
   height = '400px',
   center = {
@@ -200,6 +227,7 @@ export function ReadOnlyMap({
         >
           <ReadOnlyMapInternal
             submissions={submissions}
+            villageBoundaryGeoJSON={villageBoundaryGeoJSON}
             selectedSubmission={selectedSubmission}
             onPolygonClick={onPolygonClick}
           />
@@ -225,6 +253,10 @@ export function ReadOnlyMap({
           <div className="flex items-center gap-2 text-xs">
             <div className="w-4 h-4 rounded" style={{ backgroundColor: '#eab308' }} />
             <span>SPPTG ditinjau ulang</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <div className="w-4 h-4 rounded" style={{ backgroundColor: '#16a34a' }} />
+            <span>Batas desa</span>
           </div>
         </div>
       </div>

@@ -489,6 +489,12 @@ export function Step2FieldValidation({
     },
   });
 
+  const villageBoundaryQuery = trpc.villageBoundaries.byVillageId.useQuery(
+    { villageId: draft.villageId! },
+    { enabled: !!draft.villageId }
+  );
+  const villageBoundaryGeoJSON = villageBoundaryQuery.data?.geomGeoJSON ?? null;
+
   const handleCheckOverlap = () => {
     if (draft.coordinatesGeografis.length < 3) {
       toast.error('Minimal 3 titik koordinat diperlukan');
@@ -981,8 +987,24 @@ export function Step2FieldValidation({
           {/* Map Preview */}
           <div className="space-y-3">
             <Label>Pratinjau Peta</Label>
+            {draft.villageId ? (
+              villageBoundaryQuery.isLoading ? (
+                <p className="text-xs text-gray-500">Memuat batas desa...</p>
+              ) : villageBoundaryGeoJSON ? (
+                <p className="text-xs text-green-700">
+                  Batas desa ditampilkan sebagai panduan visual.
+                </p>
+              ) : (
+                <p className="text-xs text-amber-700">
+                  Batas desa belum tersedia. Anda tetap dapat melanjutkan pengisian koordinat.
+                </p>
+              )
+            ) : (
+              <p className="text-xs text-gray-500">Pilih desa pada Step 1 untuk memuat batas desa.</p>
+            )}
             <DrawingMap
               coordinates={draft.coordinatesGeografis}
+              villageBoundaryGeoJSON={villageBoundaryGeoJSON}
               recenterSignal={recenterSignal}
               onCoordinatesChange={(coords) => {
                 // This callback is triggered when user draws/edits on the map

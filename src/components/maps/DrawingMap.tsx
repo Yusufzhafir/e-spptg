@@ -2,15 +2,17 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { APIProvider, Map, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
-import { GeographicCoordinate } from '@/types';
+import { GeographicCoordinate, GeoJSONPolygon } from '@/types';
 import {
   coordinatesToLatLng,
+  geoJSONToLatLng,
   polygonPathToCoordinates,
 } from '@/lib/map-utils';
 import { MapPin } from 'lucide-react';
 
 interface DrawingMapProps {
   coordinates: GeographicCoordinate[];
+  villageBoundaryGeoJSON?: GeoJSONPolygon | null;
   onCoordinatesChange: (coords: GeographicCoordinate[]) => void;
   recenterSignal?: number;
   center?: {
@@ -22,6 +24,7 @@ interface DrawingMapProps {
 
 interface DrawingMapInternalProps {
   coordinates: GeographicCoordinate[];
+  villageBoundaryGeoJSON?: GeoJSONPolygon | null;
   onCoordinatesChange: (coords: GeographicCoordinate[]) => void;
   recenterSignal?: number;
 }
@@ -33,15 +36,18 @@ type PolygonWithListeners = google.maps.Polygon & {
 // Internal component that uses the map instance
 function DrawingMapInternal({
   coordinates,
+  villageBoundaryGeoJSON,
   onCoordinatesChange,
   recenterSignal,
 }: DrawingMapInternalProps) {
   const map = useMap();
   const polygonRef = useRef<google.maps.Polygon | null>(null);
+  const villageBoundaryPolygonRef = useRef<google.maps.Polygon | null>(null);
   const markersRef = useRef<google.maps.Marker[]>([]);
   const isUpdatingFromMapRef = useRef(false);
   const isUpdatingFromPropsRef = useRef(false);
   const lastAppliedRecenterSignalRef = useRef(0);
+  const lastAppliedBoundaryFitKeyRef = useRef<string | null>(null);
   const drawingManagerRef = useRef<google.maps.drawing.DrawingManager | null>(
     null
   );
@@ -84,6 +90,7 @@ function DrawingMapInternal({
         clickable: true,
         editable: true,
         draggable: false,
+        zIndex: 10,
       },
     });
 
@@ -176,6 +183,7 @@ function DrawingMapInternal({
             strokeWeight: 2,
             editable: true,
             draggable: false,
+            zIndex: 10,
           });
           newPolygon.setMap(map);
           polygonRef.current = newPolygon;
@@ -323,6 +331,7 @@ function DrawingMapInternal({
         strokeWeight: 2,
         editable: true,
         draggable: false,
+        zIndex: 10,
       });
       polygon.setMap(map);
       polygonRef.current = polygon;
@@ -402,6 +411,93 @@ function DrawingMapInternal({
     };
   }, [coordinates, map, onCoordinatesChange, cleanupPolygon]);
 
+  // Render village boundary as visual guidance only (non-editable).
+  useEffect(() => {
+    if (!map) return;
+
+    const google = window.google;
+    if (!google) return;
+
+    if (villageBoundaryPolygonRef.current) {
+      villageBoundaryPolygonRef.current.setMap(null);
+      villageBoundaryPolygonRef.current = null;
+    }
+
+    const boundaryPath = geoJSONToLatLng(villageBoundaryGeoJSON);
+    if (boundaryPath.length < 3) return;
+
+    const boundaryPolygon = new google.maps.Polygon({
+      paths: boundaryPath,
+      fillColor: '#16a34a',
+      fillOpacity: 0.08,
+      strokeColor: '#16a34a',
+      strokeWeight: 2,
+      strokeOpacity: 0.9,
+      clickable: false,
+      editable: false,
+      draggable: false,
+      zIndex: 1,
+    });
+    boundaryPolygon.setMap(map);
+    villageBoundaryPolygonRef.current = boundaryPolygon;
+
+    return () => {
+      boundaryPolygon.setMap(null);
+      if (villageBoundaryPolygonRef.current === boundaryPolygon) {
+        villageBoundaryPolygonRef.current = null;
+      }
+    };
+  }, [map, villageBoundaryGeoJSON]);
+
+  // Auto-fit to village boundary only before a valid submission polygon exists.
+  useEffect(() => {
+    if (!map || !villageBoundaryGeoJSON) return;
+
+    const google = window.google;
+    if (!google) return;
+
+    const validCoordinates = coordinates.filter(
+      (coord) =>
+        Number.isFinite(coord.latitude) &&
+        Number.isFinite(coord.longitude) &&
+        coord.latitude >= -90 &&
+        coord.latitude <= 90 &&
+        coord.longitude >= -180 &&
+        coord.longitude <= 180
+    );
+    if (validCoordinates.length >= 3) return;
+
+    const boundaryPath = geoJSONToLatLng(villageBoundaryGeoJSON);
+    if (boundaryPath.length < 3) return;
+
+    const boundaryKey = JSON.stringify(villageBoundaryGeoJSON.coordinates);
+    if (lastAppliedBoundaryFitKeyRef.current === boundaryKey) return;
+
+    const bounds = new google.maps.LatLngBounds();
+    boundaryPath.forEach((point) => bounds.extend(point));
+    if (bounds.isEmpty()) return;
+
+    lastAppliedBoundaryFitKeyRef.current = boundaryKey;
+    map.fitBounds(bounds, 64);
+
+    const idleListener = google.maps.event.addListenerOnce(map, 'idle', () => {
+      const currentZoom = map.getZoom();
+      if (typeof currentZoom === 'number' && currentZoom > 18) {
+        map.setZoom(18);
+      }
+    });
+
+    return () => {
+      google.maps.event.removeListener(idleListener);
+    };
+  }, [coordinates, map, villageBoundaryGeoJSON]);
+
+  useEffect(() => {
+    if (!villageBoundaryGeoJSON || coordinates.length >= 3) {
+      lastAppliedBoundaryFitKeyRef.current = null;
+    }
+  }, [coordinates.length, villageBoundaryGeoJSON]);
+
   // Recenter/fit map after coordinate updates from table-based inputs/imports.
   useEffect(() => {
     if (!map || recenterSignal === undefined || recenterSignal <= 0) return;
@@ -455,6 +551,7 @@ function DrawingMapInternal({
 // Main component with API provider
 export function DrawingMap({
   coordinates,
+  villageBoundaryGeoJSON,
   onCoordinatesChange,
   recenterSignal,
   center = {
@@ -500,6 +597,7 @@ export function DrawingMap({
         >
           <DrawingMapInternal
             coordinates={coordinates}
+            villageBoundaryGeoJSON={villageBoundaryGeoJSON}
             onCoordinatesChange={onCoordinatesChange}
             recenterSignal={recenterSignal}
           />
