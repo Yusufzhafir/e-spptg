@@ -16,9 +16,17 @@ import {
 interface Step1Props {
   draft: SubmissionDraft;
   onUpdateDraft: (updates: Partial<SubmissionDraft>) => void;
+  onPersistDraftPatch: (
+    updates: Partial<SubmissionDraft>,
+    options?: { silent?: boolean }
+  ) => Promise<void>;
 }
 
-export function Step1DocumentUpload({ draft, onUpdateDraft }: Step1Props) {
+export function Step1DocumentUpload({
+  draft,
+  onUpdateDraft,
+  onPersistDraftPatch,
+}: Step1Props) {
   const { data: villagesData } = trpc.villages.list.useQuery({
     limit: 1000,
     offset: 0,
@@ -177,7 +185,7 @@ export function Step1DocumentUpload({ draft, onUpdateDraft }: Step1Props) {
             accept=".pdf,.jpg,.jpeg,.png"
             maxSize={10}
             value={draft.dokumenKTP}
-            onChange={(doc) => onUpdateDraft({ dokumenKTP: doc })}
+            onChange={(doc) => onPersistDraftPatch({ dokumenKTP: doc })}
             helpText="Contoh: KTP_NamaPemohon_2025.pdf"
             category="KTP"
             draftId={draft.id}
@@ -188,7 +196,7 @@ export function Step1DocumentUpload({ draft, onUpdateDraft }: Step1Props) {
             accept=".pdf,.jpg,.jpeg,.png"
             maxSize={10}
             value={draft.dokumenKK}
-            onChange={(doc) => onUpdateDraft({ dokumenKK: doc })}
+            onChange={(doc) => onPersistDraftPatch({ dokumenKK: doc })}
             helpText="Contoh: KK_NamaPemohon_2025.pdf"
             category="KK"
             draftId={draft.id}
@@ -199,7 +207,7 @@ export function Step1DocumentUpload({ draft, onUpdateDraft }: Step1Props) {
             accept=".pdf,.jpg,.jpeg,.png"
             maxSize={10}
             value={draft.dokumenKwitansi}
-            onChange={(doc) => onUpdateDraft({ dokumenKwitansi: doc })}
+            onChange={(doc) => onPersistDraftPatch({ dokumenKwitansi: doc })}
             category="Kwitansi"
             draftId={draft.id}
           />
@@ -209,7 +217,7 @@ export function Step1DocumentUpload({ draft, onUpdateDraft }: Step1Props) {
             accept=".pdf"
             maxSize={10}
             value={draft.dokumenPermohonan}
-            onChange={(doc) => onUpdateDraft({ dokumenPermohonan: doc })}
+            onChange={(doc) => onPersistDraftPatch({ dokumenPermohonan: doc })}
             category="Permohonan"
             templateType="surat_pernyataan_permohonan.pdf"
             draftId={draft.id}
@@ -220,7 +228,7 @@ export function Step1DocumentUpload({ draft, onUpdateDraft }: Step1Props) {
             accept=".pdf"
             maxSize={10}
             value={draft.dokumenTidakSengketa}
-            onChange={(doc) => onUpdateDraft({ dokumenTidakSengketa: doc })}
+            onChange={(doc) => onPersistDraftPatch({ dokumenTidakSengketa: doc })}
             category="Tidak Sengketa"
             draftId={draft.id}
             templateType="surat_pernyataan_tidak_sengketa.docx"
