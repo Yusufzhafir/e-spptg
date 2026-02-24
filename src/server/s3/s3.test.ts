@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { extractS3KeyFromDocumentUrl } from './s3';
+import { DeleteObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { deleteFileFromS3, extractS3KeyFromDocumentUrl } from './s3';
 
 const ORIGINAL_ENV = process.env;
 
@@ -45,5 +46,49 @@ describe('extractS3KeyFromDocumentUrl', () => {
     expect(() =>
       extractS3KeyFromDocumentUrl('https://cdn.example.com/no-bucket/path.pdf')
     ).toThrow('Could not extract S3 key from document URL');
+  });
+});
+
+describe('deleteFileFromS3', () => {
+  beforeEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+    process.env.S3_BUCKET_NAME = 'my-bucket';
+  });
+
+  afterEach(() => {
+    process.env = ORIGINAL_ENV;
+    vi.restoreAllMocks();
+  });
+
+  it('deletes file from S3', async () => {
+    const sendSpy = vi
+      .spyOn(S3Client.prototype, 'send')
+      .mockResolvedValue({} as never);
+
+    await deleteFileFromS3('submissions/KTP/test.pdf');
+
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    const command = sendSpy.mock.calls[0]?.[0];
+    expect(command).toBeInstanceOf(DeleteObjectCommand);
+  });
+
+  it('treats missing S3 object as success', async () => {
+    const sendSpy = vi.spyOn(S3Client.prototype, 'send').mockRejectedValue({
+      name: 'NoSuchKey',
+      $metadata: { httpStatusCode: 404 },
+    });
+
+    await expect(deleteFileFromS3('submissions/KTP/missing.pdf')).resolves.toBeUndefined();
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws for non-not-found S3 error', async () => {
+    vi.spyOn(S3Client.prototype, 'send').mockRejectedValue(
+      new Error('network timeout')
+    );
+
+    await expect(deleteFileFromS3('submissions/KTP/fail.pdf')).rejects.toThrow(
+      'Failed to delete file from S3: network timeout'
+    );
   });
 });

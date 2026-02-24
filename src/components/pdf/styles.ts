@@ -218,6 +218,34 @@ export const styles = StyleSheet.create({
     textDecoration: 'underline',
   },
 
+  declarantSigningArea: {
+    width: '100%',
+    height: 108,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  meteraiBox: {
+    width: 96,
+    height: 96,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    justifyContent: 'center',
+  },
+
+  meteraiText: {
+    fontFamily: FONTS.serif,
+    fontSize: FONT_SIZES.text,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+
+  meteraiOffsetLeft: {
+    marginLeft: -56,
+  },
+
   // Administrative section
   administrative: {
     marginTop: 16,

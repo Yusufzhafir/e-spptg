@@ -3,7 +3,15 @@ import { createUploadUrlSchema, listDocumentsSchema, uploadFileSchema, getTempla
 import * as queries from '@/server/db/queries/documents';
 import * as draftQueries from '@/server/db/queries/drafts';
 import * as submissionQueries from '@/server/db/queries/submissions';
-import { generateUploadUrl, uploadFileToS3, getTemplateSignedUrl, fetchTemplatePDF, getDownloadUrl, extractS3KeyFromDocumentUrl } from '@/server/s3/s3';
+import {
+  generateUploadUrl,
+  uploadFileToS3,
+  getTemplateSignedUrl,
+  fetchTemplatePDF,
+  getDownloadUrl,
+  extractS3KeyFromDocumentUrl,
+  deleteFileFromS3,
+} from '@/server/s3/s3';
 import { TRPCError } from '@trpc/server';
 import { adminProcedure, protectedProcedure, router } from '@/trpc/init';
 import { assertCanAccessDraft, assertCanAccessSubmission } from '@/server/authz';
@@ -239,25 +247,45 @@ export const documentsRouter = router({
     .input(z.object({ documentId: z.number().int() }))
     .mutation(async ({ ctx, input }) => {
       const document = await queries.getDocumentById(input.documentId);
-      if (!document || !document.submissionId) {
+      if (!document) {
         throw new TRPCError({
           code: 'NOT_FOUND',
           message: 'Dokumen tidak ditemukan',
         });
       }
 
-      const submission = await submissionQueries.getSubmissionById(document.submissionId);
-      if (!submission) {
+      if (document.submissionId) {
+        const submission = await submissionQueries.getSubmissionById(document.submissionId);
+        if (!submission) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Pengajuan tidak ditemukan',
+          });
+        }
+
+        assertCanAccessSubmission(ctx.appUser!, {
+          ownerUserId: submission.ownerUserId,
+          villageId: submission.villageId,
+        });
+      } else if (document.draftId) {
+        const draft = await draftQueries.getDraftById(document.draftId);
+        if (!draft) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Draft tidak ditemukan',
+          });
+        }
+
+        assertCanAccessDraft(ctx.appUser!, {
+          userId: draft.userId,
+          villageId: draft.villageId,
+        });
+      } else {
         throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Pengajuan tidak ditemukan',
+          code: 'FORBIDDEN',
+          message: 'Anda tidak memiliki akses ke dokumen ini',
         });
       }
-
-      assertCanAccessSubmission(ctx.appUser!, {
-        ownerUserId: submission.ownerUserId,
-        villageId: submission.villageId,
-      });
 
       try {
         const s3Key = extractS3KeyFromDocumentUrl(document.url);
@@ -340,7 +368,7 @@ export const documentsRouter = router({
     }),
 
   /**
-   * Delete a document (and optionally delete from S3)
+   * Delete a document from S3 and DB
    */
   delete: protectedProcedure
     .input(z.object({ documentId: z.number().int() }))
@@ -384,6 +412,19 @@ export const documentsRouter = router({
         throw new TRPCError({
           code: 'FORBIDDEN',
           message: 'Anda tidak memiliki akses ke dokumen ini',
+        });
+      }
+
+      try {
+        const s3Key = extractS3KeyFromDocumentUrl(document.url);
+        await deleteFileFromS3(s3Key);
+      } catch (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Gagal menghapus file dari penyimpanan',
         });
       }
 

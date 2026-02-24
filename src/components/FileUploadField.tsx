@@ -12,7 +12,7 @@ export interface FileUploadFieldProps {
   accept: string;
   maxSize: number; // in MB
   value?: UploadedDocument;
-  onChange: (doc?: UploadedDocument) => void;
+  onChange: (doc?: UploadedDocument) => void | Promise<void>;
   required?: boolean;
   helpText?: string;
   category: 'KTP' | 'KK' | 'Kwitansi' | 'Permohonan' | 'SK Kepala Desa' | 'Pernyataan Jual Beli' | 'Asal Usul' | 'Tidak Sengketa' | 'Berita Acara';
@@ -35,9 +35,15 @@ export function FileUploadField({
   notes,
 }: FileUploadFieldProps) {
   const [isUploading, setIsUploading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const createUploadUrlMutation = trpc.documents.createUploadUrl.useMutation();
   const uploadFileMutation = trpc.documents.uploadFile.useMutation();
+  const deleteDocumentMutation = trpc.documents.delete.useMutation();
   const getTemplateUrlMutation = trpc.documents.getTemplateUrl.useMutation();
+
+  const deleteDocumentById = async (documentId: number) => {
+    await deleteDocumentMutation.mutateAsync({ documentId });
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -64,6 +70,7 @@ export function FileUploadField({
     }
 
     setIsUploading(true);
+    const previousDocument = value;
 
     try {
       // Step 1: Create document record and get s3Key
@@ -92,14 +99,45 @@ export function FileUploadField({
         size: file.size,
       });
 
-      // Update draft with document info
-      onChange({
+      const uploadedDocument: UploadedDocument = {
         name: file.name,
         size: file.size,
         url: uploadResult.publicUrl,
         uploadedAt: new Date().toISOString(),
         documentId,
-      });
+      };
+
+      try {
+        // Persist draft immediately after upload succeeds
+        await onChange(uploadedDocument);
+      } catch (saveError) {
+        try {
+          await deleteDocumentById(documentId);
+        } catch (rollbackError) {
+          console.error('Rollback delete error:', rollbackError);
+          toast.error(
+            'Unggahan dibatalkan, tetapi gagal membersihkan file sementara. Hubungi administrator.'
+          );
+        }
+
+        throw new Error(
+          saveError instanceof Error
+            ? saveError.message
+            : 'Gagal menyimpan draf setelah upload'
+        );
+      }
+
+      if (
+        previousDocument?.documentId &&
+        previousDocument.documentId !== documentId
+      ) {
+        try {
+          await deleteDocumentById(previousDocument.documentId);
+        } catch (cleanupError) {
+          console.error('Replace cleanup error:', cleanupError);
+          toast.info('Dokumen baru tersimpan, tetapi dokumen lama gagal dihapus.');
+        }
+      }
 
       toast.success('Dokumen berhasil diunggah.');
     } catch (error: unknown) {
@@ -115,9 +153,47 @@ export function FileUploadField({
     }
   };
 
-  const handleRemove = () => {
-    onChange(undefined);
-    toast.info('Dokumen dihapus.');
+  const handleRemove = async () => {
+    if (!value) return;
+
+    const previousDocument = value;
+    setIsDeleting(true);
+    try {
+      // Persist draft first so removed file does not linger in payload.
+      await onChange(undefined);
+
+      if (previousDocument.documentId) {
+        try {
+          await deleteDocumentById(previousDocument.documentId);
+        } catch (deleteError) {
+          // Roll back draft payload to keep UI and backend in sync.
+          try {
+            await onChange(previousDocument);
+          } catch (rollbackError) {
+            console.error('Rollback save error:', rollbackError);
+            toast.error(
+              'Gagal menghapus dokumen dan gagal mengembalikan data draf. Silakan muat ulang halaman.'
+            );
+            return;
+          }
+
+          console.error('Delete error:', deleteError);
+          toast.error('Gagal menghapus dokumen. Perubahan draf dibatalkan.');
+          return;
+        }
+      }
+
+      toast.info('Dokumen dihapus.');
+    } catch (error: unknown) {
+      console.error('Draft save before delete error:', error);
+      if (error instanceof Error && error.message) {
+        toast.error(error.message);
+      } else {
+        toast.error('Gagal menyimpan perubahan draf sebelum menghapus dokumen.');
+      }
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const formatFileSize = (bytes: number) => {
@@ -173,7 +249,7 @@ export function FileUploadField({
               className="hidden"
               accept={accept}
               onChange={handleFileChange}
-              disabled={isUploading}
+              disabled={isUploading || isDeleting}
             />
           </label>
           {helpText && <p className="text-xs text-gray-500 mt-1">{helpText}</p>}
@@ -223,12 +299,14 @@ export function FileUploadField({
                   className="hidden"
                   accept={accept}
                   onChange={handleFileChange}
+                  disabled={isUploading || isDeleting}
                 />
               </label>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={handleRemove}
+                onClick={() => void handleRemove()}
+                disabled={isUploading || isDeleting}
                 className="text-red-600 hover:text-red-700 hover:bg-red-50"
               >
                 <X className="w-4 h-4" />
@@ -238,10 +316,10 @@ export function FileUploadField({
         </div>
       )}
 
-      {isUploading && (
+      {(isUploading || isDeleting) && (
         <div className="flex items-center gap-2 text-sm text-gray-600">
           <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-blue-600" />
-          <span>Mengunggah...</span>
+          <span>{isUploading ? 'Mengunggah...' : 'Menghapus...'}</span>
         </div>
       )}
 

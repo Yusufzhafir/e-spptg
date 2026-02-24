@@ -35,6 +35,10 @@ const steps = [
   { id: 4, label: 'Terbitkan SPPTG', icon: Award },
 ];
 
+type PersistDraftOptions = {
+  silent?: boolean;
+};
+
 export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlowProps) {
   const router = useRouter();
   const { hasRole } = useAuthRole();
@@ -47,16 +51,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
   const { data: draftData, isLoading: isLoadingDraft, error: draftError } = trpc.drafts.getById.useQuery({ draftId });
 
   // Save draft mutation
-  const saveDraftMutation = trpc.drafts.saveStep.useMutation({
-    onSuccess: (data) => {
-      const time = new Date(data.lastSaved).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-      setLastSaved(time);
-      toast.success('Draf berhasil disimpan');
-    },
-    onError: (error) => {
-      toast.error(`Gagal menyimpan draf: ${error.message}`);
-    },
-  });
+  const saveDraftMutation = trpc.drafts.saveStep.useMutation();
 
   // Submit draft mutation
   const submitDraftMutation = trpc.submissions.submitDraft.useMutation({
@@ -167,18 +162,85 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     }
   }, [draftError]);
 
-  const saveDraftToBackend = useCallback(async (stepOverride?: 1 | 2 | 3 | 4) => {
-    if (!draft.id) return;
+  const normalizeDraftUpdates = useCallback((updates: Partial<SubmissionDraft>) => {
+    return Array.isArray(updates.coordinatesGeografis)
+      ? {
+          ...updates,
+          coordinatesGeografis: normalizeCoordinateIds(updates.coordinatesGeografis),
+        }
+      : updates;
+  }, []);
 
-    // Ensure currentStep is a valid literal type
-    const step = stepOverride || (draft.currentStep as 1 | 2 | 3 | 4);
-    
-    return saveDraftMutation.mutateAsync({
-      draftId: draft.id,
-      currentStep: step,
-      payload: buildDraftSavePayload(draft),
-    });
-  }, [draft, saveDraftMutation]);
+  const persistDraftSnapshot = useCallback(
+    async (
+      draftSnapshot: SubmissionDraft,
+      step: 1 | 2 | 3 | 4,
+      options: PersistDraftOptions = {}
+    ) => {
+      if (!draftSnapshot.id) {
+        throw new Error('Draf belum dimuat');
+      }
+
+      const result = await saveDraftMutation.mutateAsync({
+        draftId: draftSnapshot.id,
+        currentStep: step,
+        payload: buildDraftSavePayload(draftSnapshot),
+      });
+
+      const time = new Date(result.lastSaved).toLocaleTimeString('id-ID', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      setLastSaved(time);
+
+      if (!options.silent) {
+        toast.success('Draf berhasil disimpan');
+      }
+
+      return result;
+    },
+    [saveDraftMutation]
+  );
+
+  const saveDraftToBackend = useCallback(
+    async (
+      stepOverride?: 1 | 2 | 3 | 4,
+      options: PersistDraftOptions = {}
+    ) => {
+      if (!draft.id) return;
+
+      // Ensure currentStep is a valid literal type
+      const step = stepOverride || (draft.currentStep as 1 | 2 | 3 | 4);
+
+      try {
+        return await persistDraftSnapshot(draft, step, options);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Terjadi kesalahan';
+        toast.error(`Gagal menyimpan draf: ${message}`);
+        throw error;
+      }
+    },
+    [draft, persistDraftSnapshot]
+  );
+
+  const persistDraftPatch = useCallback(
+    async (
+      updates: Partial<SubmissionDraft>,
+      step: 1 | 2 | 3 | 4,
+      options: PersistDraftOptions = { silent: true }
+    ) => {
+      if (!draft.id) {
+        throw new Error('Draf belum dimuat');
+      }
+
+      const normalizedUpdates = normalizeDraftUpdates(updates);
+      const nextDraft = { ...draft, ...normalizedUpdates };
+
+      await persistDraftSnapshot(nextDraft, step, options);
+      setDraft(nextDraft);
+    },
+    [draft, normalizeDraftUpdates, persistDraftSnapshot]
+  );
 
   // Auto-save functionality
   useEffect(() => {
@@ -186,7 +248,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
 
     const autoSave = setInterval(() => {
       if (draft.namaPemohon || draft.nik) {
-        saveDraftToBackend();
+        void saveDraftToBackend().catch(() => undefined);
       }
     }, 60000); // Auto-save every minute
 
@@ -269,7 +331,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         
         // Save draft with updated step
         if (draft.id) {
-          saveDraftToBackend(nextStep);
+          void saveDraftToBackend(nextStep).catch(() => undefined);
         }
         
         window.scrollTo(0, 0);
@@ -293,7 +355,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
       
       // Save draft with updated step
       if (draft.id) {
-        saveDraftToBackend(nextStep);
+        void saveDraftToBackend(nextStep).catch(() => undefined);
       }
       
       window.scrollTo(0, 0);
@@ -313,17 +375,11 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
       toast.error('Draf belum dimuat');
       return;
     }
-    saveDraftToBackend();
+    void saveDraftToBackend().catch(() => undefined);
   };
 
   const handleUpdateDraft = (updates: Partial<SubmissionDraft>) => {
-    const normalizedUpdates =
-      Array.isArray(updates.coordinatesGeografis)
-        ? {
-            ...updates,
-            coordinatesGeografis: normalizeCoordinateIds(updates.coordinatesGeografis),
-          }
-        : updates;
+    const normalizedUpdates = normalizeDraftUpdates(updates);
 
     setDraft((prev) => ({ ...prev, ...normalizedUpdates }));
   };
@@ -336,7 +392,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
       prevStatusRef.current = draft.status;
       // Save immediately when status changes on Step 3
       const timeoutId = setTimeout(() => {
-        saveDraftToBackend();
+        void saveDraftToBackend().catch(() => undefined);
       }, 200);
 
       // Cleanup: clear timeout if component unmounts or dependencies change
@@ -344,8 +400,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     } else if (draft.status) {
       prevStatusRef.current = draft.status;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.status, currentStep, draft.id]);
+  }, [draft.status, currentStep, draft.id, saveDraftToBackend]);
 
   const handleSubmitFromStep3 = async () => {
     if (!draft.id) {
@@ -495,11 +550,23 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         ) : (
           <>
             {currentStep === 1 && (
-              <Step1DocumentUpload draft={draft} onUpdateDraft={handleUpdateDraft} />
+              <Step1DocumentUpload
+                draft={draft}
+                onUpdateDraft={handleUpdateDraft}
+                onPersistDraftPatch={(updates, options) =>
+                  persistDraftPatch(updates, 1, options)
+                }
+              />
             )}
 
             {currentStep === 2 && (
-              <Step2FieldValidation draft={draft} onUpdateDraft={handleUpdateDraft} />
+              <Step2FieldValidation
+                draft={draft}
+                onUpdateDraft={handleUpdateDraft}
+                onPersistDraftPatch={(updates, options) =>
+                  persistDraftPatch(updates, 2, options)
+                }
+              />
             )}
 
             {currentStep === 3 && (
@@ -507,7 +574,13 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
             )}
 
             {currentStep === 4 && (
-              <Step4Issuance draft={draft} onUpdateDraft={handleUpdateDraft} />
+              <Step4Issuance
+                draft={draft}
+                onUpdateDraft={handleUpdateDraft}
+                onPersistDraftPatch={(updates, options) =>
+                  persistDraftPatch(updates, 4, options)
+                }
+              />
             )}
           </>
         )}

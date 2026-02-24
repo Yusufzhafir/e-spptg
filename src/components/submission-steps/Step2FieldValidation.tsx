@@ -79,6 +79,10 @@ interface EditingUtmField {
 interface Step2Props {
   draft: SubmissionDraft;
   onUpdateDraft: (updates: Partial<SubmissionDraft>) => void;
+  onPersistDraftPatch: (
+    updates: Partial<SubmissionDraft>,
+    options?: { silent?: boolean }
+  ) => Promise<void>;
 }
 
 type NewWitnessWithUsage = {
@@ -111,7 +115,11 @@ function hasValidPolygonCoordinates(coordinates: GeographicCoordinate[]): boolea
   return validCoordinates.length >= 3;
 }
 
-export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
+export function Step2FieldValidation({
+  draft,
+  onUpdateDraft,
+  onPersistDraftPatch,
+}: Step2Props) {
   const [isOverlapDialogOpen, setIsOverlapDialogOpen] = useState(false);
   const [isParsingKml, setIsParsingKml] = useState(false);
   const [recenterSignal, setRecenterSignal] = useState(() =>
@@ -1008,9 +1016,9 @@ export function Step2FieldValidation({ draft, onUpdateDraft }: Step2Props) {
         <FileUploadField
           label="Berita Acara Validasi Lapangan"
           value={draft.dokumenBeritaAcara}
-          onChange={(doc) => onUpdateDraft({ dokumenBeritaAcara: doc })}
+          onChange={(doc) => onPersistDraftPatch({ dokumenBeritaAcara: doc })}
           category="Berita Acara"
-          templateType="berita_acara_validasi_lapangan.pdf"
+          templateType="berita_acara_validasi_lapangan.docx"
           draftId={draft.id}
           accept=".pdf"
           maxSize={10}
