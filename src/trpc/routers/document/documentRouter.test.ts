@@ -228,6 +228,33 @@ describe('documentsRouter.getSignedDownloadUrl', () => {
     expect(result.signedUrl).toBe('https://signed.example.com/file2.pdf');
   });
 
+  it('returns signed URL for staff on accessible draft document', async () => {
+    getDocumentByIdMock.mockResolvedValue({
+      id: 7,
+      submissionId: null,
+      draftId: 200,
+      uploadedBy: 400,
+      url: 'https://example.com/bucket/draft-file.pdf',
+    } as DocumentRecord);
+    getDraftByIdMock.mockResolvedValue({
+      id: 200,
+      userId: 999,
+      villageId: 55,
+    } as DraftRecord);
+    extractS3KeyFromDocumentUrlMock.mockReturnValue('submissions/SPPG/draft-file.pdf');
+    getDownloadUrlMock.mockResolvedValue('https://signed.example.com/draft-file.pdf');
+
+    const caller = documentsRouter.createCaller(createCtx('Admin', 500, 55));
+    const result = await caller.getSignedDownloadUrl({ documentId: 7 });
+
+    expect(getDraftByIdMock).toHaveBeenCalledWith(200);
+    expect(getDownloadUrlMock).toHaveBeenCalledWith(
+      'submissions/SPPG/draft-file.pdf',
+      604800
+    );
+    expect(result.signedUrl).toBe('https://signed.example.com/draft-file.pdf');
+  });
+
   it('throws NOT_FOUND when viewer does not own submission', async () => {
     getDocumentByIdMock.mockResolvedValue({
       id: 8,
@@ -257,6 +284,23 @@ describe('documentsRouter.getSignedDownloadUrl', () => {
 
     await expect(promise).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(getSubmissionByIdMock).not.toHaveBeenCalled();
+  });
+
+  it('throws NOT_FOUND when draft linked to document is missing', async () => {
+    getDocumentByIdMock.mockResolvedValue({
+      id: 12,
+      submissionId: null,
+      draftId: 444,
+      uploadedBy: 1,
+      url: 'https://example.com/bucket/missing-draft-file.pdf',
+    } as DocumentRecord);
+    getDraftByIdMock.mockResolvedValue(null as never);
+
+    const caller = documentsRouter.createCaller(createCtx('Admin', 1, 55));
+    const promise = caller.getSignedDownloadUrl({ documentId: 12 });
+
+    await expect(promise).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(getDownloadUrlMock).not.toHaveBeenCalled();
   });
 
   it('throws NOT_FOUND when submission linked to document is missing', async () => {
@@ -296,6 +340,27 @@ describe('documentsRouter.getSignedDownloadUrl', () => {
     const promise = caller.getSignedDownloadUrl({ documentId: 10 });
 
     await expect(promise).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
+    expect(getDownloadUrlMock).not.toHaveBeenCalled();
+  });
+
+  it('throws NOT_FOUND when viewer does not own draft document', async () => {
+    getDocumentByIdMock.mockResolvedValue({
+      id: 13,
+      submissionId: null,
+      draftId: 555,
+      uploadedBy: 1,
+      url: 'https://example.com/bucket/foreign-draft-file.pdf',
+    } as DocumentRecord);
+    getDraftByIdMock.mockResolvedValue({
+      id: 555,
+      userId: 999,
+      villageId: 9,
+    } as DraftRecord);
+
+    const caller = documentsRouter.createCaller(createCtx('Viewer', 300));
+    const promise = caller.getSignedDownloadUrl({ documentId: 13 });
+
+    await expect(promise).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(getDownloadUrlMock).not.toHaveBeenCalled();
   });
 });

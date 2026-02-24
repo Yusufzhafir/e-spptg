@@ -247,25 +247,45 @@ export const documentsRouter = router({
     .input(z.object({ documentId: z.number().int() }))
     .mutation(async ({ ctx, input }) => {
       const document = await queries.getDocumentById(input.documentId);
-      if (!document || !document.submissionId) {
+      if (!document) {
         throw new TRPCError({
           code: 'NOT_FOUND',
           message: 'Dokumen tidak ditemukan',
         });
       }
 
-      const submission = await submissionQueries.getSubmissionById(document.submissionId);
-      if (!submission) {
+      if (document.submissionId) {
+        const submission = await submissionQueries.getSubmissionById(document.submissionId);
+        if (!submission) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Pengajuan tidak ditemukan',
+          });
+        }
+
+        assertCanAccessSubmission(ctx.appUser!, {
+          ownerUserId: submission.ownerUserId,
+          villageId: submission.villageId,
+        });
+      } else if (document.draftId) {
+        const draft = await draftQueries.getDraftById(document.draftId);
+        if (!draft) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Draft tidak ditemukan',
+          });
+        }
+
+        assertCanAccessDraft(ctx.appUser!, {
+          userId: draft.userId,
+          villageId: draft.villageId,
+        });
+      } else {
         throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Pengajuan tidak ditemukan',
+          code: 'FORBIDDEN',
+          message: 'Anda tidak memiliki akses ke dokumen ini',
         });
       }
-
-      assertCanAccessSubmission(ctx.appUser!, {
-        ownerUserId: submission.ownerUserId,
-        villageId: submission.villageId,
-      });
 
       try {
         const s3Key = extractS3KeyFromDocumentUrl(document.url);

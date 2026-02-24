@@ -156,20 +156,40 @@ export function FileUploadField({
   const handleRemove = async () => {
     if (!value) return;
 
+    const previousDocument = value;
     setIsDeleting(true);
     try {
-      if (value.documentId) {
-        await deleteDocumentById(value.documentId);
+      // Persist draft first so removed file does not linger in payload.
+      await onChange(undefined);
+
+      if (previousDocument.documentId) {
+        try {
+          await deleteDocumentById(previousDocument.documentId);
+        } catch (deleteError) {
+          // Roll back draft payload to keep UI and backend in sync.
+          try {
+            await onChange(previousDocument);
+          } catch (rollbackError) {
+            console.error('Rollback save error:', rollbackError);
+            toast.error(
+              'Gagal menghapus dokumen dan gagal mengembalikan data draf. Silakan muat ulang halaman.'
+            );
+            return;
+          }
+
+          console.error('Delete error:', deleteError);
+          toast.error('Gagal menghapus dokumen. Perubahan draf dibatalkan.');
+          return;
+        }
       }
 
-      await onChange(undefined);
       toast.info('Dokumen dihapus.');
     } catch (error: unknown) {
-      console.error('Delete error:', error);
+      console.error('Draft save before delete error:', error);
       if (error instanceof Error && error.message) {
         toast.error(error.message);
       } else {
-        toast.error('Gagal menghapus dokumen. Silakan coba lagi.');
+        toast.error('Gagal menyimpan perubahan draf sebelum menghapus dokumen.');
       }
     } finally {
       setIsDeleting(false);

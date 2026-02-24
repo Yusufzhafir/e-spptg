@@ -41,6 +41,7 @@ export function Step4Issuance({
   const createUploadUrlMutation = trpc.documents.createUploadUrl.useMutation();
   const uploadFileMutation = trpc.documents.uploadFile.useMutation();
   const deleteDocumentMutation = trpc.documents.delete.useMutation();
+  const openDocumentMutation = trpc.documents.getSignedDownloadUrl.useMutation();
   
   // New PDF generator hook (react-pdf based)
   const { generatePDF, isGenerating: isGeneratingPDF } = usePDFGenerator();
@@ -145,7 +146,6 @@ export function Step4Issuance({
         }
       }
 
-      setGeneratedPDFUrl(uploadResult.publicUrl);
       toast.success('Dokumen SPPTG berhasil diunggah.');
     } catch (error: unknown) {
       console.error('Upload error:', error);
@@ -163,21 +163,45 @@ export function Step4Issuance({
   const handleRemoveFile = async () => {
     if (!draft.dokumenSPPTG) return;
 
+    const previousDocument = draft.dokumenSPPTG;
     setIsDeleting(true);
     try {
-      if (draft.dokumenSPPTG.documentId) {
-        await deleteDocumentById(draft.dokumenSPPTG.documentId);
-      }
-
+      // Persist draft first so removed file URL is not left in payload.
       await onPersistDraftPatch({ dokumenSPPTG: undefined }, { silent: true });
       setGeneratedPDFUrl(null);
+
+      if (previousDocument.documentId) {
+        try {
+          await deleteDocumentById(previousDocument.documentId);
+        } catch (deleteError) {
+          // Roll back draft payload to keep UI and backend in sync.
+          try {
+            await onPersistDraftPatch(
+              { dokumenSPPTG: previousDocument },
+              { silent: true }
+            );
+            setGeneratedPDFUrl(previousDocument.url ?? null);
+          } catch (rollbackError) {
+            console.error('Rollback save error:', rollbackError);
+            toast.error(
+              'Gagal menghapus dokumen dan gagal mengembalikan data draf. Silakan muat ulang halaman.'
+            );
+            return;
+          }
+
+          console.error('Remove file delete error:', deleteError);
+          toast.error('Gagal menghapus dokumen SPPTG. Perubahan draf dibatalkan.');
+          return;
+        }
+      }
+
       toast.info('Dokumen SPPTG dihapus.');
     } catch (error: unknown) {
-      console.error('Remove file error:', error);
+      console.error('Remove file draft save error:', error);
       if (error instanceof Error && error.message) {
         toast.error(error.message);
       } else {
-        toast.error('Gagal menghapus dokumen SPPTG. Silakan coba lagi.');
+        toast.error('Gagal menyimpan perubahan draf sebelum menghapus dokumen SPPTG.');
       }
     } finally {
       setIsDeleting(false);
@@ -313,8 +337,6 @@ export function Step4Issuance({
         }
       }
 
-      setGeneratedPDFUrl(uploadResult.publicUrl);
-
       toast.success('PDF SPPTG berhasil dibuat dan diunggah.');
     } catch (error: unknown) {
       console.error('PDF generation error:', error);
@@ -329,37 +351,63 @@ export function Step4Issuance({
   /**
    * Download generated PDF
    */
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     if (!draft.dokumenSPPTG?.url && !generatedPDFUrl) {
       toast.error('Dokumen SPPTG belum tersedia');
       return;
     }
 
-    const url = generatedPDFUrl || draft.dokumenSPPTG?.url;
-    if (!url) return;
-
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = draft.dokumenSPPTG?.name || 'SPPTG.pdf';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    toast.success('SPPTG sedang diunduh');
+    try {
+      if (draft.dokumenSPPTG?.documentId) {
+        const { signedUrl } = await openDocumentMutation.mutateAsync({
+          documentId: draft.dokumenSPPTG.documentId,
+        });
+        const link = document.createElement('a');
+        link.href = signedUrl;
+        link.download = draft.dokumenSPPTG?.name || 'SPPTG.pdf';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        const url = generatedPDFUrl || draft.dokumenSPPTG?.url;
+        if (!url) return;
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = draft.dokumenSPPTG?.name || 'SPPTG.pdf';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+      toast.success('SPPTG sedang diunduh');
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Gagal mengunduh dokumen SPPTG.');
+    }
   };
 
   /**
    * Preview PDF in new window
    */
-  const handlePreviewPDF = () => {
+  const handlePreviewPDF = async () => {
     if (!draft.dokumenSPPTG?.url && !generatedPDFUrl) {
       toast.error('Dokumen SPPTG belum tersedia');
       return;
     }
 
-    const url = generatedPDFUrl || draft.dokumenSPPTG?.url;
-    if (url) {
-      window.open(url, '_blank');
+    try {
+      if (draft.dokumenSPPTG?.documentId) {
+        const { signedUrl } = await openDocumentMutation.mutateAsync({
+          documentId: draft.dokumenSPPTG.documentId,
+        });
+        window.open(signedUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
+      const url = generatedPDFUrl || draft.dokumenSPPTG?.url;
+      if (url) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Gagal membuka dokumen SPPTG.');
     }
   };
 
@@ -474,7 +522,8 @@ export function Step4Issuance({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={handlePreviewPDF}
+                          onClick={() => void handlePreviewPDF()}
+                          disabled={openDocumentMutation.isPending || isUploading || isDeleting}
                           className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                         >
                           <Eye className="w-4 h-4" />
@@ -482,7 +531,8 @@ export function Step4Issuance({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={handleDownloadPDF}
+                          onClick={() => void handleDownloadPDF()}
+                          disabled={openDocumentMutation.isPending || isUploading || isDeleting}
                           className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                         >
                           <Download className="w-4 h-4" />
@@ -619,14 +669,24 @@ export function Step4Issuance({
           </div>
 
           <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button variant="outline" className="w-full" onClick={handleDownloadPDF}>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => void handleDownloadPDF()}
+              disabled={openDocumentMutation.isPending || isUploading || isDeleting}
+            >
               <Download className="w-4 h-4 mr-2" />
               Unduh SPPTG
             </Button>
-            <Button variant="outline" className="w-full" onClick={() => {
-              handlePreviewPDF();
-              window.print();
-            }}>
+            <Button
+              variant="outline"
+              className="w-full"
+              disabled={openDocumentMutation.isPending || isUploading || isDeleting}
+              onClick={() => {
+                void handlePreviewPDF();
+                window.print();
+              }}
+            >
               <Printer className="w-4 h-4 mr-2" />
               Cetak
             </Button>

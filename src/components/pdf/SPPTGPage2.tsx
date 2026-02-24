@@ -56,6 +56,11 @@ const WitnessCell: React.FC<{
 export const SPPTGPage2: React.FC<PageProps> = ({ data, config }) => {
   // Format date
   const formattedDate = formatIndonesianDate(data.tanggalPernyataan);
+  const declarationLocation =
+    [data.namaDesa, data.kecamatan]
+      .map((value) => value?.trim())
+      .filter(Boolean)
+      .join(', ') || '-';
 
   // Get witnesses (up to 8)
   const witnesses = data.saksiList.slice(0, 8);
@@ -105,7 +110,8 @@ export const SPPTGPage2: React.FC<PageProps> = ({ data, config }) => {
       {/* Location and Date */}
       <Text style={styles.text}>
         Dibuat di{' '}
-        <Text style={{ fontFamily: 'Times-Bold' }}>{data.namaDesa}</Text> pada
+        <Text style={{ fontFamily: 'Times-Bold' }}>{declarationLocation}</Text>{' '}
+        pada
         tanggal{' '}
         <Text style={{ fontFamily: 'Times-Bold' }}>{formattedDate}</Text>
       </Text>
@@ -115,8 +121,12 @@ export const SPPTGPage2: React.FC<PageProps> = ({ data, config }) => {
       {/* Declarant Signature */}
       <View style={styles.signature}>
         <Text style={styles.signatureLabel}>Yang membuat pernyataan</Text>
-        <View style={styles.spacerLarge} />
-        <View style={styles.spacerLarge} />
+        <View style={styles.declarantSigningArea}>
+          <View style={[styles.meteraiBox, styles.meteraiOffsetLeft]}>
+            <Text style={styles.meteraiText}>Meterai</Text>
+            <Text style={styles.meteraiText}>Rp10.000</Text>
+          </View>
+        </View>
         <Text style={styles.signatureValue}>{data.namaPemohon}</Text>
       </View>
 
