@@ -22,15 +22,25 @@ import { buildSPPTGPDFData } from '@/lib/spptg-pdf-data';
 interface Step4Props {
   draft: SubmissionDraft;
   onUpdateDraft: (updates: Partial<SubmissionDraft>) => void;
+  onPersistDraftPatch: (
+    updates: Partial<SubmissionDraft>,
+    options?: { silent?: boolean }
+  ) => Promise<void>;
 }
 
-export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
+export function Step4Issuance({
+  draft,
+  onUpdateDraft,
+  onPersistDraftPatch,
+}: Step4Props) {
   const [isSuccessDialogOpen, setIsSuccessDialogOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [generatedPDFUrl, setGeneratedPDFUrl] = useState<string | null>(null);
 
   const createUploadUrlMutation = trpc.documents.createUploadUrl.useMutation();
   const uploadFileMutation = trpc.documents.uploadFile.useMutation();
+  const deleteDocumentMutation = trpc.documents.delete.useMutation();
   
   // New PDF generator hook (react-pdf based)
   const { generatePDF, isGenerating: isGeneratingPDF } = usePDFGenerator();
@@ -40,6 +50,10 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
     { id: draft.villageId! },
     { enabled: !!draft.villageId }
   );
+
+  const deleteDocumentById = async (documentId: number) => {
+    await deleteDocumentMutation.mutateAsync({ documentId });
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -64,6 +78,7 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
     }
 
     setIsUploading(true);
+    const previousDocumentId = draft.dokumenSPPTG?.documentId;
     try {
       // Step 1: Create document record and get s3Key
       const { documentId, s3Key } = await createUploadUrlMutation.mutateAsync({
@@ -91,15 +106,46 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
         size: file.size,
       });
 
-      onUpdateDraft({
-        dokumenSPPTG: {
-          name: file.name,
-          size: file.size,
-          url: uploadResult.publicUrl,
-          uploadedAt: new Date().toISOString(),
-          documentId,
-        },
-      });
+      try {
+        await onPersistDraftPatch(
+          {
+            dokumenSPPTG: {
+              name: file.name,
+              size: file.size,
+              url: uploadResult.publicUrl,
+              uploadedAt: new Date().toISOString(),
+              documentId,
+            },
+          },
+          { silent: true }
+        );
+      } catch (saveError) {
+        try {
+          await deleteDocumentById(documentId);
+        } catch (rollbackError) {
+          console.error('Rollback delete error:', rollbackError);
+          toast.error(
+            'Unggahan dibatalkan, tetapi gagal membersihkan file sementara. Hubungi administrator.'
+          );
+        }
+
+        throw new Error(
+          saveError instanceof Error
+            ? saveError.message
+            : 'Gagal menyimpan draf setelah upload'
+        );
+      }
+
+      if (previousDocumentId && previousDocumentId !== documentId) {
+        try {
+          await deleteDocumentById(previousDocumentId);
+        } catch (cleanupError) {
+          console.error('Replace cleanup error:', cleanupError);
+          toast.info('Dokumen baru tersimpan, tetapi dokumen lama gagal dihapus.');
+        }
+      }
+
+      setGeneratedPDFUrl(uploadResult.publicUrl);
       toast.success('Dokumen SPPTG berhasil diunggah.');
     } catch (error: unknown) {
       console.error('Upload error:', error);
@@ -114,9 +160,28 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
     }
   };
 
-  const handleRemoveFile = () => {
-    onUpdateDraft({ dokumenSPPTG: undefined });
-    toast.info('Dokumen SPPTG dihapus.');
+  const handleRemoveFile = async () => {
+    if (!draft.dokumenSPPTG) return;
+
+    setIsDeleting(true);
+    try {
+      if (draft.dokumenSPPTG.documentId) {
+        await deleteDocumentById(draft.dokumenSPPTG.documentId);
+      }
+
+      await onPersistDraftPatch({ dokumenSPPTG: undefined }, { silent: true });
+      setGeneratedPDFUrl(null);
+      toast.info('Dokumen SPPTG dihapus.');
+    } catch (error: unknown) {
+      console.error('Remove file error:', error);
+      if (error instanceof Error && error.message) {
+        toast.error(error.message);
+      } else {
+        toast.error('Gagal menghapus dokumen SPPTG. Silakan coba lagi.');
+      }
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const formatFileSize = (bytes: number) => {
@@ -152,12 +217,12 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
       return;
     }
 
+    const previousDocumentId = draft.dokumenSPPTG?.documentId;
     try {
       // Auto-generate certificate number if not set
       let certificateNumber = draft.nomorSPPTG;
       if (!certificateNumber) {
         certificateNumber = generateCertificateNumber(1, '00.00');
-        onUpdateDraft({ nomorSPPTG: certificateNumber });
         toast.info(`Nomor SPPTG otomatis dihasilkan: ${certificateNumber}`);
       }
 
@@ -165,7 +230,6 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
       let issueDate = draft.tanggalTerbit;
       if (!issueDate) {
         issueDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-        onUpdateDraft({ tanggalTerbit: issueDate });
         toast.info(`Tanggal terbit otomatis diset: ${new Date(issueDate).toLocaleDateString('id-ID')}`);
       }
 
@@ -208,18 +272,48 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
         size: result.size,
       });
 
-      // Update draft with generated document
-      onUpdateDraft({
-        dokumenSPPTG: {
-          name: filename,
-          size: result.size,
-          url: uploadResult.publicUrl,
-          uploadedAt: new Date().toISOString(),
-          documentId,
-        },
-        nomorSPPTG: certificateNumber,
-        tanggalTerbit: issueDate,
-      });
+      try {
+        await onPersistDraftPatch(
+          {
+            dokumenSPPTG: {
+              name: filename,
+              size: result.size,
+              url: uploadResult.publicUrl,
+              uploadedAt: new Date().toISOString(),
+              documentId,
+            },
+            nomorSPPTG: certificateNumber,
+            tanggalTerbit: issueDate,
+          },
+          { silent: true }
+        );
+      } catch (saveError) {
+        try {
+          await deleteDocumentById(documentId);
+        } catch (rollbackError) {
+          console.error('Rollback delete error:', rollbackError);
+          toast.error(
+            'Generate dibatalkan, tetapi gagal membersihkan file sementara. Hubungi administrator.'
+          );
+        }
+
+        throw new Error(
+          saveError instanceof Error
+            ? saveError.message
+            : 'Gagal menyimpan draf setelah generate'
+        );
+      }
+
+      if (previousDocumentId && previousDocumentId !== documentId) {
+        try {
+          await deleteDocumentById(previousDocumentId);
+        } catch (cleanupError) {
+          console.error('Generate replace cleanup error:', cleanupError);
+          toast.info('Dokumen baru tersimpan, tetapi dokumen lama gagal dihapus.');
+        }
+      }
+
+      setGeneratedPDFUrl(uploadResult.publicUrl);
 
       toast.success('PDF SPPTG berhasil dibuat dan diunggah.');
     } catch (error: unknown) {
@@ -306,7 +400,7 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
               </div>
               <Button
                 onClick={handleGeneratePDF}
-                disabled={isGeneratingPDF || isUploading}
+                disabled={isGeneratingPDF || isUploading || isDeleting}
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 {isGeneratingPDF ? (
@@ -349,14 +443,14 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
                     className="hidden"
                     accept=".pdf"
                     onChange={handleFileUpload}
-                    disabled={isUploading}
+                    disabled={isUploading || isDeleting}
                   />
                 </label>
 
-                {isUploading && (
+                {(isUploading || isDeleting) && (
                   <div className="flex items-center gap-2 text-sm text-gray-600 mt-2">
                     <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-blue-600" />
-                    <span>Mengunggah dokumen...</span>
+                    <span>{isUploading ? 'Mengunggah dokumen...' : 'Menghapus dokumen...'}</span>
                   </div>
                 )}
               </div>
@@ -405,12 +499,14 @@ export function Step4Issuance({ draft, onUpdateDraft }: Step4Props) {
                         className="hidden"
                         accept=".pdf"
                         onChange={handleFileUpload}
+                        disabled={isUploading || isDeleting}
                       />
                     </label>
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={handleRemoveFile}
+                      onClick={() => void handleRemoveFile()}
+                      disabled={isUploading || isDeleting}
                       className="text-red-600 hover:text-red-700 hover:bg-red-50"
                     >
                       <X className="w-4 h-4" />

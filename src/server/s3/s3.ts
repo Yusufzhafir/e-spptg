@@ -2,6 +2,7 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import crypto from 'crypto';
@@ -70,6 +71,52 @@ export async function uploadFileToS3(
   } catch (error) {
     console.error('Error uploading file to S3:', error);
     throw new Error(`Failed to upload file to S3: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+function isS3NotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const err = error as {
+    name?: string;
+    code?: string;
+    Code?: string;
+    $metadata?: { httpStatusCode?: number };
+  };
+
+  const errorCode = err.name ?? err.code ?? err.Code;
+  return (
+    errorCode === 'NoSuchKey' ||
+    errorCode === 'NotFound' ||
+    err.$metadata?.httpStatusCode === 404
+  );
+}
+
+/**
+ * Delete file object from S3-compatible storage
+ */
+export async function deleteFileFromS3(s3Key: string): Promise<void> {
+  try {
+    const command = new DeleteObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME!,
+      Key: s3Key,
+    });
+
+    await s3Client.send(command);
+  } catch (error) {
+    // Missing objects are safe to treat as deleted
+    if (isS3NotFoundError(error)) {
+      return;
+    }
+
+    console.error('Error deleting file from S3:', error);
+    throw new Error(
+      `Failed to delete file from S3: ${
+        error instanceof Error ? error.message : 'Unknown error'
+      }`
+    );
   }
 }
 
