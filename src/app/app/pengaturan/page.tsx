@@ -3,7 +3,7 @@
 import { Settings } from '@/components/Settings';
 import { RequireRole } from '@/components/RequireRole';
 import { trpc } from '@/trpc/client';
-import { User, Village, ProhibitedArea } from '@/types';
+import { GeoJSONPolygon, User, Village, ProhibitedArea } from '@/types';
 import { useMemo } from 'react';
 import { toast } from 'sonner';
 import { CreateProhibitedAreaInput, UpdateProhibitedAreaInput } from '@/types/prohibitedAreas';
@@ -73,6 +73,28 @@ export default function PengaturanPage() {
     },
     onError: (error) => {
       toast.error(error.message || 'Gagal menghapus desa.');
+    },
+  });
+
+  const upsertVillageBoundaryMutation = trpc.villageBoundaries.upsert.useMutation({
+    onSuccess: () => {
+      toast.success('Batas desa berhasil disimpan.');
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Gagal menyimpan batas desa.');
+    },
+  });
+
+  const deleteVillageBoundaryMutation = trpc.villageBoundaries.delete.useMutation({
+    onSuccess: (result) => {
+      if (result.deleted) {
+        toast.success('Batas desa berhasil dihapus.');
+      } else {
+        toast.info('Batas desa tidak ditemukan.');
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Gagal menghapus batas desa.');
     },
   });
 
@@ -220,6 +242,17 @@ export default function PengaturanPage() {
     deleteVillageMutation.mutate({ id });
   };
 
+  const handleUpsertVillageBoundary = async (data: {
+    villageId: number;
+    geomGeoJSON: GeoJSONPolygon;
+  }) => {
+    await upsertVillageBoundaryMutation.mutateAsync(data);
+  };
+
+  const handleDeleteVillageBoundary = async (villageId: number) => {
+    await deleteVillageBoundaryMutation.mutateAsync({ villageId });
+  };
+
   const handleCreateProhibitedArea = (data: CreateProhibitedAreaInput) => {
     createProhibitedAreaMutation.mutate(data);
   };
@@ -276,11 +309,15 @@ export default function PengaturanPage() {
         onCreateVillage={handleCreateVillage}
         onUpdateVillage={handleUpdateVillage}
         onDeleteVillage={handleDeleteVillage}
+        onUpsertVillageBoundary={handleUpsertVillageBoundary}
+        onDeleteVillageBoundary={handleDeleteVillageBoundary}
         onCreateProhibitedArea={handleCreateProhibitedArea}
         onUpdateProhibitedArea={handleUpdateProhibitedArea}
         isCreatingVillage={createVillageMutation.isPending}
         isUpdatingVillage={updateVillageMutation.isPending}
         isDeletingVillage={deleteVillageMutation.isPending}
+        isUpsertingVillageBoundary={upsertVillageBoundaryMutation.isPending}
+        isDeletingVillageBoundary={deleteVillageBoundaryMutation.isPending}
         isCreatingProhibitedArea={createProhibitedAreaMutation.isPending}
         isUpdatingProhibitedArea={updateProhibitedAreaMutation.isPending}
         currentUserId={currentUser?.id}

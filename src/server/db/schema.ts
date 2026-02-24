@@ -7,6 +7,7 @@ import {
   boolean,
   jsonb,
   index,
+  uniqueIndex,
   geometry,
   pgEnum,
   bigint,
@@ -149,6 +150,32 @@ export const villages = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
+);
+
+// ============================================================================
+// VILLAGE BOUNDARIES TABLE (with PostGIS Geometry)
+// ============================================================================
+
+export const villageBoundaries = pgTable(
+  'village_boundaries',
+  {
+    id: bigint({ mode: 'number' }).primaryKey().generatedByDefaultAsIdentity({
+      name: 'village_boundaries_id_seq',
+      startWith: 1,
+      increment: 1,
+      minValue: 1,
+      maxValue: (9223372036854775807n) as unknown as number,
+      cache: 1,
+    }),
+    villageId: bigint('village_id', { mode: 'number' }).notNull(),
+    geom: geometry('geom', { type: 'polygon', srid: 4326 }).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex('village_boundaries_village_id_unique').on(t.villageId),
+    index('village_boundaries_geom_idx').using('gist', t.geom),
+  ]
 );
 
 // ============================================================================

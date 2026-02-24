@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { UsersTab } from './UsersTab';
 import { VillagesTab } from './VillagesTab';
 import { ProhibitedAreasTab } from './ProhibitedAreasTab';
-import { User, Village, ProhibitedArea } from '../types';
+import { GeoJSONPolygon, User, Village, ProhibitedArea } from '../types';
 import { CreateProhibitedAreaInput, UpdateProhibitedAreaInput } from '@/types/prohibitedAreas';
 import { useAuthRole } from './AuthRoleProvider';
 
@@ -48,6 +48,11 @@ interface SettingsProps {
   onCreateVillage?: (data: CreateVillageInput) => void;
   onUpdateVillage?: (id: number, data: UpdateVillageInput) => void;
   onDeleteVillage?: (id: number) => void;
+  onUpsertVillageBoundary?: (data: {
+    villageId: number;
+    geomGeoJSON: GeoJSONPolygon;
+  }) => Promise<void> | void;
+  onDeleteVillageBoundary?: (villageId: number) => Promise<void> | void;
   // Prohibited area mutation callbacks
   onCreateProhibitedArea: (data: CreateProhibitedAreaInput) => void;
   onUpdateProhibitedArea: (id: number, data: UpdateProhibitedAreaInput) => void;
@@ -55,6 +60,8 @@ interface SettingsProps {
   isCreatingVillage?: boolean;
   isUpdatingVillage?: boolean;
   isDeletingVillage?: boolean;
+  isUpsertingVillageBoundary?: boolean;
+  isDeletingVillageBoundary?: boolean;
   isCreatingProhibitedArea?: boolean;
   isUpdatingProhibitedArea?: boolean;
   // Current user ID
@@ -73,11 +80,15 @@ export function Settings({
   onCreateVillage,
   onUpdateVillage,
   onDeleteVillage,
+  onUpsertVillageBoundary,
+  onDeleteVillageBoundary,
   onCreateProhibitedArea,
   onUpdateProhibitedArea,
   isCreatingVillage = false,
   isUpdatingVillage = false,
   isDeletingVillage = false,
+  isUpsertingVillageBoundary = false,
+  isDeletingVillageBoundary = false,
   isCreatingProhibitedArea = false,
   isUpdatingProhibitedArea = false,
   currentUserId,
@@ -162,9 +173,13 @@ export function Settings({
               onCreateVillage={onCreateVillage}
               onUpdateVillage={onUpdateVillage}
               onDeleteVillage={onDeleteVillage}
+              onUpsertVillageBoundary={onUpsertVillageBoundary}
+              onDeleteVillageBoundary={onDeleteVillageBoundary}
               isCreating={isCreatingVillage}
               isUpdating={isUpdatingVillage}
               isDeleting={isDeletingVillage}
+              isUpsertingBoundary={isUpsertingVillageBoundary}
+              isDeletingBoundary={isDeletingVillageBoundary}
             />
           </TabsContent>
         )}

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Village } from '../types';
+import { GeoJSONPolygon, Village } from '../types';
+import { parseKMLFile, parseKMZFile } from '../lib/kmz-parser';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -36,7 +37,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from './ui/alert-dialog';
-import { Search, Plus, Edit, Trash2, Upload } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, Upload, Map } from 'lucide-react';
 import { toast } from 'sonner';
 
 type CreateVillageInput = {
@@ -60,9 +61,16 @@ interface VillagesTabProps {
   onCreateVillage?: (data: CreateVillageInput) => void;
   onUpdateVillage?: (id: number, data: UpdateVillageInput) => void;
   onDeleteVillage?: (id: number) => void;
+  onUpsertVillageBoundary?: (data: {
+    villageId: number;
+    geomGeoJSON: GeoJSONPolygon;
+  }) => Promise<void> | void;
+  onDeleteVillageBoundary?: (villageId: number) => Promise<void> | void;
   isCreating?: boolean;
   isUpdating?: boolean;
   isDeleting?: boolean;
+  isUpsertingBoundary?: boolean;
+  isDeletingBoundary?: boolean;
 }
 
 export function VillagesTab({ 
@@ -71,9 +79,13 @@ export function VillagesTab({
   onCreateVillage,
   onUpdateVillage,
   onDeleteVillage,
+  onUpsertVillageBoundary,
+  onDeleteVillageBoundary,
   isCreating = false,
   isUpdating = false,
   isDeleting = false,
+  isUpsertingBoundary = false,
+  isDeletingBoundary = false,
 }: VillagesTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [kecamatanFilter, setKecamatanFilter] = useState<string>('all');
@@ -81,8 +93,13 @@ export function VillagesTab({
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isBoundaryDialogOpen, setIsBoundaryDialogOpen] = useState(false);
+  const [isBoundaryParsing, setIsBoundaryParsing] = useState(false);
   const [selectedVillage, setSelectedVillage] = useState<Village | null>(null);
   const [formData, setFormData] = useState<Partial<Village>>({});
+  const [boundaryFileName, setBoundaryFileName] = useState<string | null>(null);
+  const [boundaryPointCount, setBoundaryPointCount] = useState<number | null>(null);
+  const [pendingBoundaryGeoJSON, setPendingBoundaryGeoJSON] = useState<GeoJSONPolygon | null>(null);
 
   // Get unique kecamatan for filter
   const kecamatanOptions = Array.from(new Set(villages.map((v) => v.kecamatan))).sort();
@@ -115,6 +132,14 @@ export function VillagesTab({
   const handleDeleteVillage = (village: Village) => {
     setSelectedVillage(village);
     setIsDeleteDialogOpen(true);
+  };
+
+  const handleManageBoundary = (village: Village) => {
+    setSelectedVillage(village);
+    setBoundaryFileName(null);
+    setBoundaryPointCount(null);
+    setPendingBoundaryGeoJSON(null);
+    setIsBoundaryDialogOpen(true);
   };
 
   const handleSaveVillage = () => {
@@ -251,6 +276,91 @@ export function VillagesTab({
     }
   };
 
+  const handleBoundaryFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const fileName = file.name.toLowerCase();
+    if (!fileName.endsWith('.kml') && !fileName.endsWith('.kmz')) {
+      toast.error('Format tidak didukung. Unggah file .kml atau .kmz');
+      return;
+    }
+
+    setIsBoundaryParsing(true);
+    setBoundaryFileName(null);
+    setBoundaryPointCount(null);
+    setPendingBoundaryGeoJSON(null);
+
+    try {
+      const result = fileName.endsWith('.kmz')
+        ? await parseKMZFile(file)
+        : await parseKMLFile(file);
+
+      if (!result.success || !result.geoJSON) {
+        toast.error(result.error || 'Gagal memproses file batas desa');
+        return;
+      }
+
+      setPendingBoundaryGeoJSON(result.geoJSON);
+      setBoundaryFileName(file.name);
+      setBoundaryPointCount(result.coordinates.length);
+      toast.success('File batas desa berhasil diparse.');
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? `Gagal memproses file: ${error.message}`
+          : 'Gagal memproses file batas desa'
+      );
+    } finally {
+      setIsBoundaryParsing(false);
+      event.target.value = '';
+    }
+  };
+
+  const handleSaveBoundary = async () => {
+    if (!selectedVillage || !pendingBoundaryGeoJSON) {
+      toast.error('Unggah file batas desa terlebih dahulu.');
+      return;
+    }
+
+    if (!onUpsertVillageBoundary) {
+      toast.error('Fitur simpan batas desa belum tersedia.');
+      return;
+    }
+
+    try {
+      await onUpsertVillageBoundary({
+        villageId: selectedVillage.id,
+        geomGeoJSON: pendingBoundaryGeoJSON,
+      });
+      setIsBoundaryDialogOpen(false);
+      setSelectedVillage(null);
+      setPendingBoundaryGeoJSON(null);
+      setBoundaryFileName(null);
+      setBoundaryPointCount(null);
+    } catch {
+      // Toast is handled by mutation caller.
+    }
+  };
+
+  const handleDeleteBoundary = async () => {
+    if (!selectedVillage) return;
+
+    if (!onDeleteVillageBoundary) {
+      toast.error('Fitur hapus batas desa belum tersedia.');
+      return;
+    }
+
+    try {
+      await onDeleteVillageBoundary(selectedVillage.id);
+      setPendingBoundaryGeoJSON(null);
+      setBoundaryFileName(null);
+      setBoundaryPointCount(null);
+    } catch {
+      // Toast is handled by mutation caller.
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Controls */}
@@ -340,6 +450,14 @@ export function VillagesTab({
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleManageBoundary(village)}
+                        title="Kelola batas desa"
+                      >
+                        <Map className="h-4 w-4" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -639,6 +757,87 @@ export function VillagesTab({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Village Boundary Dialog */}
+      <Dialog
+        open={isBoundaryDialogOpen}
+        onOpenChange={(open) => {
+          setIsBoundaryDialogOpen(open);
+          if (!open) {
+            setSelectedVillage(null);
+            setPendingBoundaryGeoJSON(null);
+            setBoundaryFileName(null);
+            setBoundaryPointCount(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[620px]">
+          <DialogHeader>
+            <DialogTitle>Kelola Batas Desa</DialogTitle>
+            <DialogDescription>
+              Unggah file KML/KMZ untuk desa {selectedVillage?.namaDesa ?? '-'}.
+              File harus berisi tepat 1 polygon.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="boundary-file">File Batas Desa (KML/KMZ)</Label>
+              <Input
+                id="boundary-file"
+                type="file"
+                accept=".kml,.kmz"
+                onChange={handleBoundaryFileUpload}
+                disabled={isBoundaryParsing || isUpsertingBoundary}
+              />
+              <p className="text-xs text-gray-500">
+                Format yang didukung: .kml, .kmz. Geometri harus Polygon tunggal (WGS84/EPSG:4326).
+              </p>
+            </div>
+
+            {isBoundaryParsing && (
+              <p className="text-sm text-blue-600">Memproses file batas desa...</p>
+            )}
+
+            {pendingBoundaryGeoJSON && (
+              <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-900">
+                <p>
+                  File siap disimpan: <strong>{boundaryFileName}</strong>
+                </p>
+                <p>
+                  Jumlah titik terdeteksi: <strong>{boundaryPointCount ?? '-'}</strong>
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button
+              variant="outline"
+              onClick={handleDeleteBoundary}
+              disabled={!selectedVillage || !onDeleteVillageBoundary || isDeletingBoundary}
+            >
+              {isDeletingBoundary ? 'Menghapus...' : 'Hapus Batas Desa'}
+            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setIsBoundaryDialogOpen(false)}
+                disabled={isBoundaryParsing || isUpsertingBoundary}
+              >
+                Batal
+              </Button>
+              <Button
+                onClick={handleSaveBoundary}
+                className="bg-blue-600 hover:bg-blue-700"
+                disabled={!pendingBoundaryGeoJSON || isBoundaryParsing || isUpsertingBoundary}
+              >
+                {isUpsertingBoundary ? 'Menyimpan...' : 'Simpan Batas Desa'}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Import CSV Dialog */}
       <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>

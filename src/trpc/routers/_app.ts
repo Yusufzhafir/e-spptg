@@ -5,6 +5,7 @@ import { documentsRouter } from './document/documentRouter';
 import { submissionsRouter } from './submissions/submissionsRouter';
 import { prohibitedAreasRouter } from './prohibitedAreas/prohibitedAreasRouter';
 import { villagesRouter } from './villages/villagesRouter';
+import { villageBoundariesRouter } from './villageBoundaries/villageBoundariesRouter';
 import { usersRouter } from './users/usersRouter';
 
 export const appRouter = router({
@@ -14,6 +15,7 @@ export const appRouter = router({
   submissions: submissionsRouter,
   prohibitedAreas: prohibitedAreasRouter,
   villages: villagesRouter,
+  villageBoundaries: villageBoundariesRouter,
   users: usersRouter,
 });
 

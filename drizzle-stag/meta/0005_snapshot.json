@@ -1,6 +1,6 @@
 {
-  "id": "c8621be5-1873-43cb-a82d-1368ef6a967f",
-  "prevId": "525f1c93-e92e-4122-af2c-8c9ffc9e07b8",
+  "id": "f7ffa3a0-631b-40bc-9f02-d9bc6403dba8",
+  "prevId": "c8621be5-1873-43cb-a82d-1368ef6a967f",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -337,6 +337,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "village_id": {
+          "name": "village_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
         "current_step": {
           "name": "current_step",
           "type": "integer",
@@ -372,7 +378,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "submission_drafts_village_idx": {
+          "name": "submission_drafts_village_idx",
+          "columns": [
+            {
+              "expression": "village_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -498,6 +520,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "owner_user_id": {
+          "name": "owner_user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
         "verifikator": {
           "name": "verifikator",
           "type": "bigint",
@@ -546,6 +574,36 @@
           "isUnique": false,
           "concurrently": false,
           "method": "gist",
+          "with": {}
+        },
+        "submissions_owner_user_idx": {
+          "name": "submissions_owner_user_idx",
+          "columns": [
+            {
+              "expression": "owner_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "submissions_village_idx": {
+          "name": "submissions_village_idx",
+          "columns": [
+            {
+              "expression": "villageId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
           "with": {}
         }
       },
@@ -715,6 +773,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "assigned_village_id": {
+          "name": "assigned_village_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
         "status": {
           "name": "status",
           "type": "user_status",
@@ -750,7 +814,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "users_assigned_village_idx": {
+          "name": "users_assigned_village_idx",
+          "columns": [
+            {
+              "expression": "assigned_village_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
@@ -762,6 +842,93 @@
           ]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.village_boundaries": {
+      "name": "village_boundaries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "village_boundaries_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "village_id": {
+          "name": "village_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "geom": {
+          "name": "geom",
+          "type": "geometry(point)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "village_boundaries_village_id_unique": {
+          "name": "village_boundaries_village_id_unique",
+          "columns": [
+            {
+              "expression": "village_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "village_boundaries_geom_idx": {
+          "name": "village_boundaries_geom_idx",
+          "columns": [
+            {
+              "expression": "geom",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gist",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

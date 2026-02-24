@@ -37,6 +37,7 @@ import { CheckCircle2, XCircle, MapPin, AlertTriangle, Upload, File, X } from 'l
 import { toast } from 'sonner';
 import { ReadOnlyMap } from '@/components/maps/ReadOnlyMap';
 import { coordinatesToGeoJSON } from '@/lib/map-utils';
+import { trpc } from '@/trpc/client';
 
 interface Step3Props {
   draft: SubmissionDraft;
@@ -94,6 +95,12 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
   const [isOverlapDetailOpen, setIsOverlapDetailOpen] = useState(false);
   const [isHistoryDialogOpen, setIsHistoryDialogOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+
+  const villageBoundaryQuery = trpc.villageBoundaries.byVillageId.useQuery(
+    { villageId: draft.villageId! },
+    { enabled: !!draft.villageId }
+  );
+  const villageBoundaryGeoJSON = villageBoundaryQuery.data?.geomGeoJSON ?? null;
 
   const hasOverlap = draft.overlapResults && draft.overlapResults.length > 0;
   const requiresFeedback = selectedStatus === 'SPPTG ditolak' || selectedStatus === 'SPPTG ditinjau ulang';
@@ -316,8 +323,8 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
               <p className="text-sm text-gray-500">Belum ada saksi</p>
             ) : (
               <div className="space-y-2">
-                {draft.saksiList.map((saksi) => (
-                  <div key={saksi.id} className="flex items-start justify-between gap-3 text-sm">
+                {draft.saksiList.map((saksi,i) => (
+                  <div key={`${saksi.id}-${i}`} className="flex items-start justify-between gap-3 text-sm">
                     <div>
                       <p className="text-gray-900">{saksi.nama}</p>
                       <p className="text-xs text-gray-600">
@@ -399,9 +406,21 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
           {/* Map Preview */}
           <div>
             <h3 className="text-gray-900 mb-3">Peta Lahan yang Diajukan</h3>
+            {draft.villageId ? (
+              villageBoundaryQuery.isLoading ? (
+                <p className="text-xs text-gray-500 mb-2">Memuat batas desa...</p>
+              ) : villageBoundaryGeoJSON ? (
+                <p className="text-xs text-green-700 mb-2">
+                  Batas desa ditampilkan sebagai panduan visual.
+                </p>
+              ) : (
+                <p className="text-xs text-amber-700 mb-2">Batas desa belum tersedia.</p>
+              )
+            ) : null}
             {mapPreviewSubmission ? (
               <ReadOnlyMap
                 submissions={[mapPreviewSubmission]}
+                villageBoundaryGeoJSON={villageBoundaryGeoJSON}
                 selectedSubmission={mapPreviewSubmission}
                 height="24rem"
                 zoom={16}

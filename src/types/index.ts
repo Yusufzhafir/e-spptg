@@ -106,6 +106,14 @@ export interface Village {
   jumlahPengajuan: number;
 }
 
+export interface VillageBoundary {
+  id: number;
+  villageId: number;
+  geomGeoJSON: GeoJSONPolygon;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export type ProhibitedAreaType = 
   | 'Hutan Lindung'
   | 'Tanah Pemerintah'

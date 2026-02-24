@@ -44,6 +44,14 @@ export const createVillageSchema = z.object({
 
 export const updateVillageSchema = createVillageSchema.partial();
 
+export const upsertVillageBoundarySchema = z.object({
+  villageId: z.number().int().positive('ID desa tidak valid'),
+  geomGeoJSON: geomGeoJSONPolygonSchema.refine(
+    (geom) => Array.isArray(geom.coordinates?.[0]) && geom.coordinates[0].length >= 4,
+    'Polygon minimal memiliki 4 titik koordinat'
+  ),
+});
+
 // ============================================================================
 // Prohibited Area Schemas
 // ============================================================================
