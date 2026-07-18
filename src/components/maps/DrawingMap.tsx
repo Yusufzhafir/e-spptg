@@ -1,13 +1,24 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { APIProvider, Map, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
-import { GeographicCoordinate } from '@/types';
 import {
-  coordinatesToLatLng,
-  polygonPathToCoordinates,
-} from '@/lib/map-utils';
-import { MapPin } from 'lucide-react';
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  useSyncExternalStore,
+} from 'react';
+import { createPortal } from 'react-dom';
+import { APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
+import {
+  TerraDraw,
+  TerraDrawPolygonMode,
+  TerraDrawPointMode,
+  TerraDrawSelectMode,
+} from 'terra-draw';
+import { TerraDrawGoogleMapsAdapter } from 'terra-draw-google-maps-adapter';
+import type { GeoJSONStoreFeatures } from 'terra-draw';
+import { GeographicCoordinate } from '@/types';
+import { MapPin, Pencil, MousePointer2, Trash2 } from 'lucide-react';
 
 interface DrawingMapProps {
   coordinates: GeographicCoordinate[];
@@ -24,383 +35,363 @@ interface DrawingMapInternalProps {
   coordinates: GeographicCoordinate[];
   onCoordinatesChange: (coords: GeographicCoordinate[]) => void;
   recenterSignal?: number;
+  /** Element above the map where the drawing toolbar is portaled, so it never covers Google Maps controls */
+  toolbarHost: HTMLElement | null;
 }
 
-type PolygonWithListeners = google.maps.Polygon & {
-  __listeners?: google.maps.MapsEventListener[];
-};
+type DrawMode = 'polygon' | 'select';
 
-// Internal component that uses the map instance
+function isValidCoordinate(coord: GeographicCoordinate): boolean {
+  const lat = Number(coord.latitude);
+  const lng = Number(coord.longitude);
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180
+  );
+}
+
+/** Convert a GeoJSON polygon ring ([lng, lat], closed) to GeographicCoordinate[] */
+function ringToCoordinates(
+  ring: [number, number][],
+  existingIds: string[]
+): GeographicCoordinate[] {
+  // Drop the closing coordinate (first === last in a GeoJSON ring)
+  const points = ring.slice(0, -1);
+  return points.map(([lng, lat], index) => ({
+    id: existingIds[index] || `C-${crypto.randomUUID()}-${index}`,
+    latitude: lat,
+    longitude: lng,
+  }));
+}
+
+function sameCoordinates(
+  a: GeographicCoordinate[],
+  b: GeographicCoordinate[]
+): boolean {
+  if (a.length !== b.length) return false;
+  const EPSILON = 1e-9;
+  return a.every(
+    (coord, i) =>
+      Math.abs(Number(coord.latitude) - Number(b[i].latitude)) < EPSILON &&
+      Math.abs(Number(coord.longitude) - Number(b[i].longitude)) < EPSILON
+  );
+}
+
+// Internal component that wires Terra Draw onto the Google Maps instance
 function DrawingMapInternal({
   coordinates,
   onCoordinatesChange,
   recenterSignal,
+  toolbarHost,
 }: DrawingMapInternalProps) {
   const map = useMap();
-  const polygonRef = useRef<google.maps.Polygon | null>(null);
-  const markersRef = useRef<google.maps.Marker[]>([]);
-  const isUpdatingFromMapRef = useRef(false);
-  const isUpdatingFromPropsRef = useRef(false);
-  const lastAppliedRecenterSignalRef = useRef(0);
-  const drawingManagerRef = useRef<google.maps.drawing.DrawingManager | null>(
-    null
+  const drawRef = useRef<TerraDraw | null>(null);
+  const [drawReady, setDrawReady] = useState(false);
+  // Mode lives outside React state so effects can switch it while syncing
+  // Terra Draw (an external system) without triggering setState-in-effect.
+  const modeStoreRef = useRef<{
+    mode: DrawMode;
+    listeners: Set<() => void>;
+  }>({ mode: 'polygon', listeners: new Set() });
+  const activeMode = useSyncExternalStore(
+    useCallback((onStoreChange: () => void) => {
+      const store = modeStoreRef.current;
+      store.listeners.add(onStoreChange);
+      return () => store.listeners.delete(onStoreChange);
+    }, []),
+    () => modeStoreRef.current.mode,
+    () => 'polygon' as DrawMode
   );
-  const drawing = useMapsLibrary('drawing');
+  const isUpdatingFromPropsRef = useRef(false);
+  const lastSyncedRef = useRef<GeographicCoordinate[]>([]);
+  const lastAppliedRecenterSignalRef = useRef(0);
+  const coordinatesRef = useRef(coordinates);
+  const onCoordinatesChangeRef = useRef(onCoordinatesChange);
 
-  // Centralized cleanup function for polygon and its listeners
-  const cleanupPolygon = useCallback(() => {
-    if (polygonRef.current) {
-      const listeners = (polygonRef.current as PolygonWithListeners).__listeners;
-      if (listeners) {
-        listeners.forEach((listener: google.maps.MapsEventListener) => {
-          google.maps.event.removeListener(listener);
-        });
-      }
-      polygonRef.current.setMap(null);
-      polygonRef.current = null;
+  useEffect(() => {
+    coordinatesRef.current = coordinates;
+    onCoordinatesChangeRef.current = onCoordinatesChange;
+  }, [coordinates, onCoordinatesChange]);
+
+  // Read the current polygon/points from Terra Draw and push them to the parent
+  const propagateFromMap = useCallback(() => {
+    const draw = drawRef.current;
+    if (!draw || isUpdatingFromPropsRef.current) return;
+
+    const features = draw.getSnapshot();
+    const polygon = features.find(
+      (f) =>
+        f.geometry.type === 'Polygon' && f.properties.mode === 'polygon'
+    );
+
+    const existingIds = coordinatesRef.current.map((c) => c.id);
+    let newCoords: GeographicCoordinate[];
+
+    if (polygon) {
+      const ring = (polygon.geometry.coordinates as [number, number][][])[0];
+      newCoords = ringToCoordinates(ring, existingIds);
+    } else {
+      const points = features.filter(
+        (f) => f.geometry.type === 'Point' && f.properties.mode === 'point'
+      );
+      newCoords = points.map((f, index) => {
+        const [lng, lat] = f.geometry.coordinates as [number, number];
+        return {
+          id: existingIds[index] || `C-${crypto.randomUUID()}-${index}`,
+          latitude: lat,
+          longitude: lng,
+        };
+      });
     }
+
+    lastSyncedRef.current = newCoords;
+    onCoordinatesChangeRef.current(newCoords);
   }, []);
 
-  // Initialize drawing manager and polygon
+  const switchMode = useCallback((mode: DrawMode) => {
+    const draw = drawRef.current;
+    if (!draw) return;
+    draw.setMode(mode);
+    const store = modeStoreRef.current;
+    store.mode = mode;
+    store.listeners.forEach((listener) => listener());
+  }, []);
+
+  const clearAll = useCallback(() => {
+    const draw = drawRef.current;
+    if (!draw) return;
+    isUpdatingFromPropsRef.current = true;
+    draw.clear();
+    isUpdatingFromPropsRef.current = false;
+    lastSyncedRef.current = [];
+    onCoordinatesChangeRef.current([]);
+    switchMode('polygon');
+  }, [switchMode]);
+
+  // Initialize Terra Draw once the map (and its projection) is ready
   useEffect(() => {
-    if (!map || !drawing) return;
+    if (!map) return;
 
-    const google = window.google;
-    if (!google) return;
+    let cancelled = false;
+    // Track the instance created by THIS effect run: the adapter's `ready`
+    // event is async, so on fast unmount (React StrictMode double-mount)
+    // drawRef.current may still be null — cleanup must stop localDraw or the
+    // orphaned instance keeps listening to map events and fires stale ids.
+    let localDraw: TerraDraw | null = null;
+    let projectionListener: google.maps.MapsEventListener | null = null;
 
-    // Create drawing manager
-    const drawingManager = new drawing.DrawingManager({
-      drawingMode: google.maps.drawing.OverlayType.POLYGON,
-      drawingControl: true,
-      drawingControlOptions: {
-        position: google.maps.ControlPosition.TOP_CENTER,
-        drawingModes: [google.maps.drawing.OverlayType.POLYGON],
-      },
-      polygonOptions: {
-        fillColor: '#3b82f6',
-        fillOpacity: 0.3,
-        strokeColor: '#3b82f6',
-        strokeWeight: 2,
-        clickable: true,
-        editable: true,
-        draggable: false,
-      },
-    });
+    const init = () => {
+      if (cancelled || localDraw) return;
 
-    drawingManager.setMap(map);
-    drawingManagerRef.current = drawingManager;
+      const draw = new TerraDraw({
+        adapter: new TerraDrawGoogleMapsAdapter({
+          lib: google.maps,
+          map,
+          coordinatePrecision: 9,
+        }),
+        modes: [
+          new TerraDrawPolygonMode({
+            styles: {
+              fillColor: '#3b82f6',
+              fillOpacity: 0.3,
+              outlineColor: '#3b82f6',
+              outlineWidth: 2,
+              closingPointColor: '#3b82f6',
+              closingPointWidth: 6,
+              closingPointOutlineColor: '#ffffff',
+              closingPointOutlineWidth: 2,
+            },
+          }),
+          new TerraDrawPointMode({
+            styles: {
+              pointColor: '#3b82f6',
+              pointWidth: 8,
+              pointOutlineColor: '#ffffff',
+              pointOutlineWidth: 2,
+            },
+          }),
+          new TerraDrawSelectMode({
+            flags: {
+              polygon: {
+                feature: {
+                  draggable: false,
+                  coordinates: {
+                    midpoints: true,
+                    draggable: true,
+                    deletable: true,
+                  },
+                },
+              },
+              point: {
+                feature: {
+                  draggable: true,
+                },
+              },
+            },
+            styles: {
+              selectedPolygonColor: '#3b82f6',
+              selectedPolygonFillOpacity: 0.3,
+              selectedPolygonOutlineColor: '#2563eb',
+              selectedPolygonOutlineWidth: 2,
+              selectionPointColor: '#3b82f6',
+              selectionPointWidth: 6,
+              selectionPointOutlineColor: '#ffffff',
+              selectionPointOutlineWidth: 2,
+              midPointColor: '#93c5fd',
+              midPointWidth: 4,
+              midPointOutlineColor: '#ffffff',
+              midPointOutlineWidth: 1,
+            },
+          }),
+        ],
+      });
 
-    // Handle polygon completion from drawing manager
-    google.maps.event.addListener(
-      drawingManager,
-      'overlaycomplete',
-      (event: google.maps.drawing.OverlayCompleteEvent) => {
-        if (event.type === google.maps.drawing.OverlayType.POLYGON) {
-          // Before creating new polygon, remove existing one
-          cleanupPolygon();
+      localDraw = draw;
 
-          const polygon = event.overlay as google.maps.Polygon;
-          polygonRef.current = polygon;
+      draw.on('ready', () => {
+        if (cancelled) return;
+        drawRef.current = draw;
+        setDrawReady(true);
+      });
 
-          // Disable drawing mode and control
-          drawingManager.setDrawingMode(null);
-          drawingManager.setOptions({ drawingControl: false });
+      // Polygon finished, or a drag (vertex/feature) ended
+      draw.on('finish', (id, context) => {
+        // Ignore events from an instance that is no longer the active one
+        if (cancelled || drawRef.current !== draw) return;
+        if (isUpdatingFromPropsRef.current) return;
 
-          // Get coordinates from polygon
-          const path = polygon.getPath();
-          isUpdatingFromMapRef.current = true;
-          const newCoords = polygonPathToCoordinates(
-            path,
-            coordinates.map((c) => c.id)
-          );
-          onCoordinatesChange(newCoords);
-          isUpdatingFromMapRef.current = false;
-
-          // Listen for path changes (editing)
-          const setAtListener = google.maps.event.addListener(path, 'set_at', () => {
-            if (!isUpdatingFromPropsRef.current) {
-              isUpdatingFromMapRef.current = true;
-              const updatedCoords = polygonPathToCoordinates(
-                path,
-                coordinates.map((c) => c.id)
-              );
-              onCoordinatesChange(updatedCoords);
-              isUpdatingFromMapRef.current = false;
-            }
-          });
-
-          const insertAtListener = google.maps.event.addListener(path, 'insert_at', () => {
-            if (!isUpdatingFromPropsRef.current) {
-              isUpdatingFromMapRef.current = true;
-              const updatedCoords = polygonPathToCoordinates(
-                path,
-                coordinates.map((c) => c.id)
-              );
-              onCoordinatesChange(updatedCoords);
-              isUpdatingFromMapRef.current = false;
-            }
-          });
-
-          const removeAtListener = google.maps.event.addListener(path, 'remove_at', () => {
-            if (!isUpdatingFromPropsRef.current) {
-              isUpdatingFromMapRef.current = true;
-              const updatedCoords = polygonPathToCoordinates(
-                path,
-                coordinates.map((c) => c.id)
-              );
-              onCoordinatesChange(updatedCoords);
-              isUpdatingFromMapRef.current = false;
-            }
-          });
-
-          // Store listeners for cleanup
-          (polygon as PolygonWithListeners).__listeners = [setAtListener, insertAtListener, removeAtListener];
-        }
-      }
-    );
-
-    // Handle map clicks to add points manually
-    const clickListener = google.maps.event.addListener(
-      map,
-      'click',
-      (e: google.maps.MapMouseEvent) => {
-        if (!e.latLng) return;
-
-        // If no polygon exists, create one
-        if (!polygonRef.current) {
-          const newPolygon = new google.maps.Polygon({
-            paths: [e.latLng],
-            fillColor: '#3b82f6',
-            fillOpacity: 0.3,
-            strokeColor: '#3b82f6',
-            strokeWeight: 2,
-            editable: true,
-            draggable: false,
-          });
-          newPolygon.setMap(map);
-          polygonRef.current = newPolygon;
-
-          // Listen for path changes
-          const path = newPolygon.getPath();
-          const setAtListener = google.maps.event.addListener(path, 'set_at', () => {
-            if (!isUpdatingFromPropsRef.current) {
-              isUpdatingFromMapRef.current = true;
-              const updatedCoords = polygonPathToCoordinates(
-                path,
-                coordinates.map((c) => c.id)
-              );
-              onCoordinatesChange(updatedCoords);
-              isUpdatingFromMapRef.current = false;
-            }
-          });
-
-          const insertAtListener = google.maps.event.addListener(path, 'insert_at', () => {
-            if (!isUpdatingFromPropsRef.current) {
-              isUpdatingFromMapRef.current = true;
-              const updatedCoords = polygonPathToCoordinates(
-                path,
-                coordinates.map((c) => c.id)
-              );
-              onCoordinatesChange(updatedCoords);
-              isUpdatingFromMapRef.current = false;
-            }
-          });
-
-          const removeAtListener = google.maps.event.addListener(path, 'remove_at', () => {
-            if (!isUpdatingFromPropsRef.current) {
-              isUpdatingFromMapRef.current = true;
-              const updatedCoords = polygonPathToCoordinates(
-                path,
-                coordinates.map((c) => c.id)
-              );
-              onCoordinatesChange(updatedCoords);
-              isUpdatingFromMapRef.current = false;
-            }
-          });
-
-          // Store listeners for cleanup
-          (newPolygon as PolygonWithListeners).__listeners = [setAtListener, insertAtListener, removeAtListener];
+        if (context.mode === 'polygon' && context.action === 'draw') {
+          // Keep only the newly drawn polygon
+          const stale = draw
+            .getSnapshot()
+            .filter(
+              (f) =>
+                f.id !== id &&
+                (f.properties.mode === 'polygon' ||
+                  f.properties.mode === 'point')
+            )
+            .map((f) => f.id!);
+          if (stale.length > 0) {
+            isUpdatingFromPropsRef.current = true;
+            draw.removeFeatures(stale);
+            isUpdatingFromPropsRef.current = false;
+          }
+          propagateFromMap();
+          switchMode('select');
+          try {
+            draw.selectFeature(id);
+          } catch (error) {
+            // Selection is a nicety — never let it crash the page
+            console.warn('Gagal memilih poligon setelah digambar:', error);
+          }
         } else {
-          // Add point to existing polygon
-          const path = polygonRef.current.getPath();
-          path.push(e.latLng);
-
-          if (!isUpdatingFromPropsRef.current) {
-            isUpdatingFromMapRef.current = true;
-            const updatedCoords = polygonPathToCoordinates(
-              path,
-              coordinates.map((c) => c.id)
-            );
-            onCoordinatesChange(updatedCoords);
-            isUpdatingFromMapRef.current = false;
-          }
+          propagateFromMap();
         }
-      }
-    );
+      });
 
-    return () => {
-      google.maps.event.removeListener(clickListener);
-      cleanupPolygon();
-      if (drawingManager) {
-        drawingManager.setMap(null);
-      }
+      // Live edits in select mode (vertex drag, vertex delete, point drag)
+      draw.on('change', (_ids, type) => {
+        if (cancelled || drawRef.current !== draw) return;
+        if (isUpdatingFromPropsRef.current) return;
+        if (type === 'update' && draw.getMode() === 'select') {
+          propagateFromMap();
+        }
+      });
+
+      draw.start();
+      draw.setMode('polygon');
+      const store = modeStoreRef.current;
+      store.mode = 'polygon';
+      store.listeners.forEach((listener) => listener());
     };
-  }, [map, drawing, onCoordinatesChange, coordinates, cleanupPolygon]);
 
-  // Sync polygon when coordinates prop changes (from table edits)
-  useEffect(() => {
-    if (!map || isUpdatingFromMapRef.current) return;
-
-    const google = window.google;
-    if (!google) return;
-
-    // Clear existing markers
-    markersRef.current.forEach((marker) => marker.setMap(null));
-    markersRef.current = [];
-
-    if (coordinates.length === 0) {
-      // Remove polygon if no coordinates
-      cleanupPolygon();
-      // Re-enable drawing control when polygon is cleared
-      if (drawingManagerRef.current) {
-        drawingManagerRef.current.setOptions({ drawingControl: true });
-      }
-      return;
-    }
-
-    if (coordinates.length < 3) {
-      // Show markers for points but no polygon yet
-      cleanupPolygon();
-
-      coordinates.forEach((coord) => {
-        const marker = new google.maps.Marker({
-          position: new google.maps.LatLng(coord.latitude, coord.longitude),
-          map: map,
-          draggable: true,
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 8,
-            fillColor: '#3b82f6',
-            fillOpacity: 1,
-            strokeColor: '#ffffff',
-            strokeWeight: 2,
-          },
-        });
-
-        google.maps.event.addListener(marker, 'dragend', () => {
-          if (!isUpdatingFromPropsRef.current) {
-            isUpdatingFromMapRef.current = true;
-            const updatedCoords = coordinates.map((c) =>
-              c.id === coord.id
-                ? {
-                    ...c,
-                    latitude: marker.getPosition()!.lat(),
-                    longitude: marker.getPosition()!.lng(),
-                  }
-                : c
-            );
-            onCoordinatesChange(updatedCoords);
-            isUpdatingFromMapRef.current = false;
-          }
-        });
-
-        markersRef.current.push(marker);
-      });
-      return;
-    }
-
-    // Create or update polygon
-    const path = coordinatesToLatLng(coordinates);
-
-    if (!polygonRef.current) {
-      // Create new polygon
-      isUpdatingFromPropsRef.current = true;
-      const polygon = new google.maps.Polygon({
-        paths: path,
-        fillColor: '#3b82f6',
-        fillOpacity: 0.3,
-        strokeColor: '#3b82f6',
-        strokeWeight: 2,
-        editable: true,
-        draggable: false,
-      });
-      polygon.setMap(map);
-      polygonRef.current = polygon;
-
-      // Listen for path changes
-      const polygonPath = polygon.getPath();
-      const setAtListener = google.maps.event.addListener(polygonPath, 'set_at', () => {
-        if (!isUpdatingFromPropsRef.current) {
-          isUpdatingFromMapRef.current = true;
-          const updatedCoords = polygonPathToCoordinates(
-            polygonPath,
-            coordinates.map((c) => c.id)
-          );
-          onCoordinatesChange(updatedCoords);
-          isUpdatingFromMapRef.current = false;
-        }
-      });
-
-      const insertAtListener = google.maps.event.addListener(polygonPath, 'insert_at', () => {
-        if (!isUpdatingFromPropsRef.current) {
-          isUpdatingFromMapRef.current = true;
-          const updatedCoords = polygonPathToCoordinates(
-            polygonPath,
-            coordinates.map((c) => c.id)
-          );
-          onCoordinatesChange(updatedCoords);
-          isUpdatingFromMapRef.current = false;
-        }
-      });
-
-      const removeAtListener = google.maps.event.addListener(polygonPath, 'remove_at', () => {
-        if (!isUpdatingFromPropsRef.current) {
-          isUpdatingFromMapRef.current = true;
-          const updatedCoords = polygonPathToCoordinates(
-            polygonPath,
-            coordinates.map((c) => c.id)
-          );
-          onCoordinatesChange(updatedCoords);
-          isUpdatingFromMapRef.current = false;
-        }
-      });
-
-      // Store listeners for cleanup
-      (polygon as PolygonWithListeners).__listeners = [setAtListener, insertAtListener, removeAtListener];
-
-      isUpdatingFromPropsRef.current = false;
+    if (map.getProjection()) {
+      init();
     } else {
-      // Update existing polygon path - temporarily disable listeners
-      isUpdatingFromPropsRef.current = true;
-      const polygonPath = polygonRef.current.getPath();
-      
-      // Update path points
-      const currentLength = polygonPath.getLength();
-      const newLength = path.length;
-      
-      // Update existing points
-      for (let i = 0; i < Math.min(currentLength, newLength); i++) {
-        polygonPath.setAt(i, path[i]);
-      }
-      
-      // Add new points if needed
-      for (let i = currentLength; i < newLength; i++) {
-        polygonPath.push(path[i]);
-      }
-      
-      // Remove extra points if coordinates decreased
-      while (polygonPath.getLength() > newLength) {
-        polygonPath.removeAt(polygonPath.getLength() - 1);
-      }
-      
-      isUpdatingFromPropsRef.current = false;
+      projectionListener = map.addListener('projection_changed', () => {
+        projectionListener?.remove();
+        init();
+      });
     }
 
-    // Cleanup on unmount
     return () => {
-      cleanupPolygon();
+      cancelled = true;
+      projectionListener?.remove();
+      if (localDraw) {
+        try {
+          localDraw.stop();
+        } catch {
+          // stop() can throw if the adapter never finished registering
+        }
+        localDraw = null;
+      }
+      drawRef.current = null;
+      // Force the props-sync effect to repopulate a future instance
+      lastSyncedRef.current = [];
+      setDrawReady(false);
     };
-  }, [coordinates, map, onCoordinatesChange, cleanupPolygon]);
+  }, [map, propagateFromMap, switchMode]);
+
+  // Sync Terra Draw features when the coordinates prop changes (table edits, KML import)
+  useEffect(() => {
+    const draw = drawRef.current;
+    if (!drawReady || !draw) return;
+    if (sameCoordinates(coordinates, lastSyncedRef.current)) return;
+
+    isUpdatingFromPropsRef.current = true;
+    draw.clear();
+
+    const valid = coordinates.filter(isValidCoordinate);
+
+    if (valid.length >= 3) {
+      const ring = valid.map(
+        (c) => [Number(c.longitude), Number(c.latitude)] as [number, number]
+      );
+      ring.push(ring[0]);
+      const featureId = crypto.randomUUID();
+      const result = draw.addFeatures([
+        {
+          id: featureId,
+          type: 'Feature',
+          geometry: { type: 'Polygon', coordinates: [ring] },
+          properties: { mode: 'polygon' },
+        } as GeoJSONStoreFeatures,
+      ]);
+      if (result[0]?.valid) {
+        switchMode('select');
+        draw.selectFeature(featureId);
+      } else {
+        console.warn(
+          'Poligon tidak valid untuk digambar di peta:',
+          result[0]?.reason
+        );
+      }
+    } else if (valid.length > 0) {
+      draw.addFeatures(
+        valid.map(
+          (c) =>
+            ({
+              id: crypto.randomUUID(),
+              type: 'Feature',
+              geometry: {
+                type: 'Point',
+                coordinates: [Number(c.longitude), Number(c.latitude)],
+              },
+              properties: { mode: 'point' },
+            }) as GeoJSONStoreFeatures
+        )
+      );
+    } else {
+      switchMode('polygon');
+    }
+
+    lastSyncedRef.current = coordinates;
+    isUpdatingFromPropsRef.current = false;
+  }, [coordinates, drawReady, switchMode]);
 
   // Recenter/fit map after coordinate updates from table-based inputs/imports.
   useEffect(() => {
@@ -410,26 +401,15 @@ function DrawingMapInternal({
     const google = window.google;
     if (!google) return;
 
-    const validCoordinates = coordinates
-      .map((coord) => ({
-        latitude: Number(coord.latitude),
-        longitude: Number(coord.longitude),
-      }))
-      .filter(
-        (coord) =>
-          Number.isFinite(coord.latitude) &&
-          Number.isFinite(coord.longitude) &&
-          coord.latitude >= -90 &&
-          coord.latitude <= 90 &&
-          coord.longitude >= -180 &&
-          coord.longitude <= 180
-      );
-
+    const validCoordinates = coordinates.filter(isValidCoordinate);
     if (validCoordinates.length < 3) return;
 
     const bounds = new google.maps.LatLngBounds();
     validCoordinates.forEach((coord) => {
-      bounds.extend({ lat: coord.latitude, lng: coord.longitude });
+      bounds.extend({
+        lat: Number(coord.latitude),
+        lng: Number(coord.longitude),
+      });
     });
 
     if (bounds.isEmpty()) return;
@@ -449,7 +429,56 @@ function DrawingMapInternal({
     };
   }, [coordinates, map, recenterSignal]);
 
-  return null;
+  if (!toolbarHost) return null;
+
+  return createPortal(
+    <div className="inline-flex gap-1 bg-white rounded-lg shadow-sm border border-gray-200 p-1">
+      <button
+        type="button"
+        onClick={() => switchMode('polygon')}
+        disabled={!drawReady}
+        title="Gambar poligon baru"
+        className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors disabled:opacity-50 ${
+          activeMode === 'polygon'
+            ? 'bg-blue-600 text-white'
+            : 'text-gray-700 hover:bg-gray-100'
+        }`}
+      >
+        <Pencil className="w-3.5 h-3.5" />
+        Gambar
+      </button>
+      <button
+        type="button"
+        onClick={() => switchMode('select')}
+        disabled={!drawReady}
+        title="Pilih dan edit poligon"
+        className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors disabled:opacity-50 ${
+          activeMode === 'select'
+            ? 'bg-blue-600 text-white'
+            : 'text-gray-700 hover:bg-gray-100'
+        }`}
+      >
+        <MousePointer2 className="w-3.5 h-3.5" />
+        Edit
+      </button>
+      <button
+        type="button"
+        onClick={clearAll}
+        disabled={!drawReady}
+        title="Hapus poligon"
+        className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+      >
+        <Trash2 className="w-3.5 h-3.5" />
+        Hapus
+      </button>
+      <span className="flex items-center px-2 text-xs text-gray-600 border-l border-gray-200 whitespace-nowrap">
+        {coordinates.length < 3
+          ? `${coordinates.length}/3 titik`
+          : `${coordinates.length} titik`}
+      </span>
+    </div>,
+    toolbarHost
+  );
 }
 
 // Main component with API provider
@@ -463,25 +492,13 @@ export function DrawingMap({
   },
   zoom = 18,
 }: DrawingMapProps) {
-  const [loadError, setLoadError] = useState<string | null>(null);
-  if (loadError) {
-    return (
-      <div className="bg-gray-100 rounded-lg border border-gray-300 h-96 flex items-center justify-center">
-        <div className="text-center text-red-600">
-          <MapPin className="w-16 h-16 mx-auto mb-3 text-gray-400" />
-          <p>Gagal memuat peta</p>
-          <p className="text-sm mt-2">{loadError}</p>
-        </div>
-      </div>
-    );
-  }
-
-
+  const [toolbarHost, setToolbarHost] = useState<HTMLDivElement | null>(null);
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
     return (
       <div className="bg-gray-100 rounded-lg border border-gray-300 h-96 flex items-center justify-center">
         <div className="text-center text-red-600">
+          <MapPin className="w-16 h-16 mx-auto mb-3 text-gray-400" />
           <p>Google Maps API key tidak ditemukan</p>
         </div>
       </div>
@@ -489,31 +506,40 @@ export function DrawingMap({
   }
 
   return (
-    <div className="bg-gray-100 rounded-lg border border-gray-300 h-96 relative">
-      <APIProvider apiKey={apiKey}>
-        <Map
-          defaultCenter={center}
-          defaultZoom={zoom}
-          mapId="drawing-map"
-          style={{ width: '100%', height: '100%' }}
-          gestureHandling="greedy"
-        >
-          <DrawingMapInternal
-            coordinates={coordinates}
-            onCoordinatesChange={onCoordinatesChange}
-            recenterSignal={recenterSignal}
-          />
-        </Map>
-      </APIProvider>
-      <div className="absolute bottom-4 right-4 bg-white rounded-lg shadow-lg p-3 border border-gray-200 z-1000">
-        <p className="text-xs mb-2 font-semibold">Instruksi:</p>
-        <p className="text-xs text-gray-600">Klik pada peta untuk menambahkan titik koordinat</p>
-        <p className="text-xs text-gray-600">Gunakan toolbar di atas untuk menggambar poligon</p>
-        <p className="text-xs text-gray-600">Drag marker atau vertex untuk mengedit</p>
-        <p className="text-xs text-gray-500 mt-2">
-          {coordinates.length < 3
-            ? `Minimal 3 titik diperlukan (${coordinates.length}/3)`
-            : `${coordinates.length} titik terdeteksi`}
+    <div className="space-y-2">
+      {/* Toolbar row above the map, so it never covers Google Maps controls */}
+      <div ref={setToolbarHost} className="flex min-h-[34px]" />
+      <div className="bg-gray-100 rounded-lg border border-gray-300 h-96 relative">
+        <APIProvider apiKey={apiKey}>
+          <Map
+            defaultCenter={center}
+            defaultZoom={zoom}
+            mapId="drawing-map"
+            style={{ width: '100%', height: '100%' }}
+            gestureHandling="greedy"
+            disableDoubleClickZoom
+          >
+            <DrawingMapInternal
+              coordinates={coordinates}
+              onCoordinatesChange={onCoordinatesChange}
+              recenterSignal={recenterSignal}
+              toolbarHost={toolbarHost}
+            />
+          </Map>
+        </APIProvider>
+      </div>
+      <div className="bg-gray-50 rounded-lg border border-gray-200 p-3">
+        <p className="text-xs mb-1 font-semibold text-gray-900">Instruksi:</p>
+        <p className="text-xs text-gray-600">
+          Mode <strong>Gambar</strong>: klik peta untuk menambah titik, klik
+          titik awal untuk menutup poligon
+        </p>
+        <p className="text-xs text-gray-600">
+          Mode <strong>Edit</strong>: klik poligon, lalu drag titik untuk
+          mengubah bentuk
+        </p>
+        <p className="text-xs text-gray-500 mt-1">
+          Minimal 3 titik koordinat diperlukan untuk membentuk poligon.
         </p>
       </div>
     </div>

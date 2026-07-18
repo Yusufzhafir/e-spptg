@@ -77,8 +77,8 @@ export const step1BerkasSchema = z.object({
   // Documents
   dokumenKTP: uploadedDocumentSchema,
   dokumenKK: uploadedDocumentSchema,
-  dokumenKwitansi: uploadedDocumentSchema.optional(),
-  dokumenPermohonan: uploadedDocumentSchema.optional(),
+  dokumenKwitansi: uploadedDocumentSchema,
+  dokumenPermohonan: uploadedDocumentSchema,
   dokumenPernyataanJualBeli: uploadedDocumentSchema.optional(),
   dokumenAsalUsul: uploadedDocumentSchema.optional(),
   dokumenTidakSengketa: uploadedDocumentSchema.optional(),
@@ -133,7 +133,7 @@ export const step2LapanganSchema = z.object({
     .optional(),
 
   // Documents
-  dokumenBeritaAcara: uploadedDocumentSchema.optional(),
+  dokumenBeritaAcara: uploadedDocumentSchema,
 
   // Photos
   // fotoLahan: z

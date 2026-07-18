@@ -165,10 +165,22 @@ export function extractS3KeyFromDocumentUrl(documentUrl: string): string {
   throw new Error('Could not extract S3 key from document URL');
 }
 
-export async function getDownloadUrl(s3Key: string, expiresInSeconds = 3600) {
+export async function getDownloadUrl(
+  s3Key: string,
+  expiresInSeconds = 3600,
+  options?: { downloadFilename?: string }
+) {
   const command = new GetObjectCommand({
     Bucket: process.env.S3_BUCKET_NAME!,
     Key: s3Key,
+    // Force the browser to download instead of opening the file: the anchor
+    // `download` attribute is ignored on cross-origin URLs, so the signed URL
+    // itself must carry the attachment disposition.
+    ...(options?.downloadFilename
+      ? {
+          ResponseContentDisposition: `attachment; filename="${options.downloadFilename.replace(/["\\\r\n]/g, '')}"`,
+        }
+      : {}),
   });
 
   return getSignedUrl(s3Client, command, {

@@ -26,12 +26,19 @@ interface Step4Props {
     updates: Partial<SubmissionDraft>,
     options?: { silent?: boolean }
   ) => Promise<void>;
+  errors?: Record<string, string>;
+}
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <p className="text-xs text-red-600 mt-1">{message}</p>;
 }
 
 export function Step4Issuance({
   draft,
   onUpdateDraft,
   onPersistDraftPatch,
+  errors = {},
 }: Step4Props) {
   const [isSuccessDialogOpen, setIsSuccessDialogOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -359,12 +366,14 @@ export function Step4Issuance({
 
     try {
       if (draft.dokumenSPPTG?.documentId) {
+        // The signed URL carries Content-Disposition: attachment — a plain
+        // anchor download attribute is ignored on cross-origin URLs
         const { signedUrl } = await openDocumentMutation.mutateAsync({
           documentId: draft.dokumenSPPTG.documentId,
+          disposition: 'attachment',
         });
         const link = document.createElement('a');
         link.href = signedUrl;
-        link.download = draft.dokumenSPPTG?.name || 'SPPTG.pdf';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -476,7 +485,11 @@ export function Step4Issuance({
               <div>
                 <label
                   htmlFor="spptg-file"
-                  className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                  className={
+                    errors.dokumenSPPTG
+                      ? 'flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-red-500 bg-red-50 rounded-lg cursor-pointer hover:bg-red-100 transition-colors'
+                      : 'flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors'
+                  }
                 >
                   <div className="flex flex-col items-center justify-center pt-5 pb-6">
                     <Upload className="w-12 h-12 text-gray-400 mb-3" />
@@ -494,6 +507,7 @@ export function Step4Issuance({
                     disabled={isUploading || isDeleting}
                   />
                 </label>
+                <FieldError message={errors.dokumenSPPTG} />
 
                 {(isUploading || isDeleting) && (
                   <div className="flex items-center gap-2 text-sm text-gray-600 mt-2">
@@ -504,9 +518,9 @@ export function Step4Issuance({
               </div>
             ) : (
               <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <File className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" />
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <File className="w-6 h-6 text-blue-600 flex-shrink-0" />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm text-gray-900 truncate">{draft.dokumenSPPTG.name}</p>
                       <p className="text-xs text-gray-500">
@@ -516,7 +530,7 @@ export function Step4Issuance({
                     </div>
                     <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
                   </div>
-                  <div className="flex gap-2 flex-shrink-0">
+                  <div className="flex items-center gap-2 flex-shrink-0">
                     {draft.dokumenSPPTG.url && (
                       <>
                         <Button
@@ -577,7 +591,10 @@ export function Step4Issuance({
               value={draft.nomorSPPTG || ''}
               onChange={(e) => onUpdateDraft({ nomorSPPTG: e.target.value })}
               placeholder="SPPTG/XX/123/2025"
+              aria-invalid={Boolean(errors.nomorSPPTG)}
+              className={errors.nomorSPPTG ? 'border-red-500' : undefined}
             />
+            <FieldError message={errors.nomorSPPTG} />
             <p className="text-xs text-gray-500">
               Masukkan nomor SPPTG sesuai format yang berlaku
             </p>
@@ -593,7 +610,10 @@ export function Step4Issuance({
               type="date"
               value={draft.tanggalTerbit || ''}
               onChange={(e) => onUpdateDraft({ tanggalTerbit: e.target.value })}
+              aria-invalid={Boolean(errors.tanggalTerbit)}
+              className={errors.tanggalTerbit ? 'border-red-500' : undefined}
             />
+            <FieldError message={errors.tanggalTerbit} />
           </div>
 
           {/* Summary */}

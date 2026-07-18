@@ -4,9 +4,14 @@ import { normalizeCoordinateIds } from './coordinate-ids';
 /**
  * Builds a complete, serializable payload for draft persistence.
  * Keep this in one place to avoid fields getting dropped during step transitions.
+ *
+ * Cleared fields are sent as null (not undefined): JSON transport drops
+ * undefined keys, so the server-side merge would silently keep the old value —
+ * e.g. a deleted document would reappear. The server removes null-valued keys
+ * from the stored payload.
  */
 export function buildDraftSavePayload(draft: SubmissionDraft): Record<string, unknown> {
-  return {
+  const payload: Record<string, unknown> = {
     // Step 1: Applicant Data
     namaPemohon: draft.namaPemohon,
     nik: draft.nik,
@@ -68,4 +73,12 @@ export function buildDraftSavePayload(draft: SubmissionDraft): Record<string, un
     nomorSPPTG: draft.nomorSPPTG,
     tanggalTerbit: draft.tanggalTerbit,
   };
+
+  for (const key of Object.keys(payload)) {
+    if (payload[key] === undefined) {
+      payload[key] = null;
+    }
+  }
+
+  return payload;
 }

@@ -20,6 +20,12 @@ import { trpc } from '@/trpc/client';
 import { useRouter } from 'next/navigation';
 import { buildDraftSavePayload } from '@/lib/draft-save-payload';
 import { normalizeCoordinateIds } from '@/lib/coordinate-ids';
+import {
+  validateStep1Fields,
+  validateStep2Fields,
+  validateStep4Fields,
+  type StepFieldErrors,
+} from '@/lib/validation/step-field-errors';
 import { useAuthRole } from './AuthRoleProvider';
 
 interface SubmissionFlowProps {
@@ -45,10 +51,30 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
   const isViewer = hasRole('Viewer');
   const [currentStep, setCurrentStep] = useState(1);
   const [lastSaved, setLastSaved] = useState<string>('');
+  const [fieldErrors, setFieldErrors] = useState<StepFieldErrors>({});
   const isSubmittingFromStep3 = useRef(false);
 
+  // Clear the error of a field as soon as it gets updated
+  const clearFieldErrorsFor = useCallback(
+    (updates: Partial<SubmissionDraft>) => {
+      setFieldErrors((prev) => {
+        const updatedKeys = Object.keys(updates).filter((key) => key in prev);
+        if (updatedKeys.length === 0) return prev;
+        const next = { ...prev };
+        updatedKeys.forEach((key) => delete next[key]);
+        return next;
+      });
+    },
+    []
+  );
+
   // Load draft from backend
+  const utils = trpc.useUtils();
   const { data: draftData, isLoading: isLoadingDraft, error: draftError } = trpc.drafts.getById.useQuery({ draftId });
+
+  // Hydrate local state from the backend only once per draft. Background
+  // refetches (e.g. on window focus) must never clobber in-progress edits.
+  const hydratedDraftIdRef = useRef<number | null>(null);
 
   // Save draft mutation
   const saveDraftMutation = trpc.drafts.saveStep.useMutation();
@@ -82,9 +108,11 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     overlapResults: [],
   });
 
-  // Sync draft from backend
+  // Sync draft from backend (initial hydration only)
   useEffect(() => {
     if (draftData) {
+      if (hydratedDraftIdRef.current === draftData.id) return;
+      hydratedDraftIdRef.current = draftData.id;
       const payload = (draftData.payload ?? {}) as Partial<SubmissionDraft>;
       const coordinatesGeografis = normalizeCoordinateIds(payload.coordinatesGeografis ?? []);
       const allowedStep = isViewer ? 1 : draftData.currentStep;
@@ -187,6 +215,10 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         payload: buildDraftSavePayload(draftSnapshot),
       });
 
+      // Keep the getById cache in sync so reopening the draft (within
+      // staleTime) shows the saved values instead of a stale snapshot
+      utils.drafts.getById.setData({ draftId: draftSnapshot.id }, result);
+
       const time = new Date(result.lastSaved).toLocaleTimeString('id-ID', {
         hour: '2-digit',
         minute: '2-digit',
@@ -199,7 +231,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
 
       return result;
     },
-    [saveDraftMutation]
+    [saveDraftMutation, utils]
   );
 
   const saveDraftToBackend = useCallback(
@@ -237,9 +269,10 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
       const nextDraft = { ...draft, ...normalizedUpdates };
 
       await persistDraftSnapshot(nextDraft, step, options);
+      clearFieldErrorsFor(normalizedUpdates);
       setDraft(nextDraft);
     },
-    [draft, normalizeDraftUpdates, persistDraftSnapshot]
+    [draft, normalizeDraftUpdates, persistDraftSnapshot, clearFieldErrorsFor]
   );
 
   // Auto-save functionality
@@ -248,7 +281,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
 
     const autoSave = setInterval(() => {
       if (draft.namaPemohon || draft.nik) {
-        void saveDraftToBackend().catch(() => undefined);
+        void saveDraftToBackend(undefined, { silent: true }).catch(() => undefined);
       }
     }, 60000); // Auto-save every minute
 
@@ -258,51 +291,30 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
   const handleNext = async () => {
     // Validate current step before proceeding
     if (currentStep === 1) {
-      if (!draft.namaPemohon || !draft.nik || draft.nik.length !== 16) {
-        toast.error('Harap lengkapi nama dan NIK (16 digit) terlebih dahulu');
+      const errors = validateStep1Fields(draft);
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors);
+        toast.error('Harap lengkapi kolom wajib yang ditandai merah');
         return;
       }
-      if (!draft.villageId) {
-        toast.error('Harap pilih desa terlebih dahulu');
-        return;
-      }
-      if (!draft.dokumenKTP || !draft.dokumenKK) {
-        toast.error('Dokumen KTP dan KK wajib diunggah sebelum lanjut');
-        return;
-      }
-      if (!draft.persetujuanData) {
-        toast.error('Harap setujui pernyataan data terlebih dahulu');
-        return;
-      }
-      await saveDraftToBackend(1);
+      setFieldErrors({});
 
       if (isViewer) {
+        await saveDraftToBackend(1, { silent: true });
         toast.info('Step 1 tersimpan. Peran Viewer tidak dapat melanjutkan ke Step 2.');
         return;
       }
+      // Non-viewer: saving happens once in the transition block below
     }
 
     if (currentStep === 2) {
-      if (draft.saksiList.length < 1) {
-        toast.error('Minimal 1 saksi batas lahan diperlukan');
+      const errors = validateStep2Fields(draft);
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors);
+        toast.error('Harap lengkapi kolom wajib yang ditandai merah');
         return;
       }
-
-      const invalidWitness = draft.saksiList.find(
-        (w) => !w.nama?.trim() || !w.sisi || !w.penggunaanLahanBatas?.trim()
-      );
-      if (invalidWitness) {
-        toast.error(
-          'Lengkapi data saksi batas lahan: nama saksi, sisi batas, dan penggunaan batas lahan'
-        );
-        return;
-      }
-
-      if (draft.coordinatesGeografis.length < 3) {
-        toast.error('Minimal 3 titik koordinat diperlukan untuk membentuk polygon');
-        return;
-      }
-      await saveDraftToBackend(2);
+      setFieldErrors({});
     }
 
     if (currentStep === 3) {
@@ -320,20 +332,20 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
 
       // Save decision first
       if (draft.id) {
-        await saveDraftToBackend(3);
+        await saveDraftToBackend(3, { silent: true });
       }
-      
+
       // If status requires Step 4, navigate there
       if (draft.status === 'SPPTG terdaftar') {
         const nextStep = 4 as const;
         setCurrentStep(nextStep);
         setDraft((prev) => ({ ...prev, currentStep: nextStep }));
-        
-        // Save draft with updated step
+
         if (draft.id) {
-          void saveDraftToBackend(nextStep).catch(() => undefined);
+          void saveDraftToBackend(nextStep, { silent: true }).catch(() => undefined);
         }
-        
+
+        toast.success('Keputusan tersimpan. Lanjut ke tahap Terbitkan SPPTG.');
         window.scrollTo(0, 0);
         return;
       }
@@ -346,41 +358,56 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     if (currentStep < 4) {
       // Save current step data before transitioning
       if (draft.id) {
-        await saveDraftToBackend(currentStep as 1 | 2 | 3 | 4);
+        await saveDraftToBackend(currentStep as 1 | 2 | 3 | 4, { silent: true });
       }
 
       const nextStep = (currentStep + 1) as 1 | 2 | 3 | 4;
       setCurrentStep(nextStep);
       setDraft((prev) => ({ ...prev, currentStep: nextStep }));
-      
-      // Save draft with updated step
+
+      // Advance the step pointer silently (data was just saved above)
       if (draft.id) {
-        void saveDraftToBackend(nextStep).catch(() => undefined);
+        void saveDraftToBackend(nextStep, { silent: true }).catch(() => undefined);
       }
-      
+
+      toast.success(
+        `Data ${steps[currentStep - 1].label} tersimpan. Lanjut ke tahap ${steps[nextStep - 1].label}.`
+      );
       window.scrollTo(0, 0);
     }
   };
 
   const handlePrevious = () => {
     if (currentStep > 1) {
+      setFieldErrors({});
       setCurrentStep(currentStep - 1);
       setDraft((prev) => ({ ...prev, currentStep: currentStep - 1 }));
       window.scrollTo(0, 0);
     }
   };
 
-  const handleSaveDraft = () => {
+  const handleSaveDraft = async () => {
     if (!draft.id) {
       toast.error('Draf belum dimuat');
       return;
     }
-    void saveDraftToBackend().catch(() => undefined);
+    try {
+      await saveDraftToBackend();
+      // After a manual save, return to where the user came from
+      if (window.history.length > 1) {
+        router.back();
+      } else {
+        router.push('/app/pengajuan');
+      }
+    } catch {
+      // Error toast already shown by saveDraftToBackend
+    }
   };
 
   const handleUpdateDraft = (updates: Partial<SubmissionDraft>) => {
     const normalizedUpdates = normalizeDraftUpdates(updates);
 
+    clearFieldErrorsFor(normalizedUpdates);
     setDraft((prev) => ({ ...prev, ...normalizedUpdates }));
   };
 
@@ -392,7 +419,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
       prevStatusRef.current = draft.status;
       // Save immediately when status changes on Step 3
       const timeoutId = setTimeout(() => {
-        void saveDraftToBackend().catch(() => undefined);
+        void saveDraftToBackend(undefined, { silent: true }).catch(() => undefined);
       }, 200);
 
       // Cleanup: clear timeout if component unmounts or dependencies change
@@ -556,6 +583,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                 onPersistDraftPatch={(updates, options) =>
                   persistDraftPatch(updates, 1, options)
                 }
+                errors={fieldErrors}
               />
             )}
 
@@ -566,6 +594,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                 onPersistDraftPatch={(updates, options) =>
                   persistDraftPatch(updates, 2, options)
                 }
+                errors={fieldErrors}
               />
             )}
 
@@ -580,6 +609,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                 onPersistDraftPatch={(updates, options) =>
                   persistDraftPatch(updates, 4, options)
                 }
+                errors={fieldErrors}
               />
             )}
           </>
@@ -638,20 +668,13 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                 }
 
                 // Validate Step 4 requirements before submitting
-                if (!draft.dokumenSPPTG) {
-                  toast.error('Dokumen SPPTG wajib diunggah sebelum diterbitkan');
+                const errors = validateStep4Fields(draft);
+                if (Object.keys(errors).length > 0) {
+                  setFieldErrors(errors);
+                  toast.error('Harap lengkapi kolom wajib yang ditandai merah');
                   return;
                 }
-
-                if (!draft.nomorSPPTG) {
-                  toast.error('Nomor SPPTG wajib diisi sebelum diterbitkan');
-                  return;
-                }
-
-                if (!draft.tanggalTerbit) {
-                  toast.error('Tanggal terbit wajib diisi sebelum diterbitkan');
-                  return;
-                }
+                setFieldErrors({});
 
                 // Save final draft before submitting
                 await saveDraftToBackend(4);

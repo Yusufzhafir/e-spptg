@@ -73,9 +73,6 @@ export function SubmissionsTable({ submissions, onViewDetail, onEdit }: Submissi
                   <Button variant="ghost" size="icon" onClick={() => onEdit(submission)}>
                     <Edit className="w-4 h-4" />
                   </Button>
-                  <Button variant="ghost" size="icon">
-                    <Archive className="w-4 h-4" />
-                  </Button>
                 </div>
               </TableCell>
             </TableRow>

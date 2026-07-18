@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { TRPCClientError } from '@trpc/client';
 import { UploadedDocument } from '../types';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
@@ -19,6 +20,7 @@ export interface FileUploadFieldProps {
   draftId?: number;
   templateType?: TemplateType;
   notes?: string | React.ReactNode;
+  error?: boolean;
 }
 
 export function FileUploadField({
@@ -33,6 +35,7 @@ export function FileUploadField({
   draftId,
   templateType,
   notes,
+  error = false,
 }: FileUploadFieldProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -166,20 +169,28 @@ export function FileUploadField({
         try {
           await deleteDocumentById(previousDocument.documentId);
         } catch (deleteError) {
-          // Roll back draft payload to keep UI and backend in sync.
-          try {
-            await onChange(previousDocument);
-          } catch (rollbackError) {
-            console.error('Rollback save error:', rollbackError);
-            toast.error(
-              'Gagal menghapus dokumen dan gagal mengembalikan data draf. Silakan muat ulang halaman.'
-            );
+          // The DB row may already be gone (e.g. stale reference in an old
+          // draft payload) — the goal of removal is achieved, don't roll back.
+          const isAlreadyDeleted =
+            deleteError instanceof TRPCClientError &&
+            deleteError.data?.code === 'NOT_FOUND';
+
+          if (!isAlreadyDeleted) {
+            // Roll back draft payload to keep UI and backend in sync.
+            try {
+              await onChange(previousDocument);
+            } catch (rollbackError) {
+              console.error('Rollback save error:', rollbackError);
+              toast.error(
+                'Gagal menghapus dokumen dan gagal mengembalikan data draf. Silakan muat ulang halaman.'
+              );
+              return;
+            }
+
+            console.error('Delete error:', deleteError);
+            toast.error('Gagal menghapus dokumen. Perubahan draf dibatalkan.');
             return;
           }
-
-          console.error('Delete error:', deleteError);
-          toast.error('Gagal menghapus dokumen. Perubahan draf dibatalkan.');
-          return;
         }
       }
 
@@ -232,7 +243,11 @@ export function FileUploadField({
         <div>
           <label
             htmlFor={`file-${label}`}
-            className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+            className={
+              error
+                ? 'flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-red-500 bg-red-50 rounded-lg cursor-pointer hover:bg-red-100 transition-colors'
+                : 'flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors'
+            }
           >
             <div className="flex flex-col items-center justify-center pt-5 pb-6">
               <Upload className="w-10 h-10 text-gray-400 mb-2" />
@@ -276,10 +291,16 @@ export function FileUploadField({
           )}
         </div>
       ) : (
-        <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3 flex-1 min-w-0">
-              <File className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+        <div
+          className={
+            error
+              ? 'border border-red-500 rounded-lg p-3 bg-red-50'
+              : 'border border-gray-200 rounded-lg p-3 bg-gray-50'
+          }
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <File className="w-5 h-5 text-blue-600 flex-shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-gray-900 truncate">{value.name}</p>
                 <p className="text-xs text-gray-500">
@@ -288,7 +309,7 @@ export function FileUploadField({
               </div>
               <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
             </div>
-            <div className="flex gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <label htmlFor={`replace-${label}`}>
                 <Button variant="ghost" size="sm" type="button" asChild>
                   <span className="cursor-pointer text-xs">Ganti</span>

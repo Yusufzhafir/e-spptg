@@ -83,6 +83,7 @@ interface Step2Props {
     updates: Partial<SubmissionDraft>,
     options?: { silent?: boolean }
   ) => Promise<void>;
+  errors?: Record<string, string>;
 }
 
 type NewWitnessWithUsage = {
@@ -119,6 +120,7 @@ export function Step2FieldValidation({
   draft,
   onUpdateDraft,
   onPersistDraftPatch,
+  errors = {},
 }: Step2Props) {
   const [isOverlapDialogOpen, setIsOverlapDialogOpen] = useState(false);
   const [isParsingKml, setIsParsingKml] = useState(false);
@@ -557,7 +559,12 @@ export function Step2FieldValidation({
 
       {/* Boundary Witnesses */}
       <div className="space-y-4 pt-4 border-t border-gray-200">
-        <h3 className="text-gray-900">Saksi Batas Lahan</h3>
+        <h3 className="text-gray-900">
+          Saksi Batas Lahan <span className="text-red-600">*</span>
+        </h3>
+        {errors.saksiList && (
+          <p className="text-xs text-red-600">{errors.saksiList}</p>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-[1fr_200px_1fr_auto] gap-2">
           <Input
@@ -737,12 +744,17 @@ export function Step2FieldValidation({
       {/* Coordinates */}
       <div className="space-y-4 pt-4 border-t border-gray-200">
         <div className="flex items-center justify-between">
-          <h3 className="text-gray-900">Titik Koordinat Patok/Pal Batas</h3>
+          <h3 className="text-gray-900">
+            Titik Koordinat Patok/Pal Batas <span className="text-red-600">*</span>
+          </h3>
           <Button onClick={handleAddCoordinate} variant="outline" size="sm">
             <Plus className="w-4 h-4 mr-2" />
             Tambah Titik
           </Button>
         </div>
+        {errors.coordinatesGeografis && (
+          <p className="text-xs text-red-600">{errors.coordinatesGeografis}</p>
+        )}
 
         <div className="space-y-1">
           <Label htmlFor="kml-coordinate-file">Impor KML (Opsional)</Label>
@@ -1013,16 +1025,22 @@ export function Step2FieldValidation({
           Unggah dokumen hasil validasi lapangan (format PDF, maks. 10 MB)
         </p>
 
-        <FileUploadField
-          label="Berita Acara Validasi Lapangan"
-          value={draft.dokumenBeritaAcara}
-          onChange={(doc) => onPersistDraftPatch({ dokumenBeritaAcara: doc })}
-          category="Berita Acara"
-          templateType="berita_acara_validasi_lapangan.docx"
-          draftId={draft.id}
-          accept=".pdf"
-          maxSize={10}
-        />
+        <div>
+          <FileUploadField
+            label="Berita Acara Validasi Lapangan"
+            value={draft.dokumenBeritaAcara}
+            onChange={(doc) => onPersistDraftPatch({ dokumenBeritaAcara: doc })}
+            category="Berita Acara"
+            templateType="berita_acara_validasi_lapangan.docx"
+            draftId={draft.id}
+            accept=".pdf"
+            maxSize={10}
+            error={Boolean(errors.dokumenBeritaAcara)}
+          />
+          {errors.dokumenBeritaAcara && (
+            <p className="text-xs text-red-600 mt-1">{errors.dokumenBeritaAcara}</p>
+          )}
+        </div>
       </div>
 
       {/* Overlap Check Dialog */}

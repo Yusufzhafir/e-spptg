@@ -85,10 +85,10 @@ export const draftsRouter = router({
           });
         }
 
-        const mergedPayload = {
-          ...(draftBeforeSave.payload as Record<string, unknown>),
-          ...(input.payload as Record<string, unknown>),
-        };
+        const mergedPayload = queries.mergeDraftPayload(
+          draftBeforeSave.payload as Record<string, unknown>,
+          input.payload as Record<string, unknown>
+        );
 
         const selectedVillageId =
           typeof mergedPayload.villageId === 'number' ? mergedPayload.villageId : null;
