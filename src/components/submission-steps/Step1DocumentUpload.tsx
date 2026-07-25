@@ -20,12 +20,19 @@ interface Step1Props {
     updates: Partial<SubmissionDraft>,
     options?: { silent?: boolean }
   ) => Promise<void>;
+  errors?: Record<string, string>;
+}
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <p className="text-xs text-red-600 mt-1">{message}</p>;
 }
 
 export function Step1DocumentUpload({
   draft,
   onUpdateDraft,
   onPersistDraftPatch,
+  errors = {},
 }: Step1Props) {
   const { data: villagesData } = trpc.villages.list.useQuery({
     limit: 1000,
@@ -81,7 +88,10 @@ export function Step1DocumentUpload({
               value={draft.namaPemohon}
               onChange={(e) => onUpdateDraft({ namaPemohon: e.target.value })}
               placeholder="Masukkan nama lengkap"
+              aria-invalid={Boolean(errors.namaPemohon)}
+              className={errors.namaPemohon ? 'border-red-500' : undefined}
             />
+            <FieldError message={errors.namaPemohon} />
           </div>
 
           <div>
@@ -98,9 +108,16 @@ export function Step1DocumentUpload({
               }}
               placeholder="Masukkan NIK (16 digit)"
               maxLength={16}
+              aria-invalid={Boolean(errors.nik)}
+              className={errors.nik ? 'border-red-500' : undefined}
             />
-            {draft.nik && draft.nik.length !== 16 && (
-              <p className="text-xs text-red-600 mt-1">NIK harus 16 digit</p>
+            {errors.nik ? (
+              <FieldError message={errors.nik} />
+            ) : (
+              draft.nik &&
+              draft.nik.length !== 16 && (
+                <p className="text-xs text-red-600 mt-1">NIK harus 16 digit</p>
+              )
             )}
           </div>
         </div>
@@ -147,7 +164,11 @@ export function Step1DocumentUpload({
               value={draft.villageId ? String(draft.villageId) : ''}
               onValueChange={handleVillageChange}
             >
-              <SelectTrigger id="villageId">
+              <SelectTrigger
+                id="villageId"
+                aria-invalid={Boolean(errors.villageId)}
+                className={errors.villageId ? 'border-red-500' : undefined}
+              >
                 <SelectValue placeholder="Pilih desa" />
               </SelectTrigger>
               <SelectContent>
@@ -158,6 +179,7 @@ export function Step1DocumentUpload({
                 ))}
               </SelectContent>
             </Select>
+            <FieldError message={errors.villageId} />
           </div>
         </div>
 
@@ -180,48 +202,64 @@ export function Step1DocumentUpload({
         <h3 className="text-gray-900">Dokumen Pendukung</h3>
 
         <div className="grid grid-cols-1 gap-6">
-          <FileUploadField
-            label="Softcopy KTP"
-            accept=".pdf,.jpg,.jpeg,.png"
-            maxSize={10}
-            value={draft.dokumenKTP}
-            onChange={(doc) => onPersistDraftPatch({ dokumenKTP: doc })}
-            helpText="Contoh: KTP_NamaPemohon_2025.pdf"
-            category="KTP"
-            draftId={draft.id}
-          />
+          <div>
+            <FileUploadField
+              label="Softcopy KTP"
+              accept=".pdf,.jpg,.jpeg,.png"
+              maxSize={10}
+              value={draft.dokumenKTP}
+              onChange={(doc) => onPersistDraftPatch({ dokumenKTP: doc })}
+              helpText="Contoh: KTP_NamaPemohon_2025.pdf"
+              category="KTP"
+              draftId={draft.id}
+              error={Boolean(errors.dokumenKTP)}
+            />
+            <FieldError message={errors.dokumenKTP} />
+          </div>
 
-          <FileUploadField
-            label="Softcopy KK"
-            accept=".pdf,.jpg,.jpeg,.png"
-            maxSize={10}
-            value={draft.dokumenKK}
-            onChange={(doc) => onPersistDraftPatch({ dokumenKK: doc })}
-            helpText="Contoh: KK_NamaPemohon_2025.pdf"
-            category="KK"
-            draftId={draft.id}
-          />
+          <div>
+            <FileUploadField
+              label="Softcopy KK"
+              accept=".pdf,.jpg,.jpeg,.png"
+              maxSize={10}
+              value={draft.dokumenKK}
+              onChange={(doc) => onPersistDraftPatch({ dokumenKK: doc })}
+              helpText="Contoh: KK_NamaPemohon_2025.pdf"
+              category="KK"
+              draftId={draft.id}
+              error={Boolean(errors.dokumenKK)}
+            />
+            <FieldError message={errors.dokumenKK} />
+          </div>
 
-          <FileUploadField
-            label="Softcopy Kwitansi Jual Beli/Hibah/Keterangan Warisan"
-            accept=".pdf,.jpg,.jpeg,.png"
-            maxSize={10}
-            value={draft.dokumenKwitansi}
-            onChange={(doc) => onPersistDraftPatch({ dokumenKwitansi: doc })}
-            category="Kwitansi"
-            draftId={draft.id}
-          />
+          <div>
+            <FileUploadField
+              label="Softcopy Kwitansi Jual Beli/Hibah/Keterangan Warisan"
+              accept=".pdf,.jpg,.jpeg,.png"
+              maxSize={10}
+              value={draft.dokumenKwitansi}
+              onChange={(doc) => onPersistDraftPatch({ dokumenKwitansi: doc })}
+              category="Kwitansi"
+              draftId={draft.id}
+              error={Boolean(errors.dokumenKwitansi)}
+            />
+            <FieldError message={errors.dokumenKwitansi} />
+          </div>
 
-          <FileUploadField
-            label="Softcopy Surat Permohonan"
-            accept=".pdf"
-            maxSize={10}
-            value={draft.dokumenPermohonan}
-            onChange={(doc) => onPersistDraftPatch({ dokumenPermohonan: doc })}
-            category="Permohonan"
-            templateType="surat_pernyataan_permohonan.pdf"
-            draftId={draft.id}
-          />
+          <div>
+            <FileUploadField
+              label="Softcopy Surat Permohonan"
+              accept=".pdf"
+              maxSize={10}
+              value={draft.dokumenPermohonan}
+              onChange={(doc) => onPersistDraftPatch({ dokumenPermohonan: doc })}
+              category="Permohonan"
+              templateType="surat_pernyataan_permohonan.pdf"
+              draftId={draft.id}
+              error={Boolean(errors.dokumenPermohonan)}
+            />
+            <FieldError message={errors.dokumenPermohonan} />
+          </div>
 
           <FileUploadField
             label="Surat Pernyataan Tidak Sengketa"
@@ -239,23 +277,33 @@ export function Step1DocumentUpload({
 
       {/* Agreement */}
       <div className="pt-4 border-t border-gray-200">
-        <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div
+          className={
+            errors.persetujuanData
+              ? 'flex items-start gap-3 bg-red-50 border border-red-300 rounded-lg p-4'
+              : 'flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-lg p-4'
+          }
+        >
           <Checkbox
             id="persetujuan"
             checked={draft.persetujuanData}
             onCheckedChange={(checked) =>
               onUpdateDraft({ persetujuanData: checked as boolean })
             }
-            className="mt-0.5"
+            aria-invalid={Boolean(errors.persetujuanData)}
+            className={
+              errors.persetujuanData ? 'mt-0.5 border-red-500' : 'mt-0.5'
+            }
           />
           <label
             htmlFor="persetujuan"
             className="text-sm text-gray-900 cursor-pointer flex-1"
           >
             Saya menyatakan bahwa data dan dokumen yang diunggah adalah benar dan dapat
-            dipertanggungjawabkan.
+            dipertanggungjawabkan. <span className="text-red-600">*</span>
           </label>
         </div>
+        <FieldError message={errors.persetujuanData} />
       </div>
 
       {/* Info Box */}

@@ -6,6 +6,7 @@ import { trpc } from '@/trpc/client';
 import { useCallback, useMemo } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { KPIData, Submission } from '@/types';
+import { toast } from 'sonner';
 
 type SubmissionListItem = {
   id: number;
@@ -22,9 +23,11 @@ type SubmissionListItem = {
   catatan: string | null;
   geoJSON?: Submission['geoJSON'];
   status: Submission['status'];
+  isValid: boolean;
   tanggalPengajuan: string | Date;
   ownerUserId: number | null;
   verifikator: number | null;
+  verifikatorName?: string | null;
   riwayat?: Submission['riwayat'];
   feedback: Submission['feedback'];
   createdAt: string | Date;
@@ -99,7 +102,7 @@ export default function DashboardPageClient() {
       kecamatan: !filters.desaId && filters.kecamatan ? filters.kecamatan : undefined,
       dateFrom: filters.dateFrom || undefined,
       dateTo: filters.dateTo || undefined,
-      limit: 100,
+      limit: 1000,
       offset: 0,
     }),
     [filters.dateFrom, filters.dateTo, filters.desaId, filters.kecamatan, filters.search, filters.status]
@@ -111,9 +114,34 @@ export default function DashboardPageClient() {
     isLoading: isLoadingSubmissions,
     isFetching: isFetchingSubmissions,
     error: submissionsError,
+    refetch: refetchSubmissions,
   } = trpc.submissions.list.useQuery(submissionsListInput, {
     placeholderData: (previous) => previous,
   });
+
+  const updateValidityMutation = trpc.submissions.updateValidity.useMutation({
+    onSuccess: (_data, variables) => {
+      toast.success(
+        variables.isValid
+          ? 'Pengajuan ditandai valid dan ditampilkan di peta'
+          : 'Pengajuan ditandai invalid dan disembunyikan dari peta'
+      );
+      void refetchSubmissions();
+    },
+    onError: (error) => {
+      toast.error(`Gagal memperbarui status validasi: ${error.message}`);
+    },
+  });
+
+  const handleToggleValidity = useCallback(
+    (submission: Submission) => {
+      updateValidityMutation.mutate({
+        submissionId: submission.id,
+        isValid: !submission.isValid,
+      });
+    },
+    [updateValidityMutation]
+  );
 
   // Fetch KPI data
   const { data: kpiData, isLoading: isLoadingKPI, error: kpiError } = trpc.submissions.kpi.useQuery();
@@ -144,9 +172,11 @@ export default function DashboardPageClient() {
     catatan: s.catatan,
     geoJSON: s.geoJSON, // Use geoJSON instead of coordinates
     status: s.status,
+    isValid: s.isValid ?? true,
     tanggalPengajuan: new Date(s.tanggalPengajuan), // Keep as Date, not string
     ownerUserId: s.ownerUserId,
     verifikator: s.verifikator,
+    verifikatorName: s.verifikatorName ?? null,
     riwayat: s.riwayat || [],
     feedback: s.feedback,
     createdAt: new Date(s.createdAt),
@@ -174,12 +204,67 @@ export default function DashboardPageClient() {
     .map((village) => ({ id: village.id, namaDesa: village.namaDesa }))
     .sort((a, b) => a.namaDesa.localeCompare(b.namaDesa));
 
+  const handleExportCsv = useCallback(() => {
+    if (submissions.length === 0) {
+      toast.info('Tidak ada data untuk diekspor.');
+      return;
+    }
+    const headers = [
+      'ID',
+      'Nama Pemilik',
+      'NIK',
+      'Desa (ID)',
+      'Kecamatan',
+      'Kabupaten',
+      'Luas (m2)',
+      'Penggunaan Lahan',
+      'Status',
+      'Validasi',
+      'Verifikator',
+      'Tanggal Pengajuan',
+    ];
+    const escape = (value: unknown) => {
+      const s = value == null ? '' : String(value);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const rows = submissions.map((s) =>
+      [
+        s.id,
+        s.namaPemilik,
+        s.nik,
+        s.villageId,
+        s.kecamatan,
+        s.kabupaten,
+        s.luas,
+        s.penggunaanLahan,
+        s.status,
+        s.isValid ? 'Valid' : 'Invalid',
+        s.verifikatorName || '-',
+        new Date(s.tanggalPengajuan).toLocaleDateString('id-ID'),
+      ]
+        .map(escape)
+        .join(',')
+    );
+    const csv = [headers.join(','), ...rows].join('\n');
+    // Prepend BOM so Excel reads UTF-8 correctly
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `pengajuan-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success(`${submissions.length} pengajuan diekspor ke CSV.`);
+  }, [submissions]);
+
   const handleViewDetail = (submission: Submission) => {
     router.push(`/app/pengajuan/${submission.id}`);
   };
 
   const handleEditSubmission = (submission: Submission) => {
-    router.push(`/app/pengajuan/${submission.id}`);
+    router.push(`/app/pengajuan/${submission.id}/edit`);
   };
 
   const isInitialLoading =
@@ -225,6 +310,9 @@ export default function DashboardPageClient() {
       isRefreshing={isFetchingSubmissions}
       onViewDetail={handleViewDetail}
       onEdit={handleEditSubmission}
+      onToggleValidity={handleToggleValidity}
+      isTogglingValidity={updateValidityMutation.isPending}
+      onExportCsv={handleExportCsv}
     />
   );
 }

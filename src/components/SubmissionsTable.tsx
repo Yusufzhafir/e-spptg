@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Table,
   TableBody,
@@ -7,7 +8,18 @@ import {
   TableRow,
 } from './ui/table';
 import { Button } from './ui/button';
-import { Eye, Edit, Archive } from 'lucide-react';
+import { Badge } from './ui/badge';
+import {
+  Eye,
+  Edit,
+  Check,
+  EyeOff,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react';
 import { Submission } from '../types';
 import { StatusBadge } from './StatusBadge';
 
@@ -15,9 +27,135 @@ interface SubmissionsTableProps {
   submissions: Submission[];
   onViewDetail: (submission: Submission) => void;
   onEdit: (submission: Submission) => void;
+  onToggleValidity: (submission: Submission) => void;
+  isTogglingValidity: boolean;
+  /** When set, the table pages to and highlights this submission's row */
+  focusSubmissionId?: number | null;
 }
 
-export function SubmissionsTable({ submissions, onViewDetail, onEdit }: SubmissionsTableProps) {
+type SortKey =
+  | 'id'
+  | 'namaPemilik'
+  | 'kecamatan'
+  | 'luas'
+  | 'tanggalPengajuan'
+  | 'status'
+  | 'isValid'
+  | 'verifikator';
+
+type SortDirection = 'asc' | 'desc';
+
+const PAGE_SIZE = 10;
+
+function getSortValue(s: Submission, key: SortKey): number | string {
+  switch (key) {
+    case 'id':
+      return s.id;
+    case 'namaPemilik':
+      return (s.namaPemilik || '').toLowerCase();
+    case 'kecamatan':
+      return (s.kecamatan || '').toLowerCase();
+    case 'luas':
+      return s.luas ?? 0;
+    case 'tanggalPengajuan':
+      return new Date(s.tanggalPengajuan).getTime() || 0;
+    case 'status':
+      return s.status || '';
+    case 'isValid':
+      return s.isValid ? 1 : 0;
+    case 'verifikator':
+      return (s.verifikatorName || '').toLowerCase();
+  }
+}
+
+export function SubmissionsTable({
+  submissions,
+  onViewDetail,
+  onEdit,
+  onToggleValidity,
+  isTogglingValidity,
+  focusSubmissionId,
+}: SubmissionsTableProps) {
+  const [sortKey, setSortKey] = useState<SortKey>('tanggalPengajuan');
+  const [sortDir, setSortDir] = useState<SortDirection>('desc');
+  const [page, setPage] = useState(0);
+  const [highlightId, setHighlightId] = useState<number | null>(null);
+  const rowRefs = useRef<Record<number, HTMLTableRowElement | null>>({});
+
+  const sorted = useMemo(() => {
+    const copy = [...submissions];
+    copy.sort((a, b) => {
+      const av = getSortValue(a, sortKey);
+      const bv = getSortValue(b, sortKey);
+      let cmp = 0;
+      if (typeof av === 'number' && typeof bv === 'number') cmp = av - bv;
+      else cmp = String(av).localeCompare(String(bv));
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return copy;
+  }, [submissions, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  // Clamp at render so a shrinking data set never leaves us on a dead page.
+  const safePage = Math.min(page, totalPages - 1);
+
+  // When a map polygon is clicked, page to and highlight that row.
+  useEffect(() => {
+    if (focusSubmissionId == null) return;
+    const index = sorted.findIndex((s) => s.id === focusSubmissionId);
+    if (index === -1) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- respond to an external focus request
+    setPage(Math.floor(index / PAGE_SIZE));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- respond to an external focus request
+    setHighlightId(focusSubmissionId);
+  }, [focusSubmissionId, sorted]);
+
+  // Scroll to the highlighted row once it is on the current page, then fade it.
+  useEffect(() => {
+    if (highlightId == null) return;
+    const el = rowRefs.current[highlightId];
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    const timeout = setTimeout(() => setHighlightId(null), 2500);
+    return () => clearTimeout(timeout);
+  }, [highlightId, safePage]);
+
+  const handleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+    setPage(0);
+  };
+
+  const sortIcon = (key: SortKey) =>
+    sortKey === key ? (
+      sortDir === 'asc' ? (
+        <ChevronUp className="w-3.5 h-3.5" />
+      ) : (
+        <ChevronDown className="w-3.5 h-3.5" />
+      )
+    ) : (
+      <ChevronsUpDown className="w-3.5 h-3.5 text-gray-400" />
+    );
+
+  const sortableHead = (label: string, key: SortKey, className?: string) => (
+    <TableHead className={className}>
+      <button
+        type="button"
+        onClick={() => handleSort(key)}
+        className="inline-flex items-center gap-1 hover:text-gray-900"
+      >
+        {label} {sortIcon(key)}
+      </button>
+    </TableHead>
+  );
+
+  const pageItems = sorted.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+
   if (submissions.length === 0) {
     return (
       <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
@@ -32,19 +170,30 @@ export function SubmissionsTable({ submissions, onViewDetail, onEdit }: Submissi
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>ID</TableHead>
-            <TableHead>Pemilik</TableHead>
-            <TableHead>Desa/Kecamatan</TableHead>
-            <TableHead>Luas (m²)</TableHead>
-            <TableHead>Tgl Pengajuan</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Verifikator</TableHead>
+            {sortableHead('ID', 'id')}
+            {sortableHead('Pemilik', 'namaPemilik')}
+            {sortableHead('Desa/Kecamatan', 'kecamatan')}
+            {sortableHead('Luas (m²)', 'luas')}
+            {sortableHead('Tgl Pengajuan', 'tanggalPengajuan')}
+            {sortableHead('Status', 'status')}
+            {sortableHead('Validasi', 'isValid')}
+            {sortableHead('Verifikator', 'verifikator')}
             <TableHead className="text-right">Aksi</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {submissions.map((submission) => (
-            <TableRow key={submission.id}>
+          {pageItems.map((submission) => (
+            <TableRow
+              key={submission.id}
+              ref={(el) => {
+                rowRefs.current[submission.id] = el;
+              }}
+              className={
+                highlightId === submission.id
+                  ? 'bg-blue-50 transition-colors'
+                  : undefined
+              }
+            >
               <TableCell>{submission.id}</TableCell>
               <TableCell>
                 <div>
@@ -60,21 +209,65 @@ export function SubmissionsTable({ submissions, onViewDetail, onEdit }: Submissi
               <TableCell>
                 <StatusBadge status={submission.status} />
               </TableCell>
-              <TableCell className="text-sm">{submission.verifikator || '-'}</TableCell>
+              <TableCell>
+                {submission.isValid ? (
+                  <Badge className="bg-green-100 text-green-800 hover:bg-green-100 border-green-200">
+                    <Check className="w-3 h-3 mr-1" />
+                    Valid
+                  </Badge>
+                ) : (
+                  <Badge className="bg-red-100 text-red-800 hover:bg-red-100 border-red-200">
+                    <EyeOff className="w-3 h-3 mr-1" />
+                    Invalid
+                  </Badge>
+                )}
+              </TableCell>
+              <TableCell className="text-sm">{submission.verifikatorName || '-'}</TableCell>
               <TableCell className="text-right">
                 <div className="flex items-center justify-end gap-2">
+                  <Button
+                    variant={submission.isValid ? 'outline' : 'default'}
+                    size="sm"
+                    disabled={isTogglingValidity}
+                    onClick={() => onToggleValidity(submission)}
+                    className={
+                      submission.isValid
+                        ? 'text-gray-700'
+                        : 'bg-green-600 hover:bg-green-700'
+                    }
+                    title={
+                      submission.isValid
+                        ? 'Tandai invalid (sembunyikan dari peta)'
+                        : 'Tandai valid (tampilkan di peta)'
+                    }
+                  >
+                    {submission.isValid ? (
+                      <>
+                        <EyeOff className="w-4 h-4 mr-1" />
+                        Invalid
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4 mr-1" />
+                        Valid
+                      </>
+                    )}
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={() => onViewDetail(submission)}
+                    title="Lihat detail pengajuan"
                   >
                     <Eye className="w-4 h-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => onEdit(submission)}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => onEdit(submission)}
+                    title="Edit pengajuan"
+                  >
                     <Edit className="w-4 h-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon">
-                    <Archive className="w-4 h-4" />
                   </Button>
                 </div>
               </TableCell>
@@ -82,6 +275,37 @@ export function SubmissionsTable({ submissions, onViewDetail, onEdit }: Submissi
           ))}
         </TableBody>
       </Table>
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3">
+        <p className="text-sm text-gray-600">
+          Menampilkan {safePage * PAGE_SIZE + 1}–
+          {Math.min((safePage + 1) * PAGE_SIZE, sorted.length)} dari {sorted.length} pengajuan
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage(Math.max(0, safePage - 1))}
+            disabled={safePage === 0}
+          >
+            <ChevronLeft className="w-4 h-4" />
+            Sebelumnya
+          </Button>
+          <span className="text-sm text-gray-600">
+            Hal {safePage + 1} / {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage(Math.min(totalPages - 1, safePage + 1))}
+            disabled={safePage >= totalPages - 1}
+          >
+            Berikutnya
+            <ChevronRight className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

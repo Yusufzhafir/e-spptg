@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Check, Database, X, RefreshCw, FileText } from 'lucide-react';
 import { KPICard } from './KPICard';
 import { MapView } from './MapView';
@@ -26,6 +27,9 @@ interface DashboardProps {
   isRefreshing: boolean;
   onViewDetail: (submission: Submission) => void;
   onEdit: (submission: Submission) => void;
+  onToggleValidity: (submission: Submission) => void;
+  isTogglingValidity: boolean;
+  onExportCsv: () => void;
 }
 
 export function Dashboard({
@@ -46,7 +50,14 @@ export function Dashboard({
   isRefreshing,
   onViewDetail,
   onEdit,
+  onToggleValidity,
+  isTogglingValidity,
+  onExportCsv,
 }: DashboardProps) {
+  // Only submissions marked valid are drawn on the map (data & polygon).
+  const validSubmissions = submissions.filter((s) => s.isValid);
+  // Row to focus/scroll to in the table when a map polygon is clicked.
+  const [focusSubmissionId, setFocusSubmissionId] = useState<number | null>(null);
   return (
     <div className="space-y-6">
       {/* KPI Cards */}
@@ -95,7 +106,11 @@ export function Dashboard({
             <CardTitle>Peta Sebaran Lahan</CardTitle>
           </CardHeader>
           <CardContent>
-            <MapView submissions={submissions} height="400px" />
+            <MapView
+              submissions={validSubmissions}
+              height="600px"
+              onViewInTable={(s) => setFocusSubmissionId(s.id)}
+            />
           </CardContent>
         </Card>
 
@@ -138,6 +153,7 @@ export function Dashboard({
         onDesaFilterChange={onDesaFilterChange}
         desaOptions={desaOptions}
         isRefreshing={isRefreshing}
+        onExportCsv={onExportCsv}
       />
 
       {/* Submissions Table */}
@@ -147,6 +163,9 @@ export function Dashboard({
           submissions={submissions}
           onViewDetail={onViewDetail}
           onEdit={onEdit}
+          onToggleValidity={onToggleValidity}
+          isTogglingValidity={isTogglingValidity}
+          focusSubmissionId={focusSubmissionId}
         />
       </div>
     </div>

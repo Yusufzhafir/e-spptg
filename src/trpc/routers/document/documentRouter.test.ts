@@ -199,11 +199,42 @@ describe('documentsRouter.getSignedDownloadUrl', () => {
     expect(extractS3KeyFromDocumentUrlMock).toHaveBeenCalledWith(
       'https://example.com/bucket/file.pdf'
     );
-    expect(getDownloadUrlMock).toHaveBeenCalledWith('submissions/KTP/file.pdf', 604800);
+    expect(getDownloadUrlMock).toHaveBeenCalledWith(
+      'submissions/KTP/file.pdf',
+      604800,
+      undefined
+    );
     expect(result).toEqual({
       signedUrl: 'https://signed.example.com/file.pdf',
       expiresIn: 604800,
     });
+  });
+
+  it('passes download filename when disposition is attachment', async () => {
+    getDocumentByIdMock.mockResolvedValue({
+      id: 5,
+      submissionId: 10,
+      uploadedBy: 1,
+      filename: 'SPPTG_123.pdf',
+      url: 'https://example.com/bucket/file.pdf',
+    } as DocumentRecord);
+    getSubmissionByIdMock.mockResolvedValue({
+      id: 10,
+      ownerUserId: 100,
+      villageId: 55,
+      verifikator: 100,
+    } as SubmissionRecord);
+    extractS3KeyFromDocumentUrlMock.mockReturnValue('submissions/SPPG/file.pdf');
+    getDownloadUrlMock.mockResolvedValue('https://signed.example.com/file.pdf');
+
+    const caller = documentsRouter.createCaller(createCtx('Admin', 500, 55));
+    await caller.getSignedDownloadUrl({ documentId: 5, disposition: 'attachment' });
+
+    expect(getDownloadUrlMock).toHaveBeenCalledWith(
+      'submissions/SPPG/file.pdf',
+      604800,
+      { downloadFilename: 'SPPTG_123.pdf' }
+    );
   });
 
   it('returns signed URL for viewer on owned submission', async () => {
@@ -250,7 +281,8 @@ describe('documentsRouter.getSignedDownloadUrl', () => {
     expect(getDraftByIdMock).toHaveBeenCalledWith(200);
     expect(getDownloadUrlMock).toHaveBeenCalledWith(
       'submissions/SPPG/draft-file.pdf',
-      604800
+      604800,
+      undefined
     );
     expect(result.signedUrl).toBe('https://signed.example.com/draft-file.pdf');
   });

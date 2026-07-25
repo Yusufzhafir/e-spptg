@@ -16,6 +16,7 @@ interface FilterPanelProps {
   onDesaFilterChange: (value: string) => void;
   desaOptions: Array<{ id: number; namaDesa: string }>;
   isRefreshing: boolean;
+  onExportCsv: () => void;
 }
 
 export function FilterPanel({
@@ -31,6 +32,7 @@ export function FilterPanel({
   onDesaFilterChange,
   desaOptions,
   isRefreshing,
+  onExportCsv,
 }: FilterPanelProps) {
   return (
     <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-4">
@@ -116,7 +118,7 @@ export function FilterPanel({
               <span>Memperbarui hasil...</span>
             </div>
           ) : null}
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={onExportCsv}>
             <Download className="w-4 h-4 mr-2" />
             Ekspor CSV
           </Button>

@@ -209,6 +209,9 @@ export const submissionDrafts = pgTable(
     userId: bigint('user_id',{mode:"number"})
       .notNull(),
     villageId: bigint('village_id', { mode: 'number' }),
+    // When set, this draft edits an existing submission and re-submitting
+    // updates that submission in place instead of creating a new one.
+    editingSubmissionId: bigint('editing_submission_id', { mode: 'number' }),
     currentStep: integer('current_step').notNull().default(1),
     
     // Entire SubmissionDraft as JSONB
@@ -260,9 +263,14 @@ export const submissions = pgTable(
     // PostGIS Geometry (Polygon of the land boundary)
     geom: geometry('geom', { type: 'polygon', srid: 4326 }),
     geoJSON: jsonb('geo_json'), // Fallback/reference
+    // Full draft payload snapshot at submit time — lets the submission be
+    // re-opened for editing with every field/upload pre-filled.
+    payload: jsonb('payload'),
     
     // Status
     status: statusSPPTGEnum('status').notNull(),
+    // Validasi visual: true = data & polygon ditampilkan di peta, false = disembunyikan
+    isValid: boolean('is_valid').notNull().default(true),
     tanggalPengajuan: timestamp('tanggal_pengajuan').notNull(),
     ownerUserId: bigint('owner_user_id', { mode: 'number' }),
     verifikator: bigint({mode:"number"}).notNull(),
@@ -388,4 +396,30 @@ export const statusHistory = pgTable(
     tanggal: timestamp('tanggal').defaultNow().notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
+);
+
+// ============================================================================
+// COMMENTS TABLE (internal discussion per submission)
+// ============================================================================
+
+export const comments = pgTable(
+  'comments',
+  {
+    id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({
+      name: "comments_id_seq",
+      startWith: 1,
+      increment: 1,
+      minValue: 1,
+      maxValue: (9223372036854775807n) as unknown as number,
+      cache: 1,
+    }),
+    submissionId: bigint('submission_id', { mode: 'number' }).notNull(),
+    userId: bigint('user_id', { mode: 'number' }).notNull(),
+    content: text('content').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('comments_submission_idx').on(t.submissionId),
+  ]
 );

@@ -7,6 +7,25 @@ import {
   type CoordinateWithOptionalId,
 } from '@/lib/coordinate-ids';
 
+/**
+ * Merge a payload update into the stored payload. A null value from the
+ * client means "field cleared" — the key is removed from the stored payload
+ * (undefined can't be used: JSON transport drops undefined keys entirely,
+ * which would silently keep the old value).
+ */
+export function mergeDraftPayload(
+  base: Record<string, unknown>,
+  update: Record<string, unknown>
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...base, ...update };
+  for (const key of Object.keys(update)) {
+    if (update[key] === null) {
+      delete merged[key];
+    }
+  }
+  return merged;
+}
+
 function normalizeDraftCoordinatesPayload(
   payload: unknown
 ): { payload: Record<string, unknown>; changed: boolean } {
@@ -71,6 +90,30 @@ export async function createDraft(userId: number, tx?: DBTransaction) {
   return created[0];
 }
 
+export async function createDraftFromSubmission(
+  params: {
+    userId: number;
+    villageId: number | null;
+    payload: Record<string, unknown>;
+    editingSubmissionId: number;
+    currentStep?: number;
+  },
+  tx?: DBTransaction
+) {
+  const queryDb = tx || db;
+  const created = await queryDb
+    .insert(submissionDrafts)
+    .values({
+      userId: params.userId,
+      villageId: params.villageId,
+      editingSubmissionId: params.editingSubmissionId,
+      currentStep: params.currentStep ?? 1,
+      payload: params.payload,
+    })
+    .returning();
+  return created[0];
+}
+
 export async function getDraftById(id: number, tx?: DBTransaction) {
   const queryDb = tx || db;
   const draft = await queryDb.query.submissionDrafts.findFirst({
@@ -113,10 +156,12 @@ export async function saveDraftStep(
     throw new Error('Draft not found');
   }
 
-  // Merge payload
+  // Merge payload (null values from the client clear the field)
   const mergedPayload = {
-    ...draft.payload,
-    ...payloadUpdate,
+    ...mergeDraftPayload(
+      draft.payload as Record<string, unknown>,
+      payloadUpdate as Record<string, unknown>
+    ),
     currentStep,
   };
   const normalizedPayload = normalizeDraftCoordinatesPayload(mergedPayload).payload;

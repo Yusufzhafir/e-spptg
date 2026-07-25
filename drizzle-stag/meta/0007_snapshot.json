@@ -1,9 +1,87 @@
 {
-  "id": "fd1f5ed2-4370-407c-ba05-7a79cdc1c707",
-  "prevId": "df94c086-c376-4dab-a3b8-b67e63ab40a5",
+  "id": "7828db80-7731-409f-8471-1d6e40bd2239",
+  "prevId": "c4fa3f19-04c6-4ffc-ba3c-823fd8fbe785",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "public.comments": {
+      "name": "comments",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "comments_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "submission_id": {
+          "name": "submission_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "comments_submission_idx": {
+          "name": "comments_submission_idx",
+          "columns": [
+            {
+              "expression": "submission_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.overlap_results": {
       "name": "overlap_results",
       "schema": "",
@@ -343,6 +421,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "editing_submission_id": {
+          "name": "editing_submission_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
         "current_step": {
           "name": "current_step",
           "type": "integer",
@@ -503,6 +587,12 @@
         },
         "geo_json": {
           "name": "geo_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payload": {
+          "name": "payload",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false

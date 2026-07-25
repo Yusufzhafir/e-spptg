@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
 import { Submission, StatusSPPTG } from '@/types';
 import { geoJSONToLatLng } from '@/lib/map-utils';;
+import type { ReferencePolygon } from './DrawingMap';
 import { MapPin } from 'lucide-react';
-import { renderToString } from 'react-dom/server';
 
 interface ReadOnlyMapProps {
   submissions: Submission[];
@@ -17,6 +17,10 @@ interface ReadOnlyMapProps {
   };
   zoom?: number;
   onPolygonClick?: (submission: Submission) => void;
+  /** Extra non-interactive polygons drawn as reference (e.g. overlapping kawasan) */
+  referencePolygons?: ReferencePolygon[];
+  /** Add a "Kawasan Non-SPPTG" entry to the legend (e.g. overlap detail map) */
+  showNonSpptgLegend?: boolean;
 }
 
 function getPolygonColor(status: StatusSPPTG): string {
@@ -39,10 +43,64 @@ function ReadOnlyMapInternal({
   submissions,
   selectedSubmission,
   onPolygonClick,
+  referencePolygons,
 }: Omit<ReadOnlyMapProps, 'height' | 'center' | 'zoom'>) {
   const map = useMap();
   const polygonsRef = useRef<google.maps.Polygon[]>([]);
   const infoWindowsRef = useRef<google.maps.InfoWindow[]>([]);
+  const referencePolygonsRef = useRef<google.maps.Polygon[]>([]);
+  const referenceInfoWindowRef = useRef<google.maps.InfoWindow | null>(null);
+
+  // Draw non-interactive reference polygons (e.g. overlapping kawasan / SPPTG)
+  useEffect(() => {
+    if (!map) return;
+    const google = window.google;
+    if (!google) return;
+
+    referencePolygonsRef.current.forEach((polygon) => polygon.setMap(null));
+    referencePolygonsRef.current = [];
+
+    if (!referencePolygons || referencePolygons.length === 0) return;
+
+    if (!referenceInfoWindowRef.current) {
+      referenceInfoWindowRef.current = new google.maps.InfoWindow();
+    }
+    const infoWindow = referenceInfoWindowRef.current;
+
+    referencePolygons.forEach((ref) => {
+      if (ref.path.length < 3) return;
+      const polygon = new google.maps.Polygon({
+        paths: ref.path,
+        fillColor: ref.fillColor,
+        fillOpacity: 0.25,
+        strokeColor: ref.strokeColor,
+        strokeWeight: 2,
+        strokeOpacity: 0.9,
+        clickable: Boolean(ref.label),
+        zIndex: 1,
+      });
+      polygon.setMap(map);
+
+      if (ref.label) {
+        polygon.addListener('click', (e: google.maps.PolyMouseEvent) => {
+          if (!e.latLng) return;
+          infoWindow.setContent(
+            `<div style="padding:2px 4px;font-size:12px;font-weight:600;">${ref.label}</div>`
+          );
+          infoWindow.setPosition(e.latLng);
+          infoWindow.open(map);
+        });
+      }
+
+      referencePolygonsRef.current.push(polygon);
+    });
+
+    return () => {
+      referencePolygonsRef.current.forEach((polygon) => polygon.setMap(null));
+      referencePolygonsRef.current = [];
+      referenceInfoWindowRef.current?.close();
+    };
+  }, [map, referencePolygons]);
 
   useEffect(() => {
     if (!map) return;
@@ -78,31 +136,9 @@ function ReadOnlyMapInternal({
       polygon.setMap(map);
       polygonsRef.current.push(polygon);
 
-      // Create info window content
-      const infoContent = renderToString(<div className='p-2 min-w-52' >
-          <p className='font-semibold mb-1'>{submission.namaPemilik}</p>
-          <p className='text-xs text-[#666] mb-1' >ID: {submission.id}</p>
-          <p className='text-xs text-[#666] mb-1' >{submission.kecamatan}</p>
-          <p className='text-xs text-[#666] mb-2'>Luas: {submission.luas.toLocaleString('id-ID')} m²</p>
-        </div>);
-
-      const infoWindow = new google.maps.InfoWindow({
-        content: infoContent,
-      });
-
-      infoWindowsRef.current.push(infoWindow);
-
-      // Add click listener
-      google.maps.event.addListener(polygon, 'click', (e: google.maps.MapMouseEvent) => {
-        // Close all other info windows
-        infoWindowsRef.current.forEach((iw) => iw.close());
-
-        // Open info window for this polygon
-        if (e.latLng) {
-          infoWindow.setPosition(e.latLng);
-          infoWindow.open(map);
-        }
-
+      // Click just notifies the parent — the popup is rendered as a React
+      // overlay by MapView (fixed corner), so it can't cover the map controls.
+      google.maps.event.addListener(polygon, 'click', () => {
         if (onPolygonClick) {
           onPolygonClick(submission);
         }
@@ -144,6 +180,8 @@ export function ReadOnlyMap({
   },
   zoom = 13,
   onPolygonClick,
+  referencePolygons,
+  showNonSpptgLegend = false,
 }: ReadOnlyMapProps) {
   const isLoaded = true
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -202,12 +240,14 @@ export function ReadOnlyMap({
             submissions={submissions}
             selectedSubmission={selectedSubmission}
             onPolygonClick={onPolygonClick}
+            referencePolygons={referencePolygons}
           />
         </Map>
       </APIProvider>
 
-      {/* Legend */}
-      <div className="absolute bottom-4 right-4 bg-white p-3 rounded-lg shadow-lg border border-gray-200 z-1000">
+      {/* Legend — placed just above the Google logo (bottom-left) so it never
+          covers the map zoom controls at the bottom-right */}
+      <div className="absolute bottom-9 left-2 bg-white/95 p-2.5 rounded-lg shadow-lg border border-gray-200 z-10">
         <p className="text-xs mb-2 font-semibold">Legenda</p>
         <div className="space-y-1">
           <div className="flex items-center gap-2 text-xs">
@@ -226,6 +266,15 @@ export function ReadOnlyMap({
             <div className="w-4 h-4 rounded" style={{ backgroundColor: '#eab308' }} />
             <span>SPPTG ditinjau ulang</span>
           </div>
+          {showNonSpptgLegend && (
+            <div className="flex items-center gap-2 text-xs">
+              <div
+                className="w-4 h-4 rounded border border-red-700"
+                style={{ backgroundColor: '#ef4444' }}
+              />
+              <span>Kawasan Non-SPPTG</span>
+            </div>
+          )}
         </div>
       </div>
     </div>

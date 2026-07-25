@@ -3,6 +3,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useMemo,
   type ChangeEvent,
   type KeyboardEvent,
 } from 'react';
@@ -14,7 +15,9 @@ import {
   CoordinateSystem,
 } from '../../types';
 import { trpc } from '@/trpc/client';
-import { DrawingMap } from '../maps/DrawingMap';
+import { DrawingMap, type ReferencePolygon } from '../maps/DrawingMap';
+import { geoJSONToPaths } from '@/lib/map-utils';
+import { overlapJenisBadgeClassName } from '@/lib/overlap-results';
 import { parseKMLFile } from '@/lib/kmz-parser';
 import {
   coordinatesNeedIdNormalization,
@@ -83,6 +86,7 @@ interface Step2Props {
     updates: Partial<SubmissionDraft>,
     options?: { silent?: boolean }
   ) => Promise<void>;
+  errors?: Record<string, string>;
 }
 
 type NewWitnessWithUsage = {
@@ -119,6 +123,7 @@ export function Step2FieldValidation({
   draft,
   onUpdateDraft,
   onPersistDraftPatch,
+  errors = {},
 }: Step2Props) {
   const [isOverlapDialogOpen, setIsOverlapDialogOpen] = useState(false);
   const [isParsingKml, setIsParsingKml] = useState(false);
@@ -489,6 +494,71 @@ export function Step2FieldValidation({
     },
   });
 
+  // Existing polygons to display as read-only reference behind the drawing:
+  // Non-SPPTG prohibited areas + already-recorded SPPTG (terdaftar/terdata).
+  const { data: prohibitedAreasData } = trpc.prohibitedAreas.list.useQuery({
+    limit: 500,
+    offset: 0,
+  });
+  const { data: existingSubmissionsData } = trpc.submissions.list.useQuery({
+    limit: 500,
+    offset: 0,
+  });
+
+  const referencePolygons = useMemo<ReferencePolygon[]>(() => {
+    const result: ReferencePolygon[] = [];
+
+    // Kawasan Non-SPPTG (prohibited areas)
+    const areas = (prohibitedAreasData ?? []) as Array<{
+      id: number;
+      namaKawasan: string;
+      warna?: string | null;
+      geom?: unknown;
+    }>;
+    areas.forEach((area) => {
+      const color = area.warna || '#ef4444';
+      geoJSONToPaths(area.geom).forEach((path, i) => {
+        result.push({
+          id: `kawasan-${area.id}-${i}`,
+          path,
+          strokeColor: color,
+          fillColor: color,
+          label: `Non-SPPTG: ${area.namaKawasan}`,
+        });
+      });
+    });
+
+    // Existing SPPTG (terdaftar = green, terdata = blue)
+    const submissionItems = (existingSubmissionsData?.items ?? []) as Array<{
+      id: number;
+      namaPemilik: string;
+      status: string;
+      isValid?: boolean;
+      geoJSON?: unknown;
+    }>;
+    submissionItems.forEach((sub) => {
+      if (sub.status !== 'SPPTG terdaftar' && sub.status !== 'SPPTG terdata') {
+        return;
+      }
+      // Hide submissions marked invalid — only valid data is shown on the map.
+      if (sub.isValid === false) {
+        return;
+      }
+      const color = sub.status === 'SPPTG terdaftar' ? '#22c55e' : '#3b82f6';
+      geoJSONToPaths(sub.geoJSON).forEach((path, i) => {
+        result.push({
+          id: `spptg-${sub.id}-${i}`,
+          path,
+          strokeColor: color,
+          fillColor: color,
+          label: `${sub.status}: ${sub.namaPemilik}`,
+        });
+      });
+    });
+
+    return result;
+  }, [prohibitedAreasData, existingSubmissionsData]);
+
   const handleCheckOverlap = () => {
     if (draft.coordinatesGeografis.length < 3) {
       toast.error('Minimal 3 titik koordinat diperlukan');
@@ -557,7 +627,12 @@ export function Step2FieldValidation({
 
       {/* Boundary Witnesses */}
       <div className="space-y-4 pt-4 border-t border-gray-200">
-        <h3 className="text-gray-900">Saksi Batas Lahan</h3>
+        <h3 className="text-gray-900">
+          Saksi Batas Lahan <span className="text-red-600">*</span>
+        </h3>
+        {errors.saksiList && (
+          <p className="text-xs text-red-600">{errors.saksiList}</p>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-[1fr_200px_1fr_auto] gap-2">
           <Input
@@ -737,12 +812,17 @@ export function Step2FieldValidation({
       {/* Coordinates */}
       <div className="space-y-4 pt-4 border-t border-gray-200">
         <div className="flex items-center justify-between">
-          <h3 className="text-gray-900">Titik Koordinat Patok/Pal Batas</h3>
+          <h3 className="text-gray-900">
+            Titik Koordinat Patok/Pal Batas <span className="text-red-600">*</span>
+          </h3>
           <Button onClick={handleAddCoordinate} variant="outline" size="sm">
             <Plus className="w-4 h-4 mr-2" />
             Tambah Titik
           </Button>
         </div>
+        {errors.coordinatesGeografis && (
+          <p className="text-xs text-red-600">{errors.coordinatesGeografis}</p>
+        )}
 
         <div className="space-y-1">
           <Label htmlFor="kml-coordinate-file">Impor KML (Opsional)</Label>
@@ -984,6 +1064,7 @@ export function Step2FieldValidation({
             <DrawingMap
               coordinates={draft.coordinatesGeografis}
               recenterSignal={recenterSignal}
+              referencePolygons={referencePolygons}
               onCoordinatesChange={(coords) => {
                 // This callback is triggered when user draws/edits on the map
                 // The coordinates are already synced, just update the draft
@@ -992,6 +1073,34 @@ export function Step2FieldValidation({
                 });
               }}
             />
+
+            {/* Legend for reference polygons */}
+            <div className="bg-gray-50 rounded-lg border border-gray-200 p-3">
+              <p className="text-xs mb-2 font-semibold text-gray-900">
+                Legenda Peta
+              </p>
+              <div className="grid grid-cols-2 gap-1">
+                <div className="flex items-center gap-2 text-xs text-gray-700">
+                  <span className="w-3.5 h-3.5 rounded-sm border" style={{ backgroundColor: '#f97316', borderColor: '#f97316' }} />
+                  Lahan yang diajukan (digambar)
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-700">
+                  <span className="w-3.5 h-3.5 rounded-sm border" style={{ backgroundColor: '#22c55e', borderColor: '#22c55e' }} />
+                  SPPTG terdaftar
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-700">
+                  <span className="w-3.5 h-3.5 rounded-sm border" style={{ backgroundColor: '#3b82f6', borderColor: '#3b82f6' }} />
+                  SPPTG terdata
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-700">
+                  <span className="w-3.5 h-3.5 rounded-sm border" style={{ backgroundColor: '#ef4444', borderColor: '#ef4444' }} />
+                  Kawasan Non-SPPTG
+                </div>
+              </div>
+              <p className="text-[11px] text-gray-500 mt-2">
+                Polygon kawasan & SPPTG lain hanya tampil sebagai referensi (tidak dapat diedit).
+              </p>
+            </div>
 
             <Button
               onClick={handleCheckOverlap}
@@ -1013,16 +1122,22 @@ export function Step2FieldValidation({
           Unggah dokumen hasil validasi lapangan (format PDF, maks. 10 MB)
         </p>
 
-        <FileUploadField
-          label="Berita Acara Validasi Lapangan"
-          value={draft.dokumenBeritaAcara}
-          onChange={(doc) => onPersistDraftPatch({ dokumenBeritaAcara: doc })}
-          category="Berita Acara"
-          templateType="berita_acara_validasi_lapangan.docx"
-          draftId={draft.id}
-          accept=".pdf"
-          maxSize={10}
-        />
+        <div>
+          <FileUploadField
+            label="Berita Acara Validasi Lapangan"
+            value={draft.dokumenBeritaAcara}
+            onChange={(doc) => onPersistDraftPatch({ dokumenBeritaAcara: doc })}
+            category="Berita Acara"
+            templateType="berita_acara_validasi_lapangan.docx"
+            draftId={draft.id}
+            accept=".pdf"
+            maxSize={10}
+            error={Boolean(errors.dokumenBeritaAcara)}
+          />
+          {errors.dokumenBeritaAcara && (
+            <p className="text-xs text-red-600 mt-1">{errors.dokumenBeritaAcara}</p>
+          )}
+        </div>
       </div>
 
       {/* Overlap Check Dialog */}
@@ -1070,7 +1185,9 @@ export function Step2FieldValidation({
                         <TableRow key={index}>
                           <TableCell>{overlap.namaKawasan}</TableCell>
                           <TableCell>
-                            <Badge variant="outline">{overlap.jenisKawasan}</Badge>
+                            <Badge className={overlapJenisBadgeClassName(overlap)}>
+                              {overlap.jenisKawasan}
+                            </Badge>
                           </TableCell>
                           <TableCell>
                             <Badge variant="secondary">

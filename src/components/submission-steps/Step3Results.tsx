@@ -36,7 +36,10 @@ import {
 import { CheckCircle2, XCircle, MapPin, AlertTriangle, Upload, File, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { ReadOnlyMap } from '@/components/maps/ReadOnlyMap';
-import { coordinatesToGeoJSON } from '@/lib/map-utils';
+import type { ReferencePolygon } from '@/components/maps/DrawingMap';
+import { coordinatesToGeoJSON, geoJSONToPaths } from '@/lib/map-utils';
+import { overlapJenisBadgeClassName } from '@/lib/overlap-results';
+import { trpc } from '@/trpc/client';
 
 interface Step3Props {
   draft: SubmissionDraft;
@@ -94,6 +97,7 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
   const [isOverlapDetailOpen, setIsOverlapDetailOpen] = useState(false);
   const [isHistoryDialogOpen, setIsHistoryDialogOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const hasOverlap = draft.overlapResults && draft.overlapResults.length > 0;
   const requiresFeedback = selectedStatus === 'SPPTG ditolak' || selectedStatus === 'SPPTG ditinjau ulang';
@@ -116,8 +120,18 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (file) processLampiran(file);
+  };
 
+  const handleLampiranDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (isUploading) return;
+    const file = e.dataTransfer.files?.[0];
+    if (file) processLampiran(file);
+  };
+
+  const processLampiran = (file: File) => {
     // Validate file type
     const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
     if (!allowedTypes.includes(file.type)) {
@@ -237,6 +251,7 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
       catatan: null,
       geoJSON,
       status: draft.status || 'SPPTG terdata',
+      isValid: true,
       tanggalPengajuan: new Date(),
       ownerUserId: null,
       verifikator: draft.verifikator || null,
@@ -246,6 +261,66 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
       updatedAt: new Date(),
     };
   }, [draft]);
+
+  // Geometry of overlapping kawasan / SPPTG, for the Detail Tumpang Tindih map.
+  const hasOverlapData = (draft.overlapResults?.length ?? 0) > 0;
+  const { data: prohibitedAreasData } = trpc.prohibitedAreas.list.useQuery(
+    { limit: 500, offset: 0 },
+    { enabled: hasOverlapData }
+  );
+  const { data: existingSubmissionsData } = trpc.submissions.list.useQuery(
+    { limit: 500, offset: 0 },
+    { enabled: hasOverlapData }
+  );
+
+  const overlapReferencePolygons = useMemo<ReferencePolygon[]>(() => {
+    const result: ReferencePolygon[] = [];
+    const areas = (prohibitedAreasData ?? []) as Array<{
+      id: number;
+      warna?: string | null;
+      geom?: unknown;
+    }>;
+    const subs = (existingSubmissionsData?.items ?? []) as Array<{
+      id: number;
+      status: string;
+      geoJSON?: unknown;
+    }>;
+
+    for (const overlap of draft.overlapResults || []) {
+      const isSubmission =
+        overlap.sumber === 'Submission' ||
+        overlap.jenisKawasan?.startsWith('SPPTG ');
+
+      if (isSubmission) {
+        const sub = subs.find((s) => s.id === overlap.kawasanId);
+        if (!sub) continue;
+        const color = sub.status === 'SPPTG terdaftar' ? '#22c55e' : '#3b82f6';
+        geoJSONToPaths(sub.geoJSON).forEach((path, i) => {
+          result.push({
+            id: `ov-sub-${overlap.kawasanId}-${i}`,
+            path,
+            strokeColor: color,
+            fillColor: color,
+            label: `${overlap.jenisKawasan}: ${overlap.namaKawasan}`,
+          });
+        });
+      } else {
+        const area = areas.find((a) => a.id === overlap.kawasanId);
+        if (!area) continue;
+        const color = area.warna || '#ef4444';
+        geoJSONToPaths(area.geom).forEach((path, i) => {
+          result.push({
+            id: `ov-area-${overlap.kawasanId}-${i}`,
+            path,
+            strokeColor: color,
+            fillColor: color,
+            label: `Non-SPPTG: ${overlap.namaKawasan}`,
+          });
+        });
+      }
+    }
+    return result;
+  }, [draft.overlapResults, prohibitedAreasData, existingSubmissionsData]);
 
   return (
     <div className="space-y-6">
@@ -599,12 +674,22 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
                       <div className="mt-2">
                         <label
                           htmlFor="lampiran-feedback"
-                          className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            if (!isUploading) setIsDragging(true);
+                          }}
+                          onDragLeave={() => setIsDragging(false)}
+                          onDrop={handleLampiranDrop}
+                          className={
+                            isDragging
+                              ? 'flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-blue-500 bg-blue-50 rounded-lg cursor-pointer transition-colors'
+                              : 'flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors'
+                          }
                         >
                           <div className="flex flex-col items-center justify-center pt-5 pb-6">
                             <Upload className="w-8 h-8 text-gray-400 mb-2" />
                             <p className="text-sm text-gray-600">
-                              <span className="text-blue-600">Klik untuk unggah</span>
+                              <span className="text-blue-600">Klik untuk unggah</span> atau seret ke sini
                             </p>
                             <p className="text-xs text-gray-500 mt-1">PDF/JPG/PNG (Maks. 10 MB)</p>
                           </div>
@@ -682,13 +767,32 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
 
       {/* Overlap Detail Dialog */}
       <Dialog open={isOverlapDetailOpen} onOpenChange={setIsOverlapDetailOpen}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[720px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detail Tumpang Tindih</DialogTitle>
             <DialogDescription>
-              Kawasan non-SPPTG yang tumpang tindih dengan lahan pengajuan
+              Peta menampilkan polygon lahan pengajuan beserta hanya kawasan/SPPTG
+              yang tumpang tindih dengannya.
             </DialogDescription>
           </DialogHeader>
+
+          {/* Map: our polygon + only the overlapping polygons */}
+          {mapPreviewSubmission && (
+            <div className="mb-2">
+              <ReadOnlyMap
+                submissions={[mapPreviewSubmission]}
+                selectedSubmission={mapPreviewSubmission}
+                referencePolygons={overlapReferencePolygons}
+                showNonSpptgLegend
+                height="20rem"
+                zoom={16}
+                center={{
+                  lat: draft.coordinatesGeografis[0]?.latitude || -6.9175,
+                  lng: draft.coordinatesGeografis[0]?.longitude || 107.6191,
+                }}
+              />
+            </div>
+          )}
 
           <div className="space-y-4">
             {draft.overlapResults.map((overlap, index) => (
@@ -696,9 +800,12 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1">
                     <p className="text-gray-900">{overlap.namaKawasan}</p>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Jenis: {overlap.jenisKawasan}
-                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-sm text-gray-600">Jenis:</span>
+                      <Badge className={overlapJenisBadgeClassName(overlap)}>
+                        {overlap.jenisKawasan}
+                      </Badge>
+                    </div>
                     <p className="text-sm text-gray-600 mt-1">
                       Sumber: {overlap.sumber === 'Submission' ? 'SPPTG Eksisting' : 'Kawasan Non-SPPTG'}
                     </p>

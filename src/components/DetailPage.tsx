@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { MapView } from './MapView';
 import { StatusBadge } from './StatusBadge';
-import { ChevronLeft, FileText, Clock, MessageSquare, File, Download, Loader2 } from 'lucide-react';
-import { StatusSPPTG, Submission } from '@/types';
+import { ChevronLeft, FileText, Clock, MessageSquare, File, Download, Loader2, Trash2, Send } from 'lucide-react';
+import { Badge } from './ui/badge';
+import { Submission } from '@/types';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { geomGeoJSONPolygonSchema } from '@/lib/validation';
@@ -17,13 +16,67 @@ import { trpc } from '@/trpc/client';
 interface DetailPageProps {
   submission: Submission;
   onBack: () => void;
-  onStatusChange: (id: number, status: StatusSPPTG, alasan: string) => void;
 }
 
-export function DetailPage({ submission, onBack, onStatusChange }: DetailPageProps) {
-  const [newStatus, setNewStatus] = useState<StatusSPPTG | ''>('');
-  const [alasan, setAlasan] = useState('');
+export function DetailPage({ submission, onBack }: DetailPageProps) {
   const [openingDocumentId, setOpeningDocumentId] = useState<number | null>(null);
+  const [newComment, setNewComment] = useState('');
+
+  const { data: currentUser } = trpc.auth.me.useQuery();
+  const {
+    data: comments,
+    isLoading: isCommentsLoading,
+    refetch: refetchComments,
+  } = trpc.comments.listBySubmission.useQuery({ submissionId: submission.id });
+
+  const createCommentMutation = trpc.comments.create.useMutation({
+    onSuccess: () => {
+      setNewComment('');
+      void refetchComments();
+      toast.success('Komentar terkirim');
+    },
+    onError: (error) => toast.error(error.message || 'Gagal mengirim komentar'),
+  });
+
+  const deleteCommentMutation = trpc.comments.delete.useMutation({
+    onSuccess: () => {
+      void refetchComments();
+      toast.info('Komentar dihapus');
+    },
+    onError: (error) => toast.error(error.message || 'Gagal menghapus komentar'),
+  });
+
+  const canDeleteComment = (commentUserId: number) => {
+    if (!currentUser) return false;
+    if (currentUser.peran === 'Superadmin') return true;
+    if (commentUserId === currentUser.id) return true;
+    if (submission.ownerUserId != null && submission.ownerUserId === currentUser.id) return true;
+    if (currentUser.peran === 'Admin' && currentUser.assignedVillageId === submission.villageId) {
+      return true;
+    }
+    return false;
+  };
+
+  const handleSubmitComment = () => {
+    const content = newComment.trim();
+    if (!content) {
+      toast.error('Komentar tidak boleh kosong');
+      return;
+    }
+    createCommentMutation.mutate({ submissionId: submission.id, content });
+  };
+
+  const formatCommentDate = (value: Date | string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '-';
+    return date.toLocaleString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
   const {
     data: documents,
     isLoading: isDocumentsLoading,
@@ -47,21 +100,18 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
     return date.toLocaleString('id-ID');
   };
 
-  const handleStatusChange = () => {
-    if (!newStatus) {
-      toast.error('Pilih status terlebih dahulu');
-      return;
-    }
-
-    if ((newStatus === 'SPPTG ditolak' || newStatus === 'SPPTG ditinjau ulang') && !alasan.trim()) {
-      toast.error('Alasan wajib diisi untuk status ini');
-      return;
-    }
-
-    onStatusChange(submission.id, newStatus, alasan);
-    toast.success('Perubahan status berhasil disimpan');
-    setNewStatus('');
-    setAlasan('');
+  // Riwayat dates come in mixed shapes (ISO, plain date, or locale string).
+  // Format when parseable; otherwise keep the original text.
+  const formatRiwayatDate = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value || '-';
+    return date.toLocaleString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   const handleOpenDocument = async (documentId: number) => {
@@ -99,10 +149,9 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
         </CardHeader>
       </Card>
 
-      {/* Main Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: Map */}
-        <Card className="lg:col-span-2">
+      {/* Main Content — full-width map */}
+      <div>
+        <Card>
           <CardHeader>
             <CardTitle>Peta Lokasi Lahan</CardTitle>
           </CardHeader>
@@ -148,54 +197,6 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
                 </div>
               </div>
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Right: Verification Panel */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Panel Verifikasi</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="status">Ubah Status</Label>
-              <Select value={newStatus} onValueChange={(v) => setNewStatus(v as StatusSPPTG)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih status baru" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="SKT terdaftar">SKT terdaftar</SelectItem>
-                  <SelectItem value="SKT terdata">SKT terdata</SelectItem>
-                  <SelectItem value="SKT ditolak">SKT ditolak</SelectItem>
-                  <SelectItem value="SKT ditinjau ulang">SKT ditinjau ulang</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="alasan">
-                Alasan {(newStatus === 'SPPTG ditolak' || newStatus === 'SPPTG ditinjau ulang') && '*'}
-              </Label>
-              <Textarea
-                id="alasan"
-                value={alasan}
-                onChange={(e) => setAlasan(e.target.value)}
-                placeholder="Masukkan alasan perubahan status..."
-                rows={4}
-                className={
-                  (newStatus === 'SPPTG ditolak' || newStatus === 'SPPTG ditinjau ulang') && !alasan
-                    ? 'border-red-300'
-                    : ''
-                }
-              />
-              {(newStatus === 'SPPTG ditolak' || newStatus === 'SPPTG ditinjau ulang') && (
-                <p className="text-xs text-red-600">Wajib diisi untuk status ini</p>
-              )}
-            </div>
-
-            <Button onClick={handleStatusChange} className="w-full">
-              Simpan Perubahan
-            </Button>
           </CardContent>
         </Card>
       </div>
@@ -376,7 +377,7 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
                   <div key={index} className="p-4 bg-gray-50 rounded-lg">
                     <div className="flex items-start justify-between mb-2">
                       <StatusBadge status={item.status} />
-                      <p className="text-sm text-gray-600">{item.tanggal}</p>
+                      <p className="text-sm text-gray-600">{formatRiwayatDate(item.tanggal)}</p>
                     </div>
                     <p className="text-sm">Petugas: {item.petugas}</p>
                     {item.alasan && (
@@ -391,8 +392,74 @@ export function DetailPage({ submission, onBack, onStatusChange }: DetailPagePro
 
             <TabsContent value="komentar" className="mt-4">
               <div className="space-y-4">
-                <Textarea placeholder="Tambahkan komentar internal..." rows={3} />
-                <Button>Kirim Komentar</Button>
+                <div className="space-y-2">
+                  <Textarea
+                    placeholder="Tambahkan komentar..."
+                    rows={3}
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                  />
+                  <Button
+                    onClick={handleSubmitComment}
+                    disabled={createCommentMutation.isPending || !newComment.trim()}
+                  >
+                    <Send className="w-4 h-4 mr-2" />
+                    {createCommentMutation.isPending ? 'Mengirim...' : 'Kirim Komentar'}
+                  </Button>
+                </div>
+
+                <div className="space-y-3">
+                  {isCommentsLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Memuat komentar...</span>
+                    </div>
+                  ) : !comments || comments.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center">
+                      <MessageSquare className="mx-auto mb-2 h-8 w-8 text-gray-400" />
+                      <p className="text-sm text-gray-600">Belum ada komentar.</p>
+                    </div>
+                  ) : (
+                    comments.map((comment) => (
+                      <div
+                        key={comment.id}
+                        className="rounded-lg border border-gray-200 bg-white p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-sm font-medium text-gray-900">
+                                {comment.authorName || 'Pengguna'}
+                              </p>
+                              {comment.authorRole && (
+                                <Badge variant="outline" className="text-xs">
+                                  {comment.authorRole}
+                                </Badge>
+                              )}
+                              <span className="text-xs text-gray-500">
+                                {formatCommentDate(comment.createdAt)}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-sm text-gray-700 whitespace-pre-wrap wrap-break-word">
+                              {comment.content}
+                            </p>
+                          </div>
+                          {canDeleteComment(comment.userId) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => deleteCommentMutation.mutate({ commentId: comment.id })}
+                              disabled={deleteCommentMutation.isPending}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50 shrink-0"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </TabsContent>
           </Tabs>

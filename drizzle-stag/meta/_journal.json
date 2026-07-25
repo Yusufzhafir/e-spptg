@@ -36,6 +36,27 @@
       "when": 1768730694738,
       "tag": "0004_wakeful_warbound",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784944514339,
+      "tag": "0005_gorgeous_oracle",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784951111825,
+      "tag": "0006_foamy_masked_marvel",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784961134765,
+      "tag": "0007_amused_khan",
+      "breakpoints": true
     }
   ]
 }

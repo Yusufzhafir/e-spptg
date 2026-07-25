@@ -244,7 +244,12 @@ export const documentsRouter = router({
     }),
 
   getSignedDownloadUrl: protectedProcedure
-    .input(z.object({ documentId: z.number().int() }))
+    .input(
+      z.object({
+        documentId: z.number().int(),
+        disposition: z.enum(['inline', 'attachment']).optional(),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       const document = await queries.getDocumentById(input.documentId);
       if (!document) {
@@ -290,7 +295,13 @@ export const documentsRouter = router({
       try {
         const s3Key = extractS3KeyFromDocumentUrl(document.url);
         const expiresIn = 604800;
-        const signedUrl = await getDownloadUrl(s3Key, expiresIn);
+        const signedUrl = await getDownloadUrl(
+          s3Key,
+          expiresIn,
+          input.disposition === 'attachment'
+            ? { downloadFilename: document.filename }
+            : undefined
+        );
         return { signedUrl, expiresIn };
       } catch {
         throw new TRPCError({
