@@ -8,7 +8,25 @@ import {
   BreadcrumbSeparator,
 } from './ui/breadcrumb';
 import { Button } from './ui/button';
-import { Check, FileText, MapPin, ClipboardCheck, Award } from 'lucide-react';
+import { Checkbox } from './ui/checkbox';
+import { Badge } from './ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from './ui/table';
+import { Check, FileText, MapPin, ClipboardCheck, Award, AlertTriangle } from 'lucide-react';
 import { StatusSPPTG, SubmissionDraft } from '../types';
 import { Step1DocumentUpload } from './submission-steps/Step1DocumentUpload';
 import { Step2FieldValidation } from './submission-steps/Step2FieldValidation';
@@ -20,6 +38,7 @@ import { trpc } from '@/trpc/client';
 import { useRouter } from 'next/navigation';
 import { buildDraftSavePayload } from '@/lib/draft-save-payload';
 import { normalizeCoordinateIds } from '@/lib/coordinate-ids';
+import { overlapJenisBadgeClassName } from '@/lib/overlap-results';
 import {
   validateStep1Fields,
   validateStep2Fields,
@@ -53,6 +72,11 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
   const [lastSaved, setLastSaved] = useState<string>('');
   const [fieldErrors, setFieldErrors] = useState<StepFieldErrors>({});
   const isSubmittingFromStep3 = useRef(false);
+
+  // Step 2 overlap-confirmation gate (shown before Simpan Draf / Berikutnya)
+  const [isStep2ConfirmOpen, setIsStep2ConfirmOpen] = useState(false);
+  const [step2ConfirmChecked, setStep2ConfirmChecked] = useState(false);
+  const [pendingStep2Action, setPendingStep2Action] = useState<'next' | 'save' | null>(null);
 
   // Clear the error of a field as soon as it gets updated
   const clearFieldErrorsFor = useCallback(
@@ -93,6 +117,9 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
       isSubmittingFromStep3.current = false;
     },
   });
+
+  // Overlap check used to gate Simpan Draf / Berikutnya on Step 2
+  const checkOverlapsMutation = trpc.submissions.checkOverlapsFromCoordinates.useMutation();
 
   // Initialize draft state from backend
   const [draft, setDraft] = useState<SubmissionDraft>({
@@ -288,6 +315,103 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     return () => clearInterval(autoSave);
   }, [draft, isLoadingDraft, saveDraftToBackend]);
 
+  // Save current step data, advance the step pointer, and persist it.
+  const advanceToNextStep = async () => {
+    if (currentStep >= 4) return;
+
+    if (draft.id) {
+      await saveDraftToBackend(currentStep as 1 | 2 | 3 | 4, { silent: true });
+    }
+
+    const nextStep = (currentStep + 1) as 1 | 2 | 3 | 4;
+    setCurrentStep(nextStep);
+    setDraft((prev) => ({ ...prev, currentStep: nextStep }));
+
+    if (draft.id) {
+      void saveDraftToBackend(nextStep, { silent: true }).catch(() => undefined);
+    }
+
+    toast.success(
+      `Data ${steps[currentStep - 1].label} tersimpan. Lanjut ke tahap ${steps[nextStep - 1].label}.`
+    );
+    window.scrollTo(0, 0);
+  };
+
+  // Persist the draft and navigate away (the actual "Simpan Draf" behavior).
+  const performSaveDraft = async () => {
+    if (!draft.id) {
+      toast.error('Draf belum dimuat');
+      return;
+    }
+    try {
+      await saveDraftToBackend();
+      // After a manual save, return to where the user came from
+      if (window.history.length > 1) {
+        router.back();
+      } else {
+        router.push('/app/pengajuan');
+      }
+    } catch {
+      // Error toast already shown by saveDraftToBackend
+    }
+  };
+
+  // On Step 2, run the overlap check and require an explicit confirmation
+  // before continuing (Berikutnya) or saving (Simpan Draf).
+  const runStep2OverlapGate = async (action: 'next' | 'save') => {
+    const coords = draft.coordinatesGeografis;
+
+    // Fewer than 3 points → no polygon to check; proceed without gating.
+    if (coords.length < 3) {
+      if (action === 'next') {
+        await advanceToNextStep();
+      } else {
+        await performSaveDraft();
+      }
+      return;
+    }
+
+    try {
+      const overlaps = await checkOverlapsMutation.mutateAsync({
+        coordinates: coords.map((c) => ({
+          latitude: c.latitude,
+          longitude: c.longitude,
+        })),
+      });
+
+      setDraft((prev) => ({
+        ...prev,
+        overlapResults: overlaps.map((o) => ({
+          kawasanId: o.kawasanId,
+          namaKawasan: o.namaKawasan,
+          jenisKawasan: o.jenisKawasan,
+          sumber: o.sumber,
+          luasOverlap: o.luasOverlap,
+          percentageOverlap: o.percentageOverlap,
+        })),
+      }));
+
+      setPendingStep2Action(action);
+      setStep2ConfirmChecked(false);
+      setIsStep2ConfirmOpen(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error(`Gagal mengecek tumpang tindih: ${message}`);
+    }
+  };
+
+  const handleStep2ConfirmProceed = async () => {
+    if (!step2ConfirmChecked) return;
+    const action = pendingStep2Action;
+    setIsStep2ConfirmOpen(false);
+    setPendingStep2Action(null);
+    if (action === 'next') {
+      await advanceToNextStep();
+    } else if (action === 'save') {
+      await performSaveDraft();
+    }
+  };
+
   const handleNext = async () => {
     // Validate current step before proceeding
     if (currentStep === 1) {
@@ -315,6 +439,10 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         return;
       }
       setFieldErrors({});
+
+      // Show overlap results + confirmation checkbox before advancing.
+      await runStep2OverlapGate('next');
+      return;
     }
 
     if (currentStep === 3) {
@@ -356,24 +484,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     }
 
     if (currentStep < 4) {
-      // Save current step data before transitioning
-      if (draft.id) {
-        await saveDraftToBackend(currentStep as 1 | 2 | 3 | 4, { silent: true });
-      }
-
-      const nextStep = (currentStep + 1) as 1 | 2 | 3 | 4;
-      setCurrentStep(nextStep);
-      setDraft((prev) => ({ ...prev, currentStep: nextStep }));
-
-      // Advance the step pointer silently (data was just saved above)
-      if (draft.id) {
-        void saveDraftToBackend(nextStep, { silent: true }).catch(() => undefined);
-      }
-
-      toast.success(
-        `Data ${steps[currentStep - 1].label} tersimpan. Lanjut ke tahap ${steps[nextStep - 1].label}.`
-      );
-      window.scrollTo(0, 0);
+      await advanceToNextStep();
     }
   };
 
@@ -391,17 +502,12 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
       toast.error('Draf belum dimuat');
       return;
     }
-    try {
-      await saveDraftToBackend();
-      // After a manual save, return to where the user came from
-      if (window.history.length > 1) {
-        router.back();
-      } else {
-        router.push('/app/pengajuan');
-      }
-    } catch {
-      // Error toast already shown by saveDraftToBackend
+    // On Step 2, gate the save behind the overlap-check confirmation.
+    if (currentStep === 2) {
+      await runStep2OverlapGate('save');
+      return;
     }
+    await performSaveDraft();
   };
 
   const handleUpdateDraft = (updates: Partial<SubmissionDraft>) => {
@@ -626,9 +732,18 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
           <Button
             variant="outline"
             onClick={handleSaveDraft}
-            disabled={!draft.id || saveDraftMutation.isPending || isLoadingDraft}
+            disabled={
+              !draft.id ||
+              saveDraftMutation.isPending ||
+              isLoadingDraft ||
+              checkOverlapsMutation.isPending
+            }
           >
-            {saveDraftMutation.isPending ? 'Menyimpan...' : 'Simpan Draf'}
+            {saveDraftMutation.isPending
+              ? 'Menyimpan...'
+              : currentStep === 2 && checkOverlapsMutation.isPending
+                ? 'Mengecek...'
+                : 'Simpan Draf'}
           </Button>
 
           {currentStep > 1 && (
@@ -650,13 +765,15 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
               <Button
                 onClick={handleNext}
                 className="bg-blue-600 hover:bg-blue-700"
-                disabled={isLoadingDraft || saveDraftMutation.isPending}
+                disabled={isLoadingDraft || saveDraftMutation.isPending || checkOverlapsMutation.isPending}
               >
-                {isViewer && currentStep === 1
-                  ? 'Simpan Step 1'
-                  : currentStep === 3 && draft.status === 'SPPTG terdaftar'
-                    ? 'Lanjut ke Penerbitan SPPTG'
-                    : 'Berikutnya'}
+                {currentStep === 2 && checkOverlapsMutation.isPending
+                  ? 'Mengecek...'
+                  : isViewer && currentStep === 1
+                    ? 'Simpan Step 1'
+                    : currentStep === 3 && draft.status === 'SPPTG terdaftar'
+                      ? 'Lanjut ke Penerbitan SPPTG'
+                      : 'Berikutnya'}
               </Button>
             )
           ) : (
@@ -697,6 +814,105 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
           )}
         </div>
       </div>
+
+      {/* Step 2: overlap-check result + confirmation before Simpan/Berikutnya */}
+      <Dialog open={isStep2ConfirmOpen} onOpenChange={setIsStep2ConfirmOpen}>
+        <DialogContent className="sm:max-w-[700px]">
+          <DialogHeader>
+            <DialogTitle>Hasil Cek Tumpang Tindih</DialogTitle>
+            <DialogDescription>
+              Periksa hasil pengecekan overlap terhadap kawasan Non-SPPTG dan SPPTG
+              eksisting sebelum melanjutkan.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {(draft.overlapResults?.length ?? 0) === 0 ? (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                <p className="text-green-900">
+                  ✓ Tidak ada tumpang tindih terdeteksi
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5" />
+                    <p className="text-orange-900">
+                      <strong>
+                        Ditemukan {draft.overlapResults!.length} tumpang tindih
+                      </strong>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="border rounded-lg overflow-hidden max-h-64 overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-gray-50">
+                        <TableHead>Nama Kawasan</TableHead>
+                        <TableHead>Jenis</TableHead>
+                        <TableHead>Sumber</TableHead>
+                        <TableHead>Luas Overlap</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {draft.overlapResults!.map((overlap, index) => (
+                        <TableRow key={index}>
+                          <TableCell>{overlap.namaKawasan}</TableCell>
+                          <TableCell>
+                            <Badge className={overlapJenisBadgeClassName(overlap)}>
+                              {overlap.jenisKawasan}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">
+                              {overlap.sumber === 'Submission'
+                                ? 'SPPTG Eksisting'
+                                : 'Kawasan Non-SPPTG'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {Math.round(overlap.luasOverlap).toLocaleString('id-ID')} m²
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
+
+            <label className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 cursor-pointer">
+              <Checkbox
+                checked={step2ConfirmChecked}
+                onCheckedChange={(value) => setStep2ConfirmChecked(value === true)}
+                className="mt-0.5"
+              />
+              <span className="text-sm text-gray-700">
+                Saya sudah memeriksa hasil cek tumpang tindih dan yakin untuk
+                melanjutkan.
+              </span>
+            </label>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsStep2ConfirmOpen(false)}
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={handleStep2ConfirmProceed}
+              disabled={!step2ConfirmChecked || saveDraftMutation.isPending}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {pendingStep2Action === 'save' ? 'Simpan Draf' : 'Lanjutkan'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

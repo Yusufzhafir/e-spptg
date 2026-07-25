@@ -39,6 +39,7 @@ export function FileUploadField({
 }: FileUploadFieldProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const createUploadUrlMutation = trpc.documents.createUploadUrl.useMutation();
   const uploadFileMutation = trpc.documents.uploadFile.useMutation();
   const deleteDocumentMutation = trpc.documents.delete.useMutation();
@@ -51,7 +52,18 @@ export function FileUploadField({
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    await processFile(file);
+  };
 
+  const handleDrop = async (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (isUploading || isDeleting) return;
+    const file = e.dataTransfer.files?.[0];
+    if (file) await processFile(file);
+  };
+
+  const processFile = async (file: File) => {
     // Validate file size
     const fileSizeMB = file.size / (1024 * 1024);
     if (fileSizeMB > maxSize) {
@@ -243,10 +255,18 @@ export function FileUploadField({
         <div>
           <label
             htmlFor={`file-${label}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (!isUploading && !isDeleting) setIsDragging(true);
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
             className={
               error
                 ? 'flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-red-500 bg-red-50 rounded-lg cursor-pointer hover:bg-red-100 transition-colors'
-                : 'flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors'
+                : isDragging
+                  ? 'flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-blue-500 bg-blue-50 rounded-lg cursor-pointer transition-colors'
+                  : 'flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors'
             }
           >
             <div className="flex flex-col items-center justify-center pt-5 pb-6">

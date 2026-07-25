@@ -3,6 +3,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useMemo,
   type ChangeEvent,
   type KeyboardEvent,
 } from 'react';
@@ -14,7 +15,9 @@ import {
   CoordinateSystem,
 } from '../../types';
 import { trpc } from '@/trpc/client';
-import { DrawingMap } from '../maps/DrawingMap';
+import { DrawingMap, type ReferencePolygon } from '../maps/DrawingMap';
+import { geoJSONToPaths } from '@/lib/map-utils';
+import { overlapJenisBadgeClassName } from '@/lib/overlap-results';
 import { parseKMLFile } from '@/lib/kmz-parser';
 import {
   coordinatesNeedIdNormalization,
@@ -490,6 +493,71 @@ export function Step2FieldValidation({
       toast.error(`Gagal mengecek overlap: ${error.message}`);
     },
   });
+
+  // Existing polygons to display as read-only reference behind the drawing:
+  // Non-SPPTG prohibited areas + already-recorded SPPTG (terdaftar/terdata).
+  const { data: prohibitedAreasData } = trpc.prohibitedAreas.list.useQuery({
+    limit: 500,
+    offset: 0,
+  });
+  const { data: existingSubmissionsData } = trpc.submissions.list.useQuery({
+    limit: 500,
+    offset: 0,
+  });
+
+  const referencePolygons = useMemo<ReferencePolygon[]>(() => {
+    const result: ReferencePolygon[] = [];
+
+    // Kawasan Non-SPPTG (prohibited areas)
+    const areas = (prohibitedAreasData ?? []) as Array<{
+      id: number;
+      namaKawasan: string;
+      warna?: string | null;
+      geom?: unknown;
+    }>;
+    areas.forEach((area) => {
+      const color = area.warna || '#ef4444';
+      geoJSONToPaths(area.geom).forEach((path, i) => {
+        result.push({
+          id: `kawasan-${area.id}-${i}`,
+          path,
+          strokeColor: color,
+          fillColor: color,
+          label: `Non-SPPTG: ${area.namaKawasan}`,
+        });
+      });
+    });
+
+    // Existing SPPTG (terdaftar = green, terdata = blue)
+    const submissionItems = (existingSubmissionsData?.items ?? []) as Array<{
+      id: number;
+      namaPemilik: string;
+      status: string;
+      isValid?: boolean;
+      geoJSON?: unknown;
+    }>;
+    submissionItems.forEach((sub) => {
+      if (sub.status !== 'SPPTG terdaftar' && sub.status !== 'SPPTG terdata') {
+        return;
+      }
+      // Hide submissions marked invalid — only valid data is shown on the map.
+      if (sub.isValid === false) {
+        return;
+      }
+      const color = sub.status === 'SPPTG terdaftar' ? '#22c55e' : '#3b82f6';
+      geoJSONToPaths(sub.geoJSON).forEach((path, i) => {
+        result.push({
+          id: `spptg-${sub.id}-${i}`,
+          path,
+          strokeColor: color,
+          fillColor: color,
+          label: `${sub.status}: ${sub.namaPemilik}`,
+        });
+      });
+    });
+
+    return result;
+  }, [prohibitedAreasData, existingSubmissionsData]);
 
   const handleCheckOverlap = () => {
     if (draft.coordinatesGeografis.length < 3) {
@@ -996,6 +1064,7 @@ export function Step2FieldValidation({
             <DrawingMap
               coordinates={draft.coordinatesGeografis}
               recenterSignal={recenterSignal}
+              referencePolygons={referencePolygons}
               onCoordinatesChange={(coords) => {
                 // This callback is triggered when user draws/edits on the map
                 // The coordinates are already synced, just update the draft
@@ -1004,6 +1073,34 @@ export function Step2FieldValidation({
                 });
               }}
             />
+
+            {/* Legend for reference polygons */}
+            <div className="bg-gray-50 rounded-lg border border-gray-200 p-3">
+              <p className="text-xs mb-2 font-semibold text-gray-900">
+                Legenda Peta
+              </p>
+              <div className="grid grid-cols-2 gap-1">
+                <div className="flex items-center gap-2 text-xs text-gray-700">
+                  <span className="w-3.5 h-3.5 rounded-sm border" style={{ backgroundColor: '#f97316', borderColor: '#f97316' }} />
+                  Lahan yang diajukan (digambar)
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-700">
+                  <span className="w-3.5 h-3.5 rounded-sm border" style={{ backgroundColor: '#22c55e', borderColor: '#22c55e' }} />
+                  SPPTG terdaftar
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-700">
+                  <span className="w-3.5 h-3.5 rounded-sm border" style={{ backgroundColor: '#3b82f6', borderColor: '#3b82f6' }} />
+                  SPPTG terdata
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-700">
+                  <span className="w-3.5 h-3.5 rounded-sm border" style={{ backgroundColor: '#ef4444', borderColor: '#ef4444' }} />
+                  Kawasan Non-SPPTG
+                </div>
+              </div>
+              <p className="text-[11px] text-gray-500 mt-2">
+                Polygon kawasan & SPPTG lain hanya tampil sebagai referensi (tidak dapat diedit).
+              </p>
+            </div>
 
             <Button
               onClick={handleCheckOverlap}
@@ -1088,7 +1185,9 @@ export function Step2FieldValidation({
                         <TableRow key={index}>
                           <TableCell>{overlap.namaKawasan}</TableCell>
                           <TableCell>
-                            <Badge variant="outline">{overlap.jenisKawasan}</Badge>
+                            <Badge className={overlapJenisBadgeClassName(overlap)}>
+                              {overlap.jenisKawasan}
+                            </Badge>
                           </TableCell>
                           <TableCell>
                             <Badge variant="secondary">

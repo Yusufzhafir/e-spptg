@@ -2,12 +2,79 @@ import { protectedProcedure, router } from '../../init';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import * as queries from '@/server/db/queries/drafts';
+import * as submissionQueries from '@/server/db/queries/submissions';
+import * as documentQueries from '@/server/db/queries/documents';
+
+/** Map a submission's document categories to the draft payload keys. */
+const DOC_CATEGORY_TO_KEY: Record<string, string> = {
+  KTP: 'dokumenKTP',
+  KK: 'dokumenKK',
+  Kwitansi: 'dokumenKwitansi',
+  Permohonan: 'dokumenPermohonan',
+  'SK Kepala Desa': 'dokumenSKKepalaDesa',
+  'Berita Acara': 'dokumenBeritaAcara',
+  'Pernyataan Jual Beli': 'dokumenPernyataanJualBeli',
+  'Asal Usul': 'dokumenAsalUsul',
+  'Tidak Sengketa': 'dokumenTidakSengketa',
+  SPPG: 'dokumenSPPTG',
+};
+
+function geoJsonToCoordinates(
+  geoJSON: unknown
+): Array<{ id: string; latitude: number; longitude: number }> {
+  const g = geoJSON as { type?: string; coordinates?: number[][][] };
+  if (!g || g.type !== 'Polygon' || !Array.isArray(g.coordinates?.[0])) return [];
+  let ring = g.coordinates[0].filter(
+    (pt) => Array.isArray(pt) && pt.length >= 2 && Number.isFinite(pt[0]) && Number.isFinite(pt[1])
+  );
+  if (ring.length >= 2) {
+    const first = ring[0];
+    const last = ring[ring.length - 1];
+    if (first[0] === last[0] && first[1] === last[1]) ring = ring.slice(0, -1);
+  }
+  return ring.map((pt, i) => ({ id: `C-edit-${i}`, latitude: pt[1], longitude: pt[0] }));
+}
+
+type SubmissionDocumentRow = {
+  id: number;
+  filename: string;
+  size: number;
+  url: string;
+  category: string;
+  uploadedAt: Date | string;
+};
+
+/** Rebuild document payload fields from a submission's uploaded documents. */
+function documentsToPayloadFields(documents: SubmissionDocumentRow[]): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  const fotoLahan: unknown[] = [];
+  for (const doc of documents) {
+    const uploaded = {
+      name: doc.filename,
+      size: doc.size,
+      url: doc.url,
+      documentId: doc.id,
+      uploadedAt:
+        doc.uploadedAt instanceof Date ? doc.uploadedAt.toISOString() : String(doc.uploadedAt),
+    };
+    if (doc.category === 'Foto Lahan') {
+      fotoLahan.push(uploaded);
+      continue;
+    }
+    const key = DOC_CATEGORY_TO_KEY[doc.category];
+    // Keep the newest per single-document category (rows arrive newest-first)
+    if (key && !fields[key]) fields[key] = uploaded;
+  }
+  if (fotoLahan.length > 0) fields.fotoLahan = fotoLahan;
+  return fields;
+}
 import {
   saveDraftStepSchema,
   validateStepCompletion,
 } from '@/lib/validation/submission-draft';
 import {
   assertCanAccessDraft,
+  assertCanAccessSubmission,
   isPrivilegedProcessor,
   isViewer,
   requireAssignedVillageId,
@@ -36,6 +103,88 @@ export const draftsRouter = router({
     const draft = await queries.createDraft(ctx.appUser!.id);
     return { id: draft.id };
   }),
+
+  // Create an editable draft pre-filled from an existing submission. Re-submitting
+  // this draft updates the original submission in place (see submitDraft).
+  createFromSubmission: protectedProcedure
+    .input(z.object({ submissionId: z.number().int() }))
+    .mutation(async ({ ctx, input }) => {
+      if (isViewer(ctx.appUser!)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Peran Viewer tidak dapat mengedit pengajuan.',
+        });
+      }
+
+      const submission = await submissionQueries.getSubmissionById(input.submissionId);
+      if (!submission) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Pengajuan tidak ditemukan' });
+      }
+
+      assertCanAccessSubmission(ctx.appUser!, {
+        ownerUserId: submission.ownerUserId,
+        villageId: submission.villageId,
+      });
+
+      if (isPrivilegedProcessor(ctx.appUser!)) {
+        const assignedVillageId = requireAssignedVillageId(ctx.appUser!);
+        if (assignedVillageId !== submission.villageId) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Anda hanya dapat mengedit pengajuan pada desa yang ditetapkan.',
+          });
+        }
+      }
+
+      const storedPayload =
+        submission.payload &&
+        typeof submission.payload === 'object' &&
+        !Array.isArray(submission.payload)
+          ? (submission.payload as Record<string, unknown>)
+          : {};
+
+      // Reconstruct what we can from the submission columns, geometry and its
+      // uploaded documents — this fills the gaps for submissions saved before
+      // payload snapshots existed, and acts as a safety net otherwise.
+      const documents = (await documentQueries.listDocumentsBySubmission(
+        submission.id
+      )) as SubmissionDocumentRow[];
+
+      const reconstructed: Record<string, unknown> = {
+        namaPemohon: submission.namaPemilik,
+        nik: submission.nik,
+        alamatKTP: submission.alamat,
+        email: submission.email,
+        villageId: submission.villageId,
+        kecamatan: submission.kecamatan,
+        kabupaten: submission.kabupaten,
+        penggunaanLahan: submission.penggunaanLahan,
+        catatan: submission.catatan,
+        luasLahan: submission.luas,
+        luasManual: submission.luasManual,
+        status: submission.status,
+        coordinateSystem: 'geografis',
+        coordinatesGeografis: geoJsonToCoordinates(submission.geoJSON),
+        ...documentsToPayloadFields(documents),
+      };
+
+      // Stored payload (if any) is authoritative; reconstructed fills anything missing.
+      const payload: Record<string, unknown> = { ...reconstructed, ...storedPayload };
+      const storedCoords = storedPayload.coordinatesGeografis;
+      if (!Array.isArray(storedCoords) || storedCoords.length < 3) {
+        payload.coordinatesGeografis = reconstructed.coordinatesGeografis;
+      }
+
+      const draft = await queries.createDraftFromSubmission({
+        userId: ctx.appUser!.id,
+        villageId: submission.villageId,
+        payload,
+        editingSubmissionId: submission.id,
+        currentStep: 1,
+      });
+
+      return { id: draft.id };
+    }),
 
   getById: protectedProcedure
     .input(z.object({ draftId: z.number().int() }))

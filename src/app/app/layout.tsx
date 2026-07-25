@@ -54,6 +54,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       penggunaanLahan: data.penggunaanLahan || '',
       catatan: data.catatan || null,
       status: 'SPPTG terdata',
+      isValid: true,
       tanggalPengajuan: new Date(),
       ownerUserId: null,
       verifikator: null, // Should come from authenticated user
@@ -115,6 +116,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       penggunaanLahan: '',
       catatan: null,
       status: draft.status || 'SPPTG terdata',
+      isValid: true,
       tanggalPengajuan: new Date(),
       ownerUserId: null,
       verifikator: draft.verifikator || null,

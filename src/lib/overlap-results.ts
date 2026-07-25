@@ -24,6 +24,30 @@ export type NormalizedOverlapResult = {
   sumber: 'ProhibitedArea' | 'Submission';
 };
 
+/**
+ * Tailwind badge classes for the "Jenis" of an overlap result, colour-matched
+ * to the map legend: SPPTG terdaftar = green, SPPTG terdata = blue,
+ * Kawasan Non-SPPTG = red.
+ */
+export function overlapJenisBadgeClassName(overlap: {
+  sumber?: 'ProhibitedArea' | 'Submission' | null;
+  jenisKawasan: string;
+}): string {
+  const isSubmission =
+    overlap.sumber === 'Submission' || overlap.jenisKawasan.startsWith('SPPTG ');
+  if (isSubmission) {
+    if (overlap.jenisKawasan === 'SPPTG terdaftar') {
+      return 'bg-green-100 text-green-800 border-green-200';
+    }
+    if (overlap.jenisKawasan === 'SPPTG terdata') {
+      return 'bg-blue-100 text-blue-800 border-blue-200';
+    }
+    return 'bg-gray-100 text-gray-700 border-gray-200';
+  }
+  // Kawasan Non-SPPTG (prohibited area)
+  return 'bg-red-100 text-red-800 border-red-200';
+}
+
 export function normalizeOverlapRows(rows: unknown[]): NormalizedOverlapResult[] {
   const parsedRows = overlapRowsSchema.parse(rows);
   return parsedRows.map((row) => ({

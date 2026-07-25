@@ -20,10 +20,24 @@ import type { GeoJSONStoreFeatures } from 'terra-draw';
 import { GeographicCoordinate } from '@/types';
 import { MapPin, Pencil, MousePointer2, Trash2 } from 'lucide-react';
 
+/**
+ * Read-only polygon drawn behind the editable polygon for reference
+ * (kawasan Non-SPPTG, SPPTG terdaftar/terdata already on the map).
+ */
+export interface ReferencePolygon {
+  id: string;
+  /** Outer ring as Google Maps LatLng literals */
+  path: { lat: number; lng: number }[];
+  strokeColor: string;
+  fillColor: string;
+  label?: string;
+}
+
 interface DrawingMapProps {
   coordinates: GeographicCoordinate[];
   onCoordinatesChange: (coords: GeographicCoordinate[]) => void;
   recenterSignal?: number;
+  referencePolygons?: ReferencePolygon[];
   center?: {
     lat: number;
     lng: number;
@@ -35,11 +49,23 @@ interface DrawingMapInternalProps {
   coordinates: GeographicCoordinate[];
   onCoordinatesChange: (coords: GeographicCoordinate[]) => void;
   recenterSignal?: number;
+  referencePolygons?: ReferencePolygon[];
   /** Element above the map where the drawing toolbar is portaled, so it never covers Google Maps controls */
   toolbarHost: HTMLElement | null;
 }
 
 type DrawMode = 'polygon' | 'select';
+
+// Terra Draw rejects features whose coordinates carry more decimals than the
+// adapter's coordinatePrecision — imported/hydrated coords (e.g. from KML) can
+// have 12–15 decimals, so they must be rounded to this precision before being
+// added, otherwise addFeatures returns { valid: false } and nothing renders.
+const COORDINATE_PRECISION = 9;
+
+function roundToPrecision(value: number): number {
+  const factor = 10 ** COORDINATE_PRECISION;
+  return Math.round(Number(value) * factor) / factor;
+}
 
 function isValidCoordinate(coord: GeographicCoordinate): boolean {
   const lat = Number(coord.latitude);
@@ -86,10 +112,13 @@ function DrawingMapInternal({
   coordinates,
   onCoordinatesChange,
   recenterSignal,
+  referencePolygons,
   toolbarHost,
 }: DrawingMapInternalProps) {
   const map = useMap();
   const drawRef = useRef<TerraDraw | null>(null);
+  const referencePolygonsRef = useRef<google.maps.Polygon[]>([]);
+  const referenceInfoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const [drawReady, setDrawReady] = useState(false);
   // Mode lives outside React state so effects can switch it while syncing
   // Terra Draw (an external system) without triggering setState-in-effect.
@@ -172,6 +201,36 @@ function DrawingMapInternal({
     switchMode('polygon');
   }, [switchMode]);
 
+  // Fit the map viewport to a set of coordinates (used by imports/table edits)
+  const fitMapToCoordinates = useCallback(
+    (coordsList: GeographicCoordinate[]) => {
+      if (!map) return;
+      const google = window.google;
+      if (!google) return;
+
+      const valid = coordsList.filter(isValidCoordinate);
+      if (valid.length < 3) return;
+
+      const bounds = new google.maps.LatLngBounds();
+      valid.forEach((coord) => {
+        bounds.extend({
+          lat: Number(coord.latitude),
+          lng: Number(coord.longitude),
+        });
+      });
+      if (bounds.isEmpty()) return;
+
+      map.fitBounds(bounds, 64);
+      google.maps.event.addListenerOnce(map, 'idle', () => {
+        const currentZoom = map.getZoom();
+        if (typeof currentZoom === 'number' && currentZoom > 19) {
+          map.setZoom(19);
+        }
+      });
+    },
+    [map]
+  );
+
   // Initialize Terra Draw once the map (and its projection) is ready
   useEffect(() => {
     if (!map) return;
@@ -191,16 +250,16 @@ function DrawingMapInternal({
         adapter: new TerraDrawGoogleMapsAdapter({
           lib: google.maps,
           map,
-          coordinatePrecision: 9,
+          coordinatePrecision: COORDINATE_PRECISION,
         }),
         modes: [
           new TerraDrawPolygonMode({
             styles: {
-              fillColor: '#3b82f6',
+              fillColor: '#f97316',
               fillOpacity: 0.3,
-              outlineColor: '#3b82f6',
+              outlineColor: '#f97316',
               outlineWidth: 2,
-              closingPointColor: '#3b82f6',
+              closingPointColor: '#f97316',
               closingPointWidth: 6,
               closingPointOutlineColor: '#ffffff',
               closingPointOutlineWidth: 2,
@@ -208,7 +267,7 @@ function DrawingMapInternal({
           }),
           new TerraDrawPointMode({
             styles: {
-              pointColor: '#3b82f6',
+              pointColor: '#f97316',
               pointWidth: 8,
               pointOutlineColor: '#ffffff',
               pointOutlineWidth: 2,
@@ -233,15 +292,15 @@ function DrawingMapInternal({
               },
             },
             styles: {
-              selectedPolygonColor: '#3b82f6',
+              selectedPolygonColor: '#f97316',
               selectedPolygonFillOpacity: 0.3,
-              selectedPolygonOutlineColor: '#2563eb',
+              selectedPolygonOutlineColor: '#ea580c',
               selectedPolygonOutlineWidth: 2,
-              selectionPointColor: '#3b82f6',
+              selectionPointColor: '#f97316',
               selectionPointWidth: 6,
               selectionPointOutlineColor: '#ffffff',
               selectionPointOutlineWidth: 2,
-              midPointColor: '#93c5fd',
+              midPointColor: '#fdba74',
               midPointWidth: 4,
               midPointOutlineColor: '#ffffff',
               midPointOutlineWidth: 1,
@@ -349,7 +408,11 @@ function DrawingMapInternal({
 
     if (valid.length >= 3) {
       const ring = valid.map(
-        (c) => [Number(c.longitude), Number(c.latitude)] as [number, number]
+        (c) =>
+          [
+            roundToPrecision(Number(c.longitude)),
+            roundToPrecision(Number(c.latitude)),
+          ] as [number, number]
       );
       ring.push(ring[0]);
       const featureId = crypto.randomUUID();
@@ -364,6 +427,11 @@ function DrawingMapInternal({
       if (result[0]?.valid) {
         switchMode('select');
         draw.selectFeature(featureId);
+        // This effect only runs for prop-originated coordinate changes
+        // (table edits, KML import, hydration) — map-drawn changes are guarded
+        // out by sameCoordinates above — so this is the right moment to fit the
+        // viewport to the freshly drawn polygon.
+        fitMapToCoordinates(valid);
       } else {
         console.warn(
           'Poligon tidak valid untuk digambar di peta:',
@@ -379,7 +447,10 @@ function DrawingMapInternal({
               type: 'Feature',
               geometry: {
                 type: 'Point',
-                coordinates: [Number(c.longitude), Number(c.latitude)],
+                coordinates: [
+                  roundToPrecision(Number(c.longitude)),
+                  roundToPrecision(Number(c.latitude)),
+                ],
               },
               properties: { mode: 'point' },
             }) as GeoJSONStoreFeatures
@@ -391,7 +462,60 @@ function DrawingMapInternal({
 
     lastSyncedRef.current = coordinates;
     isUpdatingFromPropsRef.current = false;
-  }, [coordinates, drawReady, switchMode]);
+  }, [coordinates, drawReady, switchMode, fitMapToCoordinates]);
+
+  // Draw read-only reference polygons (existing kawasan / SPPTG) behind the
+  // editable polygon. They are non-interactive so they never intercept the
+  // clicks Terra Draw needs for drawing/editing.
+  useEffect(() => {
+    if (!map) return;
+    const google = window.google;
+    if (!google) return;
+
+    referencePolygonsRef.current.forEach((polygon) => polygon.setMap(null));
+    referencePolygonsRef.current = [];
+
+    if (!referencePolygons || referencePolygons.length === 0) return;
+
+    if (!referenceInfoWindowRef.current) {
+      referenceInfoWindowRef.current = new google.maps.InfoWindow();
+    }
+    const infoWindow = referenceInfoWindowRef.current;
+
+    referencePolygons.forEach((ref) => {
+      if (ref.path.length < 3) return;
+      const polygon = new google.maps.Polygon({
+        paths: ref.path,
+        fillColor: ref.fillColor,
+        fillOpacity: 0.2,
+        strokeColor: ref.strokeColor,
+        strokeWeight: 1.5,
+        strokeOpacity: 0.9,
+        clickable: Boolean(ref.label),
+        zIndex: 1,
+      });
+      polygon.setMap(map);
+
+      if (ref.label) {
+        polygon.addListener('click', (e: google.maps.PolyMouseEvent) => {
+          if (!e.latLng) return;
+          infoWindow.setContent(
+            `<div style="padding:2px 4px;font-size:12px;font-weight:600;">${ref.label}</div>`
+          );
+          infoWindow.setPosition(e.latLng);
+          infoWindow.open(map);
+        });
+      }
+
+      referencePolygonsRef.current.push(polygon);
+    });
+
+    return () => {
+      referencePolygonsRef.current.forEach((polygon) => polygon.setMap(null));
+      referencePolygonsRef.current = [];
+      referenceInfoWindowRef.current?.close();
+    };
+  }, [map, referencePolygons]);
 
   // Recenter/fit map after coordinate updates from table-based inputs/imports.
   useEffect(() => {
@@ -486,6 +610,7 @@ export function DrawingMap({
   coordinates,
   onCoordinatesChange,
   recenterSignal,
+  referencePolygons,
   center = {
     lat: 0.6164979547396072,
     lng: 117.32086147991855,
@@ -523,6 +648,7 @@ export function DrawingMap({
               coordinates={coordinates}
               onCoordinatesChange={onCoordinatesChange}
               recenterSignal={recenterSignal}
+              referencePolygons={referencePolygons}
               toolbarHost={toolbarHost}
             />
           </Map>

@@ -1,23 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SubmissionDraft } from '../../types';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '../ui/dialog';
-import { Upload, File, X, CheckCircle2, Download, Printer, ArrowLeft, FileText, Eye } from 'lucide-react';
+import { Upload, File, X, CheckCircle2, Download, FileText, Eye, FileDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/trpc/client';
-import { generateCertificateNumber } from '@/lib/certificate-number-generator';
 import { usePDFGenerator } from '@/hooks/usePDFGenerator';
-import type { SPPTGPDFData } from '@/components/pdf/types';
 import { buildSPPTGPDFData } from '@/lib/spptg-pdf-data';
+import { generateSPPTGDocxBlob } from '@/lib/spptg-docx-generator';
 
 interface Step4Props {
   draft: SubmissionDraft;
@@ -28,6 +19,12 @@ interface Step4Props {
   ) => Promise<void>;
   errors?: Record<string, string>;
 }
+
+type GeneratedDocs = {
+  pdfUrl: string;
+  docxUrl: string;
+  baseName: string;
+};
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
@@ -40,24 +37,32 @@ export function Step4Issuance({
   onPersistDraftPatch,
   errors = {},
 }: Step4Props) {
-  const [isSuccessDialogOpen, setIsSuccessDialogOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [generatedPDFUrl, setGeneratedPDFUrl] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isGeneratingDocs, setIsGeneratingDocs] = useState(false);
+  const [generatedDocs, setGeneratedDocs] = useState<GeneratedDocs | null>(null);
 
   const createUploadUrlMutation = trpc.documents.createUploadUrl.useMutation();
   const uploadFileMutation = trpc.documents.uploadFile.useMutation();
   const deleteDocumentMutation = trpc.documents.delete.useMutation();
   const openDocumentMutation = trpc.documents.getSignedDownloadUrl.useMutation();
-  
-  // New PDF generator hook (react-pdf based)
+
   const { generatePDF, isGenerating: isGeneratingPDF } = usePDFGenerator();
-  
+
   // Fetch village data if villageId is set
   const { data: villageData } = trpc.villages.byId.useQuery(
     { id: draft.villageId! },
     { enabled: !!draft.villageId }
   );
+
+  // Auto-fill the issue date with today's date once the draft is loaded and
+  // the field is still empty. It stays user-editable afterwards.
+  useEffect(() => {
+    if (draft.id && !draft.tanggalTerbit) {
+      onUpdateDraft({ tanggalTerbit: new Date().toISOString().split('T')[0] });
+    }
+  }, [draft.id, draft.tanggalTerbit, onUpdateDraft]);
 
   const deleteDocumentById = async (documentId: number) => {
     await deleteDocumentMutation.mutateAsync({ documentId });
@@ -66,14 +71,23 @@ export function Step4Issuance({
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    await processUpload(file);
+  };
 
-    // Validate file type
+  const handleDrop = async (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (isUploading || isDeleting) return;
+    const file = e.dataTransfer.files?.[0];
+    if (file) await processUpload(file);
+  };
+
+  const processUpload = async (file: File) => {
     if (file.type !== 'application/pdf') {
       toast.error('Format file harus PDF');
       return;
     }
 
-    // Validate file size (10 MB)
     const fileSizeMB = file.size / (1024 * 1024);
     if (fileSizeMB > 10) {
       toast.error('Ukuran file maksimal 10 MB');
@@ -88,7 +102,6 @@ export function Step4Issuance({
     setIsUploading(true);
     const previousDocumentId = draft.dokumenSPPTG?.documentId;
     try {
-      // Step 1: Create document record and get s3Key
       const { documentId, s3Key } = await createUploadUrlMutation.mutateAsync({
         draftId: draft.id,
         category: 'SPPG',
@@ -97,13 +110,11 @@ export function Step4Issuance({
         mimeType: 'application/pdf',
       });
 
-      // Step 2: Convert file to base64
       const fileBuffer = await file.arrayBuffer();
       const base64String = btoa(
         new Uint8Array(fileBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
       );
 
-      // Step 3: Upload file via server-side tRPC mutation
       const uploadResult = await uploadFileMutation.mutateAsync({
         draftId: draft.id,
         documentId,
@@ -156,7 +167,6 @@ export function Step4Issuance({
       toast.success('Dokumen SPPTG berhasil diunggah.');
     } catch (error: unknown) {
       console.error('Upload error:', error);
-      // Provide user-friendly error messages
       if (error instanceof Error && error.message) {
         toast.error(error.message);
       } else {
@@ -173,21 +183,17 @@ export function Step4Issuance({
     const previousDocument = draft.dokumenSPPTG;
     setIsDeleting(true);
     try {
-      // Persist draft first so removed file URL is not left in payload.
       await onPersistDraftPatch({ dokumenSPPTG: undefined }, { silent: true });
-      setGeneratedPDFUrl(null);
 
       if (previousDocument.documentId) {
         try {
           await deleteDocumentById(previousDocument.documentId);
         } catch (deleteError) {
-          // Roll back draft payload to keep UI and backend in sync.
           try {
             await onPersistDraftPatch(
               { dokumenSPPTG: previousDocument },
               { silent: true }
             );
-            setGeneratedPDFUrl(previousDocument.url ?? null);
           } catch (rollbackError) {
             console.error('Rollback save error:', rollbackError);
             toast.error(
@@ -221,171 +227,93 @@ export function Step4Issuance({
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
-  /**
-   * Build PDF data from draft
-   */
-  const buildPDFData = (): SPPTGPDFData => {
-    return buildSPPTGPDFData(draft, villageData ?? null);
+  const triggerBrowserDownload = (url: string, filename: string) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   /**
-   * Generate PDF certificate using react-pdf
+   * Generate the SPPTG certificate as PDF + DOCX for download.
+   * Note: nomor SPPTG and tanggal terbit are NOT auto-filled here — they use
+   * whatever the user entered. The generated files are provided as download
+   * links; they are NOT uploaded as the softcopy (that is uploaded manually).
    */
-  const handleGeneratePDF = async () => {
+  const handleGenerateDocuments = async () => {
     if (!draft.id) {
       toast.error('Draf belum dimuat');
       return;
     }
-
-    // Validate required fields
     if (!draft.namaPemohon || !draft.nik) {
       toast.error('Data pemohon belum lengkap. Pastikan nama dan NIK sudah diisi.');
       return;
     }
-
     if (!draft.luasLahan) {
       toast.error('Data lahan belum lengkap. Pastikan luas lahan sudah dihitung.');
       return;
     }
+    if (!draft.nomorSPPTG?.trim()) {
+      toast.error('Isi Nomor SPPTG terlebih dahulu.');
+      return;
+    }
+    if (!draft.tanggalTerbit) {
+      toast.error('Isi Tanggal Diterbitkan terlebih dahulu.');
+      return;
+    }
 
-    const previousDocumentId = draft.dokumenSPPTG?.documentId;
+    setIsGeneratingDocs(true);
     try {
-      // Auto-generate certificate number if not set
-      let certificateNumber = draft.nomorSPPTG;
-      if (!certificateNumber) {
-        certificateNumber = generateCertificateNumber(1, '00.00');
-        toast.info(`Nomor SPPTG otomatis dihasilkan: ${certificateNumber}`);
-      }
+      const pdfData = buildSPPTGPDFData(draft, villageData ?? null);
 
-      // Auto-set issue date if not set
-      let issueDate = draft.tanggalTerbit;
-      if (!issueDate) {
-        issueDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-        toast.info(`Tanggal terbit otomatis diset: ${new Date(issueDate).toLocaleDateString('id-ID')}`);
-      }
-
-      // Build PDF data
-      const pdfData = buildPDFData();
-      
-      // Update data with generated values
-      pdfData.nomorSPPTG = certificateNumber;
-      pdfData.tanggalPernyataan = issueDate;
-
-      // Generate PDF using react-pdf hook
-      const result = await generatePDF(pdfData, {
+      const pdfResult = await generatePDF(pdfData, {
         includeWitnesses: true,
         includeAdministrative: true,
         includeMap: true,
       });
+      const docxBlob = await generateSPPTGDocxBlob(pdfData);
+      const docxUrl = URL.createObjectURL(docxBlob);
 
-      setGeneratedPDFUrl(result.url);
-
-      // Auto-upload the generated PDF
-      const filename = `SPPTG_${certificateNumber.replace(/\//g, '_')}.pdf`;
-      
-      // Create document record and get s3Key
-      const { documentId, s3Key } = await createUploadUrlMutation.mutateAsync({
-        draftId: draft.id,
-        category: 'SPPG',
-        filename,
-        size: result.size,
-        mimeType: 'application/pdf',
-      });
-
-      // Upload file via server-side tRPC mutation
-      const uploadResult = await uploadFileMutation.mutateAsync({
-        draftId: draft.id,
-        documentId,
-        s3Key,
-        fileData: result.base64,
-        filename,
-        mimeType: 'application/pdf',
-        size: result.size,
-      });
-
-      try {
-        await onPersistDraftPatch(
-          {
-            dokumenSPPTG: {
-              name: filename,
-              size: result.size,
-              url: uploadResult.publicUrl,
-              uploadedAt: new Date().toISOString(),
-              documentId,
-            },
-            nomorSPPTG: certificateNumber,
-            tanggalTerbit: issueDate,
-          },
-          { silent: true }
-        );
-      } catch (saveError) {
-        try {
-          await deleteDocumentById(documentId);
-        } catch (rollbackError) {
-          console.error('Rollback delete error:', rollbackError);
-          toast.error(
-            'Generate dibatalkan, tetapi gagal membersihkan file sementara. Hubungi administrator.'
-          );
-        }
-
-        throw new Error(
-          saveError instanceof Error
-            ? saveError.message
-            : 'Gagal menyimpan draf setelah generate'
-        );
+      // Revoke any previously generated URLs to avoid memory leaks
+      if (generatedDocs) {
+        URL.revokeObjectURL(generatedDocs.pdfUrl);
+        URL.revokeObjectURL(generatedDocs.docxUrl);
       }
 
-      if (previousDocumentId && previousDocumentId !== documentId) {
-        try {
-          await deleteDocumentById(previousDocumentId);
-        } catch (cleanupError) {
-          console.error('Generate replace cleanup error:', cleanupError);
-          toast.info('Dokumen baru tersimpan, tetapi dokumen lama gagal dihapus.');
-        }
-      }
+      const baseName = `SPPTG_${(draft.nomorSPPTG || 'dokumen').replace(/[\\/]/g, '_')}`;
+      setGeneratedDocs({ pdfUrl: pdfResult.url, docxUrl, baseName });
 
-      toast.success('PDF SPPTG berhasil dibuat dan diunggah.');
+      toast.success('Dokumen SPPTG berhasil dibuat. Silakan unduh dalam format PDF atau DOCX.');
     } catch (error: unknown) {
-      console.error('PDF generation error:', error);
+      console.error('Document generation error:', error);
       if (error instanceof Error && error.message) {
-        toast.error(`Gagal membuat PDF: ${error.message}`);
+        toast.error(`Gagal membuat dokumen: ${error.message}`);
       } else {
-        toast.error('Gagal membuat PDF. Silakan coba lagi atau hubungi administrator.');
+        toast.error('Gagal membuat dokumen. Silakan coba lagi atau hubungi administrator.');
       }
+    } finally {
+      setIsGeneratingDocs(false);
     }
   };
 
-  /**
-   * Download generated PDF
-   */
-  const handleDownloadPDF = async () => {
-    if (!draft.dokumenSPPTG?.url && !generatedPDFUrl) {
+  /** Download the uploaded softcopy SPPTG. */
+  const handleDownloadUploaded = async () => {
+    if (!draft.dokumenSPPTG?.url) {
       toast.error('Dokumen SPPTG belum tersedia');
       return;
     }
 
     try {
-      if (draft.dokumenSPPTG?.documentId) {
-        // The signed URL carries Content-Disposition: attachment — a plain
-        // anchor download attribute is ignored on cross-origin URLs
+      if (draft.dokumenSPPTG.documentId) {
         const { signedUrl } = await openDocumentMutation.mutateAsync({
           documentId: draft.dokumenSPPTG.documentId,
           disposition: 'attachment',
         });
-        const link = document.createElement('a');
-        link.href = signedUrl;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        triggerBrowserDownload(signedUrl, draft.dokumenSPPTG.name || 'SPPTG.pdf');
       } else {
-        const url = generatedPDFUrl || draft.dokumenSPPTG?.url;
-        if (!url) return;
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = draft.dokumenSPPTG?.name || 'SPPTG.pdf';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        triggerBrowserDownload(draft.dokumenSPPTG.url, draft.dokumenSPPTG.name || 'SPPTG.pdf');
       }
       toast.success('SPPTG sedang diunduh');
     } catch (error: unknown) {
@@ -393,28 +321,22 @@ export function Step4Issuance({
     }
   };
 
-  /**
-   * Preview PDF in new window
-   */
-  const handlePreviewPDF = async () => {
-    if (!draft.dokumenSPPTG?.url && !generatedPDFUrl) {
+  /** Preview the uploaded softcopy SPPTG in a new tab. */
+  const handlePreviewUploaded = async () => {
+    if (!draft.dokumenSPPTG?.url) {
       toast.error('Dokumen SPPTG belum tersedia');
       return;
     }
 
     try {
-      if (draft.dokumenSPPTG?.documentId) {
+      if (draft.dokumenSPPTG.documentId) {
         const { signedUrl } = await openDocumentMutation.mutateAsync({
           documentId: draft.dokumenSPPTG.documentId,
         });
         window.open(signedUrl, '_blank', 'noopener,noreferrer');
         return;
       }
-
-      const url = generatedPDFUrl || draft.dokumenSPPTG?.url;
-      if (url) {
-        window.open(url, '_blank', 'noopener,noreferrer');
-      }
+      window.open(draft.dokumenSPPTG.url, '_blank', 'noopener,noreferrer');
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : 'Gagal membuka dokumen SPPTG.');
     }
@@ -431,6 +353,44 @@ export function Step4Issuance({
         </p>
       </div>
 
+      {/* SPPTG Number */}
+      <div className="space-y-2">
+        <Label htmlFor="nomorSPPTG">
+          Nomor SPPTG <span className="text-red-600">*</span>
+        </Label>
+        <Input
+          id="nomorSPPTG"
+          value={draft.nomorSPPTG || ''}
+          onChange={(e) => onUpdateDraft({ nomorSPPTG: e.target.value })}
+          placeholder="SPPTG/XX/123/2025"
+          aria-invalid={Boolean(errors.nomorSPPTG)}
+          className={errors.nomorSPPTG ? 'border-red-500' : undefined}
+        />
+        <FieldError message={errors.nomorSPPTG} />
+        <p className="text-xs text-gray-500">
+          Masukkan nomor SPPTG sesuai format yang berlaku
+        </p>
+      </div>
+
+      {/* Issue Date */}
+      <div className="space-y-2">
+        <Label htmlFor="tanggalTerbit">
+          Tanggal Diterbitkan <span className="text-red-600">*</span>
+        </Label>
+        <Input
+          id="tanggalTerbit"
+          type="date"
+          value={draft.tanggalTerbit || ''}
+          onChange={(e) => onUpdateDraft({ tanggalTerbit: e.target.value })}
+          aria-invalid={Boolean(errors.tanggalTerbit)}
+          className={errors.tanggalTerbit ? 'border-red-500' : undefined}
+        />
+        <FieldError message={errors.tanggalTerbit} />
+        <p className="text-xs text-gray-500">
+          Terisi otomatis dengan tanggal hari ini — dapat diubah bila perlu.
+        </p>
+      </div>
+
       {/* Status Check */}
       {draft.status !== 'SPPTG terdaftar' && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -443,37 +403,76 @@ export function Step4Issuance({
 
       {draft.status === 'SPPTG terdaftar' && (
         <>
-          {/* PDF Generation Button */}
+          {/* PDF/DOCX Generation Button */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-4">
               <div>
                 <h3 className="text-sm font-semibold text-blue-900 mb-1">
-                  Generate PDF SPPTG Otomatis
+                  Generate Dokumen SPPTG
                 </h3>
                 <p className="text-xs text-blue-700">
-                  Klik tombol di bawah untuk membuat PDF SPPTG secara otomatis menggunakan React PDF.
-                  Nomor SPPTG dan tanggal terbit akan di-generate otomatis jika belum diisi.
+                  Buat dokumen SPPTG dari data pengajuan. Dokumen memakai Nomor SPPTG
+                  dan Tanggal Diterbitkan yang Anda isi di atas (tidak diisi otomatis).
+                  Hasilnya berupa tautan unduh (PDF &amp; DOCX) — bukan diunggah otomatis
+                  sebagai softcopy.
                 </p>
               </div>
               <Button
-                onClick={handleGeneratePDF}
-                disabled={isGeneratingPDF || isUploading || isDeleting}
-                className="bg-blue-600 hover:bg-blue-700"
+                onClick={handleGenerateDocuments}
+                disabled={isGeneratingDocs || isGeneratingPDF || isUploading || isDeleting}
+                className="bg-blue-600 hover:bg-blue-700 flex-shrink-0"
               >
-                {isGeneratingPDF ? (
+                {isGeneratingDocs || isGeneratingPDF ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
-                    Membuat PDF...
+                    Membuat...
                   </>
                 ) : (
                   <>
                     <FileText className="w-4 h-4 mr-2" />
-                    Generate PDF
+                    Generate Dokumen
                   </>
                 )}
               </Button>
             </div>
           </div>
+
+          {/* Generated document download links (above the softcopy upload) */}
+          {generatedDocs && (
+            <div className="bg-white border border-gray-200 rounded-lg p-4">
+              <p className="text-sm font-semibold text-gray-900 mb-1">
+                Dokumen SPPTG hasil generate
+              </p>
+              <p className="text-xs text-gray-500 mb-3">
+                Unduh, tanda tangani/stempel bila perlu, lalu unggah kembali sebagai
+                softcopy SPPTG di bawah.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    triggerBrowserDownload(generatedDocs.pdfUrl, `${generatedDocs.baseName}.pdf`)
+                  }
+                  className="text-red-700 border-red-200 hover:bg-red-50"
+                >
+                  <FileDown className="w-4 h-4 mr-2" />
+                  Unduh PDF
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    triggerBrowserDownload(generatedDocs.docxUrl, `${generatedDocs.baseName}.docx`)
+                  }
+                  className="text-blue-700 border-blue-200 hover:bg-blue-50"
+                >
+                  <FileDown className="w-4 h-4 mr-2" />
+                  Unduh DOCX
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* SPPTG Document Upload */}
           <div className="space-y-3">
@@ -485,10 +484,18 @@ export function Step4Issuance({
               <div>
                 <label
                   htmlFor="spptg-file"
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (!isUploading && !isDeleting) setIsDragging(true);
+                  }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleDrop}
                   className={
                     errors.dokumenSPPTG
                       ? 'flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-red-500 bg-red-50 rounded-lg cursor-pointer hover:bg-red-100 transition-colors'
-                      : 'flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors'
+                      : isDragging
+                        ? 'flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-blue-500 bg-blue-50 rounded-lg cursor-pointer transition-colors'
+                        : 'flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors'
                   }
                 >
                   <div className="flex flex-col items-center justify-center pt-5 pb-6">
@@ -520,7 +527,7 @@ export function Step4Issuance({
               <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <File className="w-6 h-6 text-blue-600 flex-shrink-0" />
+                    <File className="w-6 h-6 text-blue-600 shrink-0" />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm text-gray-900 truncate">{draft.dokumenSPPTG.name}</p>
                       <p className="text-xs text-gray-500">
@@ -528,15 +535,15 @@ export function Step4Issuance({
                         {draft.dokumenSPPTG.uploadedAt}
                       </p>
                     </div>
-                    <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+                    <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
                     {draft.dokumenSPPTG.url && (
                       <>
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => void handlePreviewPDF()}
+                          onClick={() => void handlePreviewUploaded()}
                           disabled={openDocumentMutation.isPending || isUploading || isDeleting}
                           className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                         >
@@ -545,7 +552,7 @@ export function Step4Issuance({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => void handleDownloadPDF()}
+                          onClick={() => void handleDownloadUploaded()}
                           disabled={openDocumentMutation.isPending || isUploading || isDeleting}
                           className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                         >
@@ -581,42 +588,7 @@ export function Step4Issuance({
             )}
           </div>
 
-          {/* SPPTG Number */}
-          <div className="space-y-2">
-            <Label htmlFor="nomorSPPTG">
-              Nomor SPPTG <span className="text-red-600">*</span>
-            </Label>
-            <Input
-              id="nomorSPPTG"
-              value={draft.nomorSPPTG || ''}
-              onChange={(e) => onUpdateDraft({ nomorSPPTG: e.target.value })}
-              placeholder="SPPTG/XX/123/2025"
-              aria-invalid={Boolean(errors.nomorSPPTG)}
-              className={errors.nomorSPPTG ? 'border-red-500' : undefined}
-            />
-            <FieldError message={errors.nomorSPPTG} />
-            <p className="text-xs text-gray-500">
-              Masukkan nomor SPPTG sesuai format yang berlaku
-            </p>
-          </div>
-
-          {/* Issue Date */}
-          <div className="space-y-2">
-            <Label htmlFor="tanggalTerbit">
-              Tanggal Diterbitkan <span className="text-red-600">*</span>
-            </Label>
-            <Input
-              id="tanggalTerbit"
-              type="date"
-              value={draft.tanggalTerbit || ''}
-              onChange={(e) => onUpdateDraft({ tanggalTerbit: e.target.value })}
-              aria-invalid={Boolean(errors.tanggalTerbit)}
-              className={errors.tanggalTerbit ? 'border-red-500' : undefined}
-            />
-            <FieldError message={errors.tanggalTerbit} />
-          </div>
-
-          {/* Summary */}
+          {/* Summary — only when nomor, tanggal, and softcopy are all filled */}
           {isFormComplete && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
               <div className="flex items-start gap-3">
@@ -630,7 +602,7 @@ export function Step4Issuance({
                     <p>• Nomor SPPTG: {draft.nomorSPPTG}</p>
                     <p>
                       • Tanggal Terbit:{' '}
-                      {new Date(draft.tanggalTerbit || "").toLocaleDateString('id-ID', {
+                      {new Date(draft.tanggalTerbit || '').toLocaleDateString('id-ID', {
                         day: 'numeric',
                         month: 'long',
                         year: 'numeric',
@@ -652,74 +624,6 @@ export function Step4Issuance({
           </div>
         </>
       )}
-
-      {/* Success Dialog */}
-      <Dialog open={isSuccessDialogOpen} onOpenChange={setIsSuccessDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <div className="flex justify-center mb-4">
-              <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
-                <CheckCircle2 className="w-10 h-10 text-green-600" />
-              </div>
-            </div>
-            <DialogTitle className="text-center">SPPTG Berhasil Diterbitkan</DialogTitle>
-            <DialogDescription className="text-center">
-              Surat Pernyataan Penguasaan Tanah dan Garapan telah berhasil diterbitkan dan dapat diunduh.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 my-4">
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Nomor SPPTG:</span>
-                <span className="text-gray-900">{draft.nomorSPPTG}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Pemohon:</span>
-                <span className="text-gray-900">{draft.namaPemohon}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Tanggal Terbit:</span>
-                <span className="text-gray-900">
-                  {draft.tanggalTerbit &&
-                    new Date(draft.tanggalTerbit).toLocaleDateString('id-ID')}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => void handleDownloadPDF()}
-              disabled={openDocumentMutation.isPending || isUploading || isDeleting}
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Unduh SPPTG
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full"
-              disabled={openDocumentMutation.isPending || isUploading || isDeleting}
-              onClick={() => {
-                void handlePreviewPDF();
-                window.print();
-              }}
-            >
-              <Printer className="w-4 h-4 mr-2" />
-              Cetak
-            </Button>
-            <Button
-              className="w-full bg-blue-600 hover:bg-blue-700"
-              onClick={() => setIsSuccessDialogOpen(false)}
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Kembali ke Detail Pengajuan
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

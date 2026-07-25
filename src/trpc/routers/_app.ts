@@ -6,6 +6,7 @@ import { submissionsRouter } from './submissions/submissionsRouter';
 import { prohibitedAreasRouter } from './prohibitedAreas/prohibitedAreasRouter';
 import { villagesRouter } from './villages/villagesRouter';
 import { usersRouter } from './users/usersRouter';
+import { commentsRouter } from './comments/commentsRouter';
 
 export const appRouter = router({
   auth: authRouter,
@@ -15,6 +16,7 @@ export const appRouter = router({
   prohibitedAreas: prohibitedAreasRouter,
   villages: villagesRouter,
   users: usersRouter,
+  comments: commentsRouter,
 });
 
 export type AppRouter = typeof appRouter;

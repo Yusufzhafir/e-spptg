@@ -4,7 +4,8 @@ import { db, type DBTransaction } from '../db';
 import {
     submissions,
     overlapResults,
-    statusHistory
+    statusHistory,
+    users,
 } from '../schema';
 import { FeedbackData, StatusSPPTG } from '@/types';
 
@@ -99,8 +100,13 @@ export async function listSubmissions(filters: {
     }
 
     const {geom,...restOfTheColumn} = getTableColumns(submissions)
-    const items = await queryDb.select(restOfTheColumn)
+    const items = await queryDb.select({
+            ...restOfTheColumn,
+            // Resolve the verifikator's display name; null when the user was deleted
+            verifikatorName: users.nama,
+        })
         .from(submissions)
+        .leftJoin(users, eq(submissions.verifikator, users.id))
         .where(
             conditions.length > 0 ? and(...conditions) : undefined
         ).offset(offset)
@@ -129,6 +135,25 @@ export async function createSubmission(
         .values(data)
         .returning();
     return result[0];
+}
+
+/**
+ * Toggle a submission's visual validity flag (valid/invalid).
+ * When false, the submission's polygon & data are hidden from the map.
+ */
+export async function updateSubmissionValidity(
+    id: number,
+    isValid: boolean,
+    tx?: DBTransaction
+) {
+    const queryDb = tx || db;
+    const {geom, ...rest} = getTableColumns(submissions);
+    const [result] = await queryDb
+        .update(submissions)
+        .set({ isValid, updatedAt: new Date() })
+        .where(eq(submissions.id, id))
+        .returning(rest);
+    return result ?? null;
 }
 
 export async function updateSubmissionStatus(
@@ -172,6 +197,12 @@ export async function getSubmissionOverlaps(submissionId: number, tx?: DBTransac
     return queryDb.query.overlapResults.findMany({
         where: eq(overlapResults.submissionId, submissionId),
     });
+}
+
+/** Remove cached overlap rows for a submission (used before recomputing on edit). */
+export async function deleteSubmissionOverlaps(submissionId: number, tx?: DBTransaction) {
+    const queryDb = tx || db;
+    await queryDb.delete(overlapResults).where(eq(overlapResults.submissionId, submissionId));
 }
 
 export async function getKPIDataScoped(filters: SubmissionScopeFilters, tx?: DBTransaction) {

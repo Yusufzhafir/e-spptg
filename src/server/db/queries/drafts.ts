@@ -90,6 +90,30 @@ export async function createDraft(userId: number, tx?: DBTransaction) {
   return created[0];
 }
 
+export async function createDraftFromSubmission(
+  params: {
+    userId: number;
+    villageId: number | null;
+    payload: Record<string, unknown>;
+    editingSubmissionId: number;
+    currentStep?: number;
+  },
+  tx?: DBTransaction
+) {
+  const queryDb = tx || db;
+  const created = await queryDb
+    .insert(submissionDrafts)
+    .values({
+      userId: params.userId,
+      villageId: params.villageId,
+      editingSubmissionId: params.editingSubmissionId,
+      currentStep: params.currentStep ?? 1,
+      payload: params.payload,
+    })
+    .returning();
+  return created[0];
+}
+
 export async function getDraftById(id: number, tx?: DBTransaction) {
   const queryDb = tx || db;
   const draft = await queryDb.query.submissionDrafts.findFirst({

@@ -34,9 +34,13 @@ export interface Submission {
   
   // Status
   status: StatusSPPTG;
+  // Validasi visual: true = data & polygon ditampilkan di peta, false = disembunyikan
+  isValid: boolean;
   tanggalPengajuan: Date;
   ownerUserId: number | null;
   verifikator: number | null;
+  /** Resolved verifikator display name (null when the user no longer exists) */
+  verifikatorName?: string | null;
   
   // Riwayat
   riwayat: StatusHistory[];

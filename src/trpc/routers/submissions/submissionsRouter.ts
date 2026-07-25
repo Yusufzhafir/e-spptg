@@ -9,7 +9,7 @@ import * as submissionQueries from '@/server/db/queries/submissions';
 import * as draftQueries from '@/server/db/queries/drafts';
 import * as documentQueries from '@/server/db/queries/documents';
 import { computeOverlaps } from '@/server/postgis';
-import { sql } from 'drizzle-orm';
+import { sql, eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { normalizeOverlapRows } from '@/lib/overlap-results';
 import {
@@ -132,6 +132,8 @@ export const submissionsRouter = router({
                         ownerUserId: draft.userId,
                         verifikator: ctx.appUser!.id,
                         geoJSON: buildGeometryFromCoordinates(payload),
+                        // Snapshot the full draft payload so the submission can be edited later
+                        payload: draft.payload,
                         riwayat: [
                             {
                                 tanggal: new Date().toISOString(),
@@ -157,16 +159,72 @@ export const submissionsRouter = router({
                     );
 
                     const coordinates = geoJson.coordinates[0].map((c) => `${c[0]} ${c[1]}`).join(',')
+                    const geomSql = sql.raw(`ST_PolygonFromText('POLYGON((${coordinates}))',4326)`);
 
-                    const submissionResult = await tx
-                        .insert(submissionsTable)
-                        .values({
-                            ...submissionData,
-                            geom: sql.raw(`ST_PolygonFromText('POLYGON((${coordinates}))',4326)`),
-                        }).returning({ id: submissionsTable.id })
+                    // When the draft was opened to edit an existing submission,
+                    // update that submission in place instead of creating a new one.
+                    const editingSubmissionId = draft.editingSubmissionId ?? null;
+                    let submissionId: number | undefined;
 
-                    console.log("this is submissionResult", submissionResult)
-                    const submissionId = submissionResult[0]?.id;
+                    if (editingSubmissionId) {
+                        const existing = await submissionQueries.getSubmissionById(editingSubmissionId, tx);
+                        if (!existing) {
+                            throw new TRPCError({
+                                code: 'NOT_FOUND',
+                                message: 'Pengajuan yang diedit tidak ditemukan',
+                            });
+                        }
+                        assertCanAccessSubmission(ctx.appUser!, {
+                            ownerUserId: existing.ownerUserId,
+                            villageId: existing.villageId,
+                        });
+
+                        const existingRiwayat = Array.isArray(existing.riwayat) ? existing.riwayat : [];
+                        await tx
+                            .update(submissionsTable)
+                            .set({
+                                namaPemilik: submissionData.namaPemilik,
+                                nik: submissionData.nik,
+                                alamat: submissionData.alamat,
+                                nomorHP: submissionData.nomorHP,
+                                email: submissionData.email,
+                                villageId: submissionData.villageId,
+                                kecamatan: submissionData.kecamatan,
+                                kabupaten: submissionData.kabupaten,
+                                luas: submissionData.luas,
+                                luasManual: submissionData.luasManual,
+                                penggunaanLahan: submissionData.penggunaanLahan,
+                                catatan: submissionData.catatan,
+                                status: submissionData.status,
+                                verifikator: ctx.appUser!.id,
+                                geoJSON: submissionData.geoJSON,
+                                payload: submissionData.payload,
+                                geom: geomSql,
+                                riwayat: [
+                                    ...existingRiwayat,
+                                    {
+                                        tanggal: new Date().toISOString(),
+                                        status: submissionData.status,
+                                        petugas: ctx.appUser!.nama,
+                                        alasan: 'Pengajuan diperbarui',
+                                    },
+                                ],
+                                updatedAt: new Date(),
+                            })
+                            .where(eq(submissionsTable.id, editingSubmissionId));
+                        submissionId = editingSubmissionId;
+
+                        // Clear stale overlap rows before recomputing
+                        await submissionQueries.deleteSubmissionOverlaps(editingSubmissionId, tx);
+                    } else {
+                        const submissionResult = await tx
+                            .insert(submissionsTable)
+                            .values({
+                                ...submissionData,
+                                geom: geomSql,
+                            }).returning({ id: submissionsTable.id })
+                        submissionId = submissionResult[0]?.id;
+                    }
 
                     if (!submissionId) {
                         throw new TRPCError({
@@ -325,9 +383,11 @@ export const submissionsRouter = router({
                     SELECT
                         s.id,
                         s.nama_pemilik,
+                        s.status::text AS status,
                         ST_MakeValid(s.geom) AS geom
                     FROM submissions s
                     WHERE s.status IN ('SPPTG terdaftar', 'SPPTG terdata')
+                    AND s.is_valid = true
                     AND s.geom IS NOT NULL
                 )
                 SELECT 
@@ -346,7 +406,7 @@ export const submissionsRouter = router({
                 SELECT
                     sg.id AS kawasan_id,
                     sg.nama_pemilik AS nama_kawasan,
-                    'SPPTG Eksisting' AS jenis_kawasan,
+                    sg.status AS jenis_kawasan,
                     ST_Area(ST_Intersection(ig.geom, sg.geom))::double precision AS luas_overlap,
                     (ST_Area(ST_Intersection(ig.geom, sg.geom)) / NULLIF(ST_Area(ig.geom), 0) * 100)::double precision as percentage_overlap,
                     'Submission' as sumber
@@ -396,6 +456,35 @@ export const submissionsRouter = router({
                     message: 'Gagal memperbarui status',
                 });
             }
+        }),
+
+    updateValidity: verifikatorProcedure
+        .input(z.object({
+            submissionId: z.number().int(),
+            isValid: z.boolean(),
+        }))
+        .mutation(async ({ ctx, input }) => {
+            const submission = await submissionQueries.getSubmissionById(input.submissionId);
+            if (!submission) {
+                throw new TRPCError({
+                    code: 'NOT_FOUND',
+                    message: 'Pengajuan tidak ditemukan',
+                });
+            }
+
+            assertCanAccessSubmission(ctx.appUser!, {
+                ownerUserId: submission.ownerUserId,
+                villageId: submission.villageId,
+            });
+
+            const result = await submissionQueries.updateSubmissionValidity(
+                input.submissionId,
+                input.isValid
+            );
+            return {
+                success: true,
+                submission: result,
+            };
         }),
 
     kpi: protectedProcedure.query(async ({ ctx }) => {

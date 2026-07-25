@@ -1,9 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { trpc } from '@/trpc/client';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -30,8 +38,22 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
-import { Plus, FileEdit, Trash2 } from 'lucide-react';
+import {
+  Plus,
+  FileEdit,
+  Trash2,
+  Search,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react';
 import { toast } from 'sonner';
+
+type DraftSortKey = 'namaPemohon' | 'nik' | 'currentStep' | 'lastSaved';
+type SortDirection = 'asc' | 'desc';
+const DRAFT_PAGE_SIZE = 10;
 
 export default function DraftsListPage() {
   const router = useRouter();
@@ -40,8 +62,79 @@ export default function DraftsListPage() {
   const { data: currentUser } = trpc.auth.me.useQuery();
   const isPrivilegedView = currentUser ? currentUser.peran !== 'Viewer' : false;
 
+  // Search / filter / sort / pagination (client-side)
+  const [search, setSearch] = useState('');
+  const [stepFilter, setStepFilter] = useState<string>('all');
+  const [sortKey, setSortKey] = useState<DraftSortKey>('lastSaved');
+  const [sortDir, setSortDir] = useState<SortDirection>('desc');
+  const [page, setPage] = useState(0);
+
   // Fetch user's drafts
   const { data: drafts, isLoading, error, refetch } = trpc.drafts.listMy.useQuery();
+
+  const filteredDrafts = useMemo(() => {
+    const list = drafts ?? [];
+    const q = search.trim().toLowerCase();
+    const filtered = list.filter((d) => {
+      const matchesSearch =
+        !q ||
+        (d.namaPemohon || '').toLowerCase().includes(q) ||
+        (d.nik || '').toLowerCase().includes(q) ||
+        (d.ownerName || '').toLowerCase().includes(q) ||
+        (d.villageName || '').toLowerCase().includes(q);
+      const matchesStep = stepFilter === 'all' || String(d.currentStep) === stepFilter;
+      return matchesSearch && matchesStep;
+    });
+
+    const sorted = [...filtered].sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case 'namaPemohon':
+          cmp = (a.namaPemohon || '').localeCompare(b.namaPemohon || '');
+          break;
+        case 'nik':
+          cmp = (a.nik || '').localeCompare(b.nik || '');
+          break;
+        case 'currentStep':
+          cmp = (a.currentStep || 0) - (b.currentStep || 0);
+          break;
+        case 'lastSaved':
+          cmp = new Date(a.lastSaved).getTime() - new Date(b.lastSaved).getTime();
+          break;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [drafts, search, stepFilter, sortKey, sortDir]);
+
+  const totalDraftPages = Math.max(1, Math.ceil(filteredDrafts.length / DRAFT_PAGE_SIZE));
+  // Clamp at render so a shrinking result set never leaves us on a dead page.
+  const safePage = Math.min(page, totalDraftPages - 1);
+  const pagedDrafts = filteredDrafts.slice(
+    safePage * DRAFT_PAGE_SIZE,
+    safePage * DRAFT_PAGE_SIZE + DRAFT_PAGE_SIZE
+  );
+
+  const handleSort = (key: DraftSortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+    setPage(0);
+  };
+
+  const sortIcon = (key: DraftSortKey) =>
+    sortKey === key ? (
+      sortDir === 'asc' ? (
+        <ChevronUp className="w-3.5 h-3.5" />
+      ) : (
+        <ChevronDown className="w-3.5 h-3.5" />
+      )
+    ) : (
+      <ChevronsUpDown className="w-3.5 h-3.5 text-gray-400" />
+    );
 
   // Create draft mutation
   const createDraftMutation = trpc.drafts.create.useMutation({
@@ -147,6 +240,42 @@ export default function DraftsListPage() {
         </div>
       </div>
 
+      {/* Search & Filter */}
+      {drafts && drafts.length > 0 && (
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Input
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(0);
+              }}
+              placeholder="Cari nama pemohon, NIK, desa..."
+              className="pl-9"
+            />
+          </div>
+          <Select
+            value={stepFilter}
+            onValueChange={(v) => {
+              setStepFilter(v);
+              setPage(0);
+            }}
+          >
+            <SelectTrigger className="w-full sm:w-52">
+              <SelectValue placeholder="Semua tahap" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua tahap</SelectItem>
+              <SelectItem value="1">Berkas</SelectItem>
+              <SelectItem value="2">Lapangan</SelectItem>
+              <SelectItem value="3">Hasil</SelectItem>
+              <SelectItem value="4">Terbitkan SPPTG</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       {/* Drafts Table */}
       <div className="bg-white rounded-lg border border-gray-200">
         {isLoading ? (
@@ -159,21 +288,59 @@ export default function DraftsListPage() {
             <p className="text-red-600">{error.message}</p>
           </div>
         ) : drafts && drafts.length > 0 ? (
+          filteredDrafts.length === 0 ? (
+            <div className="px-6 py-10 text-center text-gray-500">
+              Tidak ada draft yang cocok dengan pencarian/filter.
+            </div>
+          ) : (
+          <>
           <Table>
             <TableHeader>
               <TableRow>
                 {isPrivilegedView && <TableHead>Pemilik</TableHead>}
-                <TableHead>Nama Pemohon</TableHead>
-                <TableHead>NIK</TableHead>
+                <TableHead>
+                  <button
+                    type="button"
+                    onClick={() => handleSort('namaPemohon')}
+                    className="inline-flex items-center gap-1 hover:text-gray-900"
+                  >
+                    Nama Pemohon {sortIcon('namaPemohon')}
+                  </button>
+                </TableHead>
+                <TableHead>
+                  <button
+                    type="button"
+                    onClick={() => handleSort('nik')}
+                    className="inline-flex items-center gap-1 hover:text-gray-900"
+                  >
+                    NIK {sortIcon('nik')}
+                  </button>
+                </TableHead>
                 {isPrivilegedView && <TableHead>Desa</TableHead>}
-                <TableHead>Tahap</TableHead>
+                <TableHead>
+                  <button
+                    type="button"
+                    onClick={() => handleSort('currentStep')}
+                    className="inline-flex items-center gap-1 hover:text-gray-900"
+                  >
+                    Tahap {sortIcon('currentStep')}
+                  </button>
+                </TableHead>
                 {isPrivilegedView && <TableHead>Validasi Step 1</TableHead>}
-                <TableHead>Terakhir Disimpan</TableHead>
+                <TableHead>
+                  <button
+                    type="button"
+                    onClick={() => handleSort('lastSaved')}
+                    className="inline-flex items-center gap-1 hover:text-gray-900"
+                  >
+                    Terakhir Disimpan {sortIcon('lastSaved')}
+                  </button>
+                </TableHead>
                 <TableHead className="text-right">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {drafts.map((draft) => (
+              {pagedDrafts.map((draft) => (
                 <TableRow key={draft.id}>
                   {isPrivilegedView && (
                     <TableCell>
@@ -249,6 +416,40 @@ export default function DraftsListPage() {
               ))}
             </TableBody>
           </Table>
+
+          {/* Pagination */}
+          <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3">
+            <p className="text-sm text-gray-600">
+              Menampilkan {safePage * DRAFT_PAGE_SIZE + 1}–
+              {Math.min((safePage + 1) * DRAFT_PAGE_SIZE, filteredDrafts.length)} dari{' '}
+              {filteredDrafts.length} draft
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(Math.max(0, safePage - 1))}
+                disabled={safePage === 0}
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Sebelumnya
+              </Button>
+              <span className="text-sm text-gray-600">
+                Hal {safePage + 1} / {totalDraftPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(Math.min(totalDraftPages - 1, safePage + 1))}
+                disabled={safePage >= totalDraftPages - 1}
+              >
+                Berikutnya
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+          </>
+          )
         ) : (
           <div className="text-center py-12">
             <div className="text-gray-400 mb-4">

@@ -104,6 +104,54 @@ export function coordinatesToGeoJSON(
 }
 
 /**
+ * Extract outer-ring paths ({lat,lng}[]) from any GeoJSON geometry
+ * (Polygon or MultiPolygon), accepting either a parsed object or a string
+ * (e.g. the output of PostGIS ST_AsGeoJSON). One path per polygon.
+ */
+export function geoJSONToPaths(
+  geometry: unknown
+): { lat: number; lng: number }[][] {
+  let geo = geometry;
+  if (typeof geo === 'string') {
+    try {
+      geo = JSON.parse(geo);
+    } catch {
+      return [];
+    }
+  }
+
+  const g = geo as { type?: string; coordinates?: unknown };
+  if (!g || !g.coordinates) return [];
+
+  const ringToPath = (ring: unknown): { lat: number; lng: number }[] => {
+    if (!Array.isArray(ring)) return [];
+    return ring
+      .filter(
+        (pt): pt is number[] =>
+          Array.isArray(pt) &&
+          pt.length >= 2 &&
+          Number.isFinite(pt[0]) &&
+          Number.isFinite(pt[1])
+      )
+      .map((pt) => ({ lat: pt[1], lng: pt[0] }));
+  };
+
+  if (g.type === 'Polygon') {
+    const outer = (g.coordinates as unknown[])[0];
+    const path = ringToPath(outer);
+    return path.length >= 3 ? [path] : [];
+  }
+
+  if (g.type === 'MultiPolygon') {
+    return (g.coordinates as unknown[])
+      .map((polygon) => ringToPath((polygon as unknown[])[0]))
+      .filter((path) => path.length >= 3);
+  }
+
+  return [];
+}
+
+/**
  * Calculate polygon area using Shoelace formula
  */
 export function calculatePolygonArea(
