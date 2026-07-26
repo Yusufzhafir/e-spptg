@@ -25,6 +25,7 @@ export function useAppState() {
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const [, setSubmissions] = useState<Submission[]>([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const pathname = usePathname();
   const router = useRouter();
@@ -145,6 +146,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   };
 
   const handlePageChange = (page: string) => {
+    setSidebarOpen(false);
     if (page === 'pengaturan') router.push('/app/pengaturan');
     else if (page === 'pengajuan') router.push('/app/pengajuan');
     else router.push('/app');
@@ -156,10 +158,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <Sidebar
           currentPage={currentPage}
           onPageChange={handlePageChange}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
         />
-        <div className="flex-1 flex flex-col">
-          <Header />
-          <main className="flex-1 p-6">{children}</main>
+        <div className="flex flex-1 flex-col min-w-0">
+          <Header onMenuClick={() => setSidebarOpen(true)} />
+          <main className="flex-1 p-4 sm:p-6">{children}</main>
         </div>
       </div>
     </AppStateContext.Provider>

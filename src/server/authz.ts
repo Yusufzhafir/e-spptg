@@ -1,5 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import type { TRPCContext } from '@/trpc/context';
+import { canManageUser, type UserAccessTarget } from '@/lib/user-access';
 
 export type AppUser = NonNullable<TRPCContext['appUser']>;
 
@@ -94,6 +95,19 @@ export function assertCanAccessSubmission(user: AppUser, submission: SubmissionA
     throw new TRPCError({
       code: 'NOT_FOUND',
       message: 'Pengajuan tidak ditemukan',
+    });
+  }
+}
+
+/**
+ * Guard mutations on another user's account (edit / toggle status / reset).
+ * Enforces the Superadmin > Admin > Verifikator > Viewer hierarchy scoped by desa.
+ */
+export function assertCanManageUser(actor: AppUser, target: UserAccessTarget) {
+  if (!canManageUser(actor, target)) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'Anda tidak memiliki izin untuk mengelola pengguna ini.',
     });
   }
 }

@@ -18,6 +18,7 @@ import { trpc } from '@/trpc/client';
 import { DrawingMap, type ReferencePolygon } from '../maps/DrawingMap';
 import { geoJSONToPaths } from '@/lib/map-utils';
 import { overlapJenisBadgeClassName } from '@/lib/overlap-results';
+import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
 import { parseKMLFile } from '@/lib/kmz-parser';
 import {
   coordinatesNeedIdNormalization,
@@ -169,6 +170,7 @@ export function Step2FieldValidation({
   // Sync UTM local state when switching to UTM mode or when draft coordinates change externally (e.g. map draw)
   useEffect(() => {
     if (coordinateSystem === 'utm' && !editingUtmField) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile local UTM state with external draft changes
       setUtmCoordinates(draft.coordinatesGeografis.map(toLocalUtmCoordinate));
     }
   }, [draft.coordinatesGeografis, coordinateSystem, toLocalUtmCoordinate, editingUtmField]);
@@ -516,7 +518,7 @@ export function Step2FieldValidation({
       geom?: unknown;
     }>;
     areas.forEach((area) => {
-      const color = area.warna || '#ef4444';
+      const color = KAWASAN_NON_SPPTG_COLOR;
       geoJSONToPaths(area.geom).forEach((path, i) => {
         result.push({
           id: `kawasan-${area.id}-${i}`,

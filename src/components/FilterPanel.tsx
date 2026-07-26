@@ -1,4 +1,5 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { SearchableSelect } from './SearchableSelect';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Download, Loader2, Search } from 'lucide-react';
@@ -93,22 +94,17 @@ export function FilterPanel({
             />
           </div>
 
-          <Select
+          <SearchableSelect
+            className="w-full sm:w-[180px]"
             value={desaFilter || 'all'}
             onValueChange={(value) => onDesaFilterChange(value === 'all' ? '' : value)}
-          >
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Desa" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Semua Desa</SelectItem>
-              {desaOptions.map((desa) => (
-                <SelectItem key={desa.id} value={String(desa.id)}>
-                  {desa.namaDesa}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            placeholder="Semua Desa"
+            searchPlaceholder="Cari desa..."
+            options={[
+              { value: 'all', label: 'Semua Desa' },
+              ...desaOptions.map((desa) => ({ value: String(desa.id), label: desa.namaDesa })),
+            ]}
+          />
         </div>
 
         <div className="flex items-center gap-2">

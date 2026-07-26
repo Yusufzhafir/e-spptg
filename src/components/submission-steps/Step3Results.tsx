@@ -39,6 +39,7 @@ import { ReadOnlyMap } from '@/components/maps/ReadOnlyMap';
 import type { ReferencePolygon } from '@/components/maps/DrawingMap';
 import { coordinatesToGeoJSON, geoJSONToPaths } from '@/lib/map-utils';
 import { overlapJenisBadgeClassName } from '@/lib/overlap-results';
+import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
 import { trpc } from '@/trpc/client';
 
 interface Step3Props {
@@ -307,7 +308,7 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
       } else {
         const area = areas.find((a) => a.id === overlap.kawasanId);
         if (!area) continue;
-        const color = area.warna || '#ef4444';
+        const color = KAWASAN_NON_SPPTG_COLOR;
         geoJSONToPaths(area.geom).forEach((path, i) => {
           result.push({
             id: `ov-area-${overlap.kawasanId}-${i}`,

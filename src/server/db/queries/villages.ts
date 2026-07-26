@@ -1,13 +1,26 @@
-import { eq, ilike } from 'drizzle-orm';
+import { eq, ilike, sql, getTableColumns } from 'drizzle-orm';
 import { db, DBTransaction } from '../db';
 import { villages } from '../schema';
 
 export async function listVillages(limit = 100, offset = 0, tx?: DBTransaction) {
   const queryDb = tx || db;
-  return queryDb.query.villages.findMany({
-    limit,
-    offset,
-  });
+  // Count submissions per village. NB: the submissions village column is the
+  // legacy mixed-case "villageId" (must be quoted exactly).
+  return queryDb
+    .select({
+      ...getTableColumns(villages),
+      // NB: interpolating ${villages.id} here renders as the *unqualified* "id",
+      // which inside the subquery binds to submissions.id instead of the outer
+      // villages.id (drizzle does not qualify base-table columns in a single-table
+      // select). Reference the outer column explicitly via the table name so the
+      // correlation is correct. The submissions alias avoids any "id" ambiguity.
+      jumlahPengajuan: sql<number>`(
+        SELECT COUNT(*)::int FROM submissions AS sub WHERE sub."villageId" = "villages"."id"
+      )`,
+    })
+    .from(villages)
+    .limit(limit)
+    .offset(offset);
 }
 
 export async function getVillageById(id: number, tx?: DBTransaction) {

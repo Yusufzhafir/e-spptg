@@ -107,7 +107,14 @@ export const draftsRouter = router({
   // Create an editable draft pre-filled from an existing submission. Re-submitting
   // this draft updates the original submission in place (see submitDraft).
   createFromSubmission: protectedProcedure
-    .input(z.object({ submissionId: z.number().int() }))
+    .input(
+      z.object({
+        submissionId: z.number().int(),
+        // true = duplicate into a brand-new submission (prefilled) instead of
+        // editing the original in place.
+        asNewSubmission: z.boolean().optional(),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       if (isViewer(ctx.appUser!)) {
         throw new TRPCError({
@@ -179,7 +186,8 @@ export const draftsRouter = router({
         userId: ctx.appUser!.id,
         villageId: submission.villageId,
         payload,
-        editingSubmissionId: submission.id,
+        // When duplicating, leave this null so re-submitting creates a new record.
+        editingSubmissionId: input.asNewSubmission ? null : submission.id,
         currentStep: 1,
       });
 

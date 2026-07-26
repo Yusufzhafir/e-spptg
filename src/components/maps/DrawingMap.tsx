@@ -38,6 +38,12 @@ interface DrawingMapProps {
   onCoordinatesChange: (coords: GeographicCoordinate[]) => void;
   recenterSignal?: number;
   referencePolygons?: ReferencePolygon[];
+  /**
+   * Allow editing individual vertices on the map (drag/midpoints). Disable when
+   * a coordinate table is the primary editor — Terra Draw's coordinate-point
+   * feature can throw "Unsupported geometry type" during heavy re-syncs.
+   */
+  enableCoordinateEditing?: boolean;
   center?: {
     lat: number;
     lng: number;
@@ -50,6 +56,7 @@ interface DrawingMapInternalProps {
   onCoordinatesChange: (coords: GeographicCoordinate[]) => void;
   recenterSignal?: number;
   referencePolygons?: ReferencePolygon[];
+  enableCoordinateEditing: boolean;
   /** Element above the map where the drawing toolbar is portaled, so it never covers Google Maps controls */
   toolbarHost: HTMLElement | null;
 }
@@ -113,6 +120,7 @@ function DrawingMapInternal({
   onCoordinatesChange,
   recenterSignal,
   referencePolygons,
+  enableCoordinateEditing,
   toolbarHost,
 }: DrawingMapInternalProps) {
   const map = useMap();
@@ -145,6 +153,41 @@ function DrawingMapInternal({
     coordinatesRef.current = coordinates;
     onCoordinatesChangeRef.current = onCoordinatesChange;
   }, [coordinates, onCoordinatesChange]);
+
+  // Terra Draw's select mode can throw "Unsupported geometry type for coordinate
+  // points" from its own async internals (e.g. when hydrating/deselecting an
+  // existing polygon on the edit screen). The polygon we persist is unaffected —
+  // the geometry lives in React state, not in the throwing render pass — so
+  // swallow just this one benign message instead of letting it surface as a dev
+  // error overlay. Scoped to while the map is mounted; nothing else is hidden.
+  useEffect(() => {
+    const isTerraDrawGeometryError = (value: unknown): boolean => {
+      const message =
+        typeof value === 'string'
+          ? value
+          : value instanceof Error
+            ? value.message
+            : '';
+      return message.includes('Unsupported geometry type');
+    };
+    const onError = (event: ErrorEvent) => {
+      if (isTerraDrawGeometryError(event.error) || isTerraDrawGeometryError(event.message)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    };
+    const onRejection = (event: PromiseRejectionEvent) => {
+      if (isTerraDrawGeometryError(event.reason)) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener('error', onError, true);
+    window.addEventListener('unhandledrejection', onRejection, true);
+    return () => {
+      window.removeEventListener('error', onError, true);
+      window.removeEventListener('unhandledrejection', onRejection, true);
+    };
+  }, []);
 
   // Read the current polygon/points from Terra Draw and push them to the parent
   const propagateFromMap = useCallback(() => {
@@ -194,7 +237,13 @@ function DrawingMapInternal({
     const draw = drawRef.current;
     if (!draw) return;
     isUpdatingFromPropsRef.current = true;
-    draw.clear();
+    try {
+      // Exit select mode first so clearing a selected polygon doesn't throw
+      if (draw.getMode() === 'select') draw.setMode('polygon');
+      draw.clear();
+    } catch (error) {
+      console.warn('Gagal menghapus fitur peta:', error);
+    }
     isUpdatingFromPropsRef.current = false;
     lastSyncedRef.current = [];
     onCoordinatesChangeRef.current([]);
@@ -276,18 +325,20 @@ function DrawingMapInternal({
           new TerraDrawSelectMode({
             flags: {
               polygon: {
-                feature: {
-                  draggable: false,
-                  coordinates: {
-                    midpoints: true,
-                    draggable: true,
-                    deletable: true,
-                  },
-                },
+                feature: enableCoordinateEditing
+                  ? {
+                      draggable: false,
+                      coordinates: {
+                        midpoints: true,
+                        draggable: true,
+                        deletable: true,
+                      },
+                    }
+                  : { draggable: false },
               },
               point: {
                 feature: {
-                  draggable: true,
+                  draggable: enableCoordinateEditing,
                 },
               },
             },
@@ -393,7 +444,7 @@ function DrawingMapInternal({
       lastSyncedRef.current = [];
       setDrawReady(false);
     };
-  }, [map, propagateFromMap, switchMode]);
+  }, [map, propagateFromMap, switchMode, enableCoordinateEditing]);
 
   // Sync Terra Draw features when the coordinates prop changes (table edits, KML import)
   useEffect(() => {
@@ -402,7 +453,20 @@ function DrawingMapInternal({
     if (sameCoordinates(coordinates, lastSyncedRef.current)) return;
 
     isUpdatingFromPropsRef.current = true;
-    draw.clear();
+    // Leave select mode before clearing: removing a selected polygon while its
+    // coordinate/mid points still exist makes Terra Draw throw
+    // "Unsupported geometry type for coordinate points".
+    try {
+      if (draw.getMode() === 'select') {
+        draw.setMode('polygon');
+        const store = modeStoreRef.current;
+        store.mode = 'polygon';
+        store.listeners.forEach((listener) => listener());
+      }
+      draw.clear();
+    } catch (error) {
+      console.warn('Gagal membersihkan fitur peta:', error);
+    }
 
     const valid = coordinates.filter(isValidCoordinate);
 
@@ -426,7 +490,12 @@ function DrawingMapInternal({
       ]);
       if (result[0]?.valid) {
         switchMode('select');
-        draw.selectFeature(featureId);
+        try {
+          draw.selectFeature(featureId);
+        } catch (error) {
+          // Selection is a nicety — never let a Terra Draw quirk crash the map
+          console.warn('Gagal memilih poligon setelah sinkronisasi:', error);
+        }
         // This effect only runs for prop-originated coordinate changes
         // (table edits, KML import, hydration) — map-drawn changes are guarded
         // out by sameCoordinates above — so this is the right moment to fit the
@@ -571,20 +640,22 @@ function DrawingMapInternal({
         <Pencil className="w-3.5 h-3.5" />
         Gambar
       </button>
-      <button
-        type="button"
-        onClick={() => switchMode('select')}
-        disabled={!drawReady}
-        title="Pilih dan edit poligon"
-        className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors disabled:opacity-50 ${
-          activeMode === 'select'
-            ? 'bg-blue-600 text-white'
-            : 'text-gray-700 hover:bg-gray-100'
-        }`}
-      >
-        <MousePointer2 className="w-3.5 h-3.5" />
-        Edit
-      </button>
+      {enableCoordinateEditing && (
+        <button
+          type="button"
+          onClick={() => switchMode('select')}
+          disabled={!drawReady}
+          title="Pilih dan edit poligon"
+          className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors disabled:opacity-50 ${
+            activeMode === 'select'
+              ? 'bg-blue-600 text-white'
+              : 'text-gray-700 hover:bg-gray-100'
+          }`}
+        >
+          <MousePointer2 className="w-3.5 h-3.5" />
+          Edit
+        </button>
+      )}
       <button
         type="button"
         onClick={clearAll}
@@ -611,6 +682,7 @@ export function DrawingMap({
   onCoordinatesChange,
   recenterSignal,
   referencePolygons,
+  enableCoordinateEditing = true,
   center = {
     lat: 0.6164979547396072,
     lng: 117.32086147991855,
@@ -649,6 +721,7 @@ export function DrawingMap({
               onCoordinatesChange={onCoordinatesChange}
               recenterSignal={recenterSignal}
               referencePolygons={referencePolygons}
+              enableCoordinateEditing={enableCoordinateEditing}
               toolbarHost={toolbarHost}
             />
           </Map>

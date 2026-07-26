@@ -600,8 +600,8 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
       </div>
 
       {/* Stepper */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <div className="flex items-center justify-between">
+      <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6">
+        <div className="flex items-center justify-between gap-2 overflow-x-auto min-w-0">
           {steps.map((step, index) => {
             const Icon = step.icon;
             const isCompleted = currentStep > step.id;
@@ -723,12 +723,12 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
       </div>
 
       {/* Action Buttons */}
-      <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white rounded-lg border border-gray-200 p-4">
         <Button variant="outline" onClick={onCancel}>
           Batal
         </Button>
 
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <Button
             variant="outline"
             onClick={handleSaveDraft}

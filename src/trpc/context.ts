@@ -1,7 +1,16 @@
 import 'server-only';
 import { auth, clerkClient } from '@clerk/nextjs/server';
 import { db } from '@/server/db/db';
-import { getUserByClerkId, createUser } from '@/server/db/queries/user';
+import {
+  getUserByClerkId,
+  getPendingUserByEmail,
+  linkClerkAccount,
+  createUser,
+  touchUserLastLogin,
+} from '@/server/db/queries/user';
+
+// Only rewrite "terakhir masuk" at most this often per user (avoid a write per request)
+const LAST_LOGIN_THROTTLE_MS = 10 * 60 * 1000;
 
 export async function createTRPCContext() {
   const { userId: clerkUserId } = await auth();
@@ -19,18 +28,40 @@ export async function createTRPCContext() {
 
         const nipNikFromPrivateMetadata =
           (clerkUser.privateMetadata.nipNik as string) || 'TEMP';
+        const email = clerkUser.emailAddresses[0]?.emailAddress || '';
 
         if (clerkUser) {
-          appUser = await createUser({
-            clerkUserId: clerkUserId,
-            email: clerkUser.emailAddresses[0]?.emailAddress || '',
-            nama: `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim(),
-            nipNik: nipNikFromPrivateMetadata,
-            peran: 'Viewer',
-          });
+          // If an admin pre-registered this person from the app (a row with the
+          // same email and no Clerk link yet), link that row instead of creating
+          // a duplicate — preserving their assigned role and desa.
+          const pending = email ? await getPendingUserByEmail(email) : undefined;
+          if (pending) {
+            appUser = await linkClerkAccount(pending.id, clerkUserId);
+          } else {
+            appUser = await createUser({
+              clerkUserId: clerkUserId,
+              email,
+              nama: `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim(),
+              nipNik: nipNikFromPrivateMetadata,
+              peran: 'Viewer',
+            });
+          }
         }
       } catch (error) {
         console.error('Error provisioning user from Clerk:', error);
+      }
+    }
+
+    // Update last-login (throttled) so the "Terakhir Masuk" column is populated
+    if (appUser) {
+      const last = appUser.terakhirMasuk ? new Date(appUser.terakhirMasuk).getTime() : 0;
+      if (Date.now() - last > LAST_LOGIN_THROTTLE_MS) {
+        try {
+          await touchUserLastLogin(appUser.id);
+          appUser = { ...appUser, terakhirMasuk: new Date() };
+        } catch (error) {
+          console.error('Error updating last login:', error);
+        }
       }
     }
   }

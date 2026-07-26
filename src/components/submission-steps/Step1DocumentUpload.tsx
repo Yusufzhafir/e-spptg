@@ -5,13 +5,7 @@ import { Checkbox } from '../ui/checkbox';
 import { FileUploadField } from '../FileUploadField';
 import { Textarea } from '../ui/textarea';
 import { trpc } from '@/trpc/client';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../ui/select';
+import { SearchableSelect } from '../SearchableSelect';
 
 interface Step1Props {
   draft: SubmissionDraft;
@@ -160,25 +154,18 @@ export function Step1DocumentUpload({
             <Label htmlFor="villageId">
               Desa <span className="text-red-600">*</span>
             </Label>
-            <Select
+            <SearchableSelect
+              id="villageId"
               value={draft.villageId ? String(draft.villageId) : ''}
               onValueChange={handleVillageChange}
-            >
-              <SelectTrigger
-                id="villageId"
-                aria-invalid={Boolean(errors.villageId)}
-                className={errors.villageId ? 'border-red-500' : undefined}
-              >
-                <SelectValue placeholder="Pilih desa" />
-              </SelectTrigger>
-              <SelectContent>
-                {villages.map((village) => (
-                  <SelectItem key={village.id} value={String(village.id)}>
-                    {village.namaDesa}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              placeholder="Pilih desa"
+              searchPlaceholder="Cari desa..."
+              className={errors.villageId ? 'border-red-500' : undefined}
+              options={villages.map((village) => ({
+                value: String(village.id),
+                label: village.namaDesa,
+              }))}
+            />
             <FieldError message={errors.villageId} />
           </div>
         </div>

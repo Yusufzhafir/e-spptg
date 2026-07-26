@@ -1,11 +1,9 @@
-import { useMemo, useState } from 'react';
-import { ProhibitedArea, ProhibitedAreaType, ValidationStatus } from '../types';
-import { parseGeospatialFile } from '../lib/kmz-parser';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ProhibitedArea, ProhibitedAreaType } from '../types';
 import { generateStaticMapUrl } from '@/lib/map-static-api';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { Textarea } from './ui/textarea';
 import { Switch } from './ui/switch';
 import {
   Table,
@@ -15,6 +13,13 @@ import {
   TableHeader,
   TableRow,
 } from './ui/table';
+import { useTableSort, SortableHead } from './table-sort';
+import { formatDate } from '@/lib/format-date';
+import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
+import { trpc } from '@/trpc/client';
+import { StatusBadge } from './StatusBadge';
+import type { StatusSPPTG } from '../types';
+import { SearchableSelect } from './SearchableSelect';
 import {
   Dialog,
   DialogContent,
@@ -24,14 +29,15 @@ import {
   DialogTitle,
 } from './ui/dialog';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select';
-
-
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
 import { Badge } from './ui/badge';
 import {
   Search,
@@ -48,8 +54,11 @@ import { CreateProhibitedAreaInput, UpdateProhibitedAreaInput } from '@/types/pr
 
 interface ProhibitedAreasTabProps {
   prohibitedAreas: ProhibitedArea[];
+  // Toggle "Aktif di Validasi" and delete are still handled here via a bulk update.
   onUpdateProhibitedAreas: (areas: ProhibitedArea[]) => void;
-  onCreateProhibitedArea: (area: CreateProhibitedAreaInput) => void;
+  // Add/edit now happen on dedicated pages; these remain optional for compatibility
+  // with the settings page wiring and are no longer used by this tab.
+  onCreateProhibitedArea?: (area: CreateProhibitedAreaInput) => void;
   onUpdateProhibitedArea?: (id: number, data: UpdateProhibitedAreaInput) => void;
   isCreating?: boolean;
   isUpdating?: boolean;
@@ -59,23 +68,49 @@ interface ProhibitedAreasTabProps {
 export function ProhibitedAreasTab({
   prohibitedAreas,
   onUpdateProhibitedAreas,
-  onCreateProhibitedArea,
-  onUpdateProhibitedArea,
-  isCreating = false,
-  isUpdating = false,
-  currentUserId,
 }: ProhibitedAreasTabProps) {
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [jenisFilter, setJenisFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false);
   const [isOverlapCheckDialogOpen, setIsOverlapCheckDialogOpen] = useState(false);
   const [selectedArea, setSelectedArea] = useState<ProhibitedArea | null>(null);
-  const [formData, setFormData] = useState<Partial<Omit<ProhibitedArea, 'geomGeoJSON'>> & { geomGeoJSON?: { type: 'Polygon'; coordinates: [[[number, number]]] } | null }>({});
-  const [isParsingFile, setIsParsingFile] = useState(false);
+
+  // Overlap report is computed on demand (PostGIS), only while the dialog is open
+  const {
+    data: overlapData,
+    isLoading: isLoadingOverlaps,
+    isError: overlapError,
+  } = trpc.prohibitedAreas.checkOverlaps.useQuery(undefined, {
+    enabled: isOverlapCheckDialogOpen,
+  });
+  const overlapRows = useMemo(() => overlapData ?? [], [overlapData]);
+  // A submission can overlap several kawasan — count distinct submissions
+  const overlapSubmissionCount = useMemo(
+    () => new Set(overlapRows.map((r) => r.submissionId)).size,
+    [overlapRows]
+  );
+
+  // Optimistic override for the "Aktif di Validasi" toggle (id -> value)
+  const [optimisticActive, setOptimisticActive] = useState<Record<number, boolean>>({});
+
+  // Drop optimistic entries once the refetched props catch up
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile optimistic state with props
+    setOptimisticActive((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const area of prohibitedAreas) {
+        if (area.id in next && next[area.id] === area.aktifDiValidasi) {
+          delete next[area.id];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [prohibitedAreas]);
 
   const previewMapUrl = useMemo(() => {
     if (!selectedArea?.geomGeoJSON) return null;
@@ -89,7 +124,7 @@ export function ProhibitedAreasTab({
         latitude: coord[1],
         longitude: coord[0],
       }));
-      const hexColor = selectedArea.warna?.replace('#', '');
+      const hexColor = KAWASAN_NON_SPPTG_COLOR.replace('#', '');
       return generateStaticMapUrl(coordinates, {
         mapType: 'terrain',
         fillColor: hexColor,
@@ -114,137 +149,50 @@ export function ProhibitedAreasTab({
     return matchesSearch && matchesJenis && matchesStatus;
   });
 
+  const {
+    sorted: sortedAreas,
+    sortKey,
+    sortDir,
+    toggleSort,
+  } = useTableSort<ProhibitedArea>(filteredAreas, (area, key) => {
+    switch (key) {
+      case 'namaKawasan':
+        return area.namaKawasan?.toLowerCase();
+      case 'jenisKawasan':
+        return area.jenisKawasan;
+      case 'sumberData':
+        return area.sumberData?.toLowerCase();
+      case 'dasarHukum':
+        return area.dasarHukum?.toLowerCase() ?? '';
+      case 'tanggalEfektif':
+        return area.tanggalEfektif ? new Date(area.tanggalEfektif).getTime() : 0;
+      case 'diunggahOleh':
+        return String(area.diunggahOleh ?? '');
+      case 'statusValidasi':
+        return area.statusValidasi;
+      case 'aktifDiValidasi':
+        return area.aktifDiValidasi ? 1 : 0;
+      default:
+        return '';
+    }
+  });
+
   const handleAddArea = () => {
-    setFormData({
-      aktifDiValidasi: true,
-      statusValidasi: 'Lolos',
-      warna: '#3b82f6',
-    });
-    setIsAddDialogOpen(true);
+    router.push('/app/pengaturan/kawasan/tambah');
   };
 
   const handleEditArea = (area: ProhibitedArea) => {
-    setSelectedArea(area);
-    // Parse geomGeoJSON from string if it exists
-    const parsedGeoJSON = area.geomGeoJSON 
-      ? (typeof area.geomGeoJSON === 'string' ? JSON.parse(area.geomGeoJSON) : area.geomGeoJSON)
-      : null;
-    setFormData({
-      ...area,
-      geomGeoJSON: parsedGeoJSON,
-    });
-    setIsEditDialogOpen(true);
+    router.push(`/app/pengaturan/kawasan/${area.id}/edit`);
   };
 
   const handleDeleteArea = (area: ProhibitedArea) => {
     setSelectedArea(area);
+    setIsDeleteDialogOpen(true);
   };
 
   const handlePreviewArea = (area: ProhibitedArea) => {
     setSelectedArea(area);
     setIsPreviewDialogOpen(true);
-  };
-
-  const handleSaveArea = () => {
-    if (
-      !formData.namaKawasan ||
-      !formData.jenisKawasan ||
-      !formData.sumberData ||
-      !formData.tanggalEfektif
-    ) {
-      toast.error('Harap lengkapi semua field yang wajib diisi');
-      return;
-    }
-
-    if (!formData.geomGeoJSON) {
-      toast.error('Harap unggah file KML/KMZ/GPX untuk menambahkan geometry kawasan');
-      return;
-    }
-
-    // Convert tanggalEfektif string to Date object
-    const tanggalEfektifDate = new Date(formData.tanggalEfektif);
-    if (isNaN(tanggalEfektifDate.getTime())) {
-      toast.error('Tanggal efektif tidak valid');
-      return;
-    }
-
-    // Call onCreateProhibitedArea with the format expected by the mutation
-    // (GeoJSON as object, tanggalEfektif as Date)
-    const createData: CreateProhibitedAreaInput = {
-      namaKawasan: formData.namaKawasan,
-      jenisKawasan: formData.jenisKawasan as ProhibitedAreaType,
-      sumberData: formData.sumberData,
-      dasarHukum: formData.dasarHukum || undefined, // Convert null to undefined
-      tanggalEfektif: tanggalEfektifDate, // Date object, not string
-      diunggahOleh: currentUserId ?? 0, // Use currentUserId if available
-      statusValidasi: (formData.statusValidasi as ValidationStatus) || 'Lolos',
-      aktifDiValidasi: formData.aktifDiValidasi ?? true,
-      warna: formData.warna || '#3b82f6',
-      catatan: formData.catatan ?? null,
-      geomGeoJSON: formData.geomGeoJSON,
-    };
-    onCreateProhibitedArea(createData);
-
-    setIsAddDialogOpen(false);
-    setFormData({});
-    toast.success('Kawasan Non‑SPPTG berhasil ditambahkan.');
-  };
-
-  const handleUpdateArea = () => {
-    if (!selectedArea) return;
-
-    // Convert formData to UpdateProhibitedAreaInput format
-    const updateData: UpdateProhibitedAreaInput = {};
-    
-    if (formData.namaKawasan) updateData.namaKawasan = formData.namaKawasan;
-    if (formData.jenisKawasan) updateData.jenisKawasan = formData.jenisKawasan as ProhibitedAreaType;
-    if (formData.sumberData) updateData.sumberData = formData.sumberData;
-    if (formData.dasarHukum !== undefined) {
-      updateData.dasarHukum = formData.dasarHukum || undefined; // Convert null to undefined
-    }
-    if (formData.tanggalEfektif) {
-      const tanggalEfektifDate = new Date(formData.tanggalEfektif);
-      if (!isNaN(tanggalEfektifDate.getTime())) {
-        updateData.tanggalEfektif = tanggalEfektifDate; // Convert string to Date
-      }
-    }
-    if (formData.statusValidasi) updateData.statusValidasi = formData.statusValidasi as ValidationStatus;
-    if (formData.aktifDiValidasi !== undefined) updateData.aktifDiValidasi = formData.aktifDiValidasi;
-    if (formData.warna) updateData.warna = formData.warna;
-    if (formData.catatan !== undefined) updateData.catatan = formData.catatan ?? null;
-    if (formData.geomGeoJSON) {
-      updateData.geomGeoJSON = formData.geomGeoJSON; // Keep as object, not string
-    }
-
-    if (onUpdateProhibitedArea) {
-      // Use individual update callback if available
-      onUpdateProhibitedArea(selectedArea.id, updateData);
-    } else {
-      // Fallback to bulk update for backward compatibility
-      // Convert updateData back to ProhibitedArea format for local state
-      const updatedArea: ProhibitedArea = {
-        ...selectedArea,
-        ...(updateData.namaKawasan && { namaKawasan: updateData.namaKawasan }),
-        ...(updateData.jenisKawasan && { jenisKawasan: updateData.jenisKawasan }),
-        ...(updateData.sumberData && { sumberData: updateData.sumberData }),
-        ...(updateData.dasarHukum !== undefined && { dasarHukum: updateData.dasarHukum || null }),
-        ...(updateData.tanggalEfektif && { tanggalEfektif: updateData.tanggalEfektif.toISOString().split('T')[0] }),
-        ...(updateData.statusValidasi && { statusValidasi: updateData.statusValidasi }),
-        ...(updateData.aktifDiValidasi !== undefined && { aktifDiValidasi: updateData.aktifDiValidasi }),
-        ...(updateData.warna && { warna: updateData.warna }),
-        ...(updateData.catatan !== undefined && { catatan: updateData.catatan }),
-        ...(updateData.geomGeoJSON && { geomGeoJSON: JSON.stringify(updateData.geomGeoJSON) }),
-      };
-      const updatedAreas = prohibitedAreas.map((a) =>
-        a.id === selectedArea.id ? updatedArea : a
-      );
-      onUpdateProhibitedAreas(updatedAreas);
-    }
-
-    setIsEditDialogOpen(false);
-    setSelectedArea(null);
-    setFormData({});
-    toast.success('Kawasan Non-SPPTG berhasil diperbarui.');
   };
 
   const confirmDelete = () => {
@@ -254,14 +202,19 @@ export function ProhibitedAreasTab({
     onUpdateProhibitedAreas(updatedAreas);
     setIsDeleteDialogOpen(false);
     setSelectedArea(null);
-    toast.success('Kawasan Non-SPPTG berhasil dihapus.');
+    // Success toast is shown by the delete mutation's onSuccess handler.
   };
 
   const handleToggleActive = (area: ProhibitedArea) => {
-    const updatedAreas = prohibitedAreas.map((a) =>
-      a.id === area.id ? { ...a, aktifDiValidasi: !a.aktifDiValidasi } : a
+    const nextValue = !area.aktifDiValidasi;
+    // Optimistically reflect the toggle immediately; the backend update +
+    // refetch (handled by the parent) will confirm it.
+    setOptimisticActive((prev) => ({ ...prev, [area.id]: nextValue }));
+    onUpdateProhibitedAreas(
+      prohibitedAreas.map((a) =>
+        a.id === area.id ? { ...a, aktifDiValidasi: nextValue } : a
+      )
     );
-    onUpdateProhibitedAreas(updatedAreas);
     toast.success(
       `Kawasan ${area.aktifDiValidasi ? 'dinonaktifkan' : 'diaktifkan'} di validasi.`
     );
@@ -271,35 +224,49 @@ export function ProhibitedAreasTab({
     setIsOverlapCheckDialogOpen(true);
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setIsParsingFile(true);
-    try {
-      const result = await parseGeospatialFile(file);
-      
-      if (result.success && result.geoJSON) {
-        setFormData((prev) => ({
-          ...prev,
-          geomGeoJSON: result.geoJSON || null,
-        } as typeof formData));
-        toast.success(
-          `File ${file.name} berhasil diunggah dan divalidasi. Ditemukan ${result.coordinates.length} titik koordinat.`
-        );
-      } else {
-        toast.error(result.error || 'Gagal memparse file geospasial');
-      }
-    } catch (error) {
-      console.error('Error parsing file:', error);
-      toast.error(
-        error instanceof Error 
-          ? `Gagal memparse file: ${error.message}` 
-          : 'Gagal memparse file geospasial'
-      );
-    } finally {
-      setIsParsingFile(false);
+  const handleDownloadArea = (area: ProhibitedArea) => {
+    if (!area.geomGeoJSON) {
+      toast.error('Kawasan ini tidak memiliki data geometri untuk diunduh.');
+      return;
     }
+    let geometry: unknown;
+    try {
+      geometry = JSON.parse(area.geomGeoJSON);
+    } catch {
+      toast.error('Data geometri tidak valid.');
+      return;
+    }
+    const featureCollection = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: {
+            id: area.id,
+            namaKawasan: area.namaKawasan,
+            jenisKawasan: area.jenisKawasan,
+            sumberData: area.sumberData,
+            dasarHukum: area.dasarHukum,
+            statusValidasi: area.statusValidasi,
+            warna: area.warna,
+          },
+          geometry,
+        },
+      ],
+    };
+    const blob = new Blob([JSON.stringify(featureCollection, null, 2)], {
+      type: 'application/geo+json',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const safeName = area.namaKawasan.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '') || 'kawasan';
+    link.href = url;
+    link.download = `${safeName}.geojson`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success('File GeoJSON berhasil diunduh.');
   };
 
   const jenisKawasanOptions: ProhibitedAreaType[] = [
@@ -341,30 +308,30 @@ export function ProhibitedAreasTab({
             />
           </div>
 
-          <Select value={jenisFilter} onValueChange={setJenisFilter}>
-            <SelectTrigger className="w-full sm:w-[200px]">
-              <SelectValue placeholder="Semua Jenis" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Semua Jenis</SelectItem>
-              {jenisKawasanOptions.map((jenis) => (
-                <SelectItem key={jenis} value={jenis}>
-                  {jenis}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            className="w-full sm:w-[200px]"
+            value={jenisFilter}
+            onValueChange={setJenisFilter}
+            placeholder="Semua Jenis"
+            searchPlaceholder="Cari jenis..."
+            options={[
+              { value: 'all', label: 'Semua Jenis' },
+              ...jenisKawasanOptions.map((jenis) => ({ value: jenis, label: jenis })),
+            ]}
+          />
 
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-full sm:w-[180px]">
-              <SelectValue placeholder="Semua Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Semua Status</SelectItem>
-              <SelectItem value="Lolos">Lolos</SelectItem>
-              <SelectItem value="Perlu Perbaikan">Perlu Perbaikan</SelectItem>
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            className="w-full sm:w-[180px]"
+            value={statusFilter}
+            onValueChange={setStatusFilter}
+            placeholder="Semua Status"
+            searchPlaceholder="Cari status..."
+            options={[
+              { value: 'all', label: 'Semua Status' },
+              { value: 'Lolos', label: 'Lolos' },
+              { value: 'Perlu Perbaikan', label: 'Perlu Perbaikan' },
+            ]}
+          />
         </div>
 
         <div className="flex gap-2 w-full lg:w-auto">
@@ -392,19 +359,19 @@ export function ProhibitedAreasTab({
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
-                <TableHead>Nama Kawasan</TableHead>
-                <TableHead>Jenis</TableHead>
-                <TableHead>Sumber Data</TableHead>
-                <TableHead>Dasar Hukum</TableHead>
-                <TableHead>Tanggal Efektif</TableHead>
-                <TableHead>Diunggah Oleh</TableHead>
-                <TableHead>Status Validasi</TableHead>
-                <TableHead className="text-center">Aktif di Validasi</TableHead>
+                <SortableHead label="Nama Kawasan" sortKey="namaKawasan" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                <SortableHead label="Jenis" sortKey="jenisKawasan" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                <SortableHead label="Sumber Data" sortKey="sumberData" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                <SortableHead label="Dasar Hukum" sortKey="dasarHukum" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                <SortableHead label="Tanggal Efektif" sortKey="tanggalEfektif" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                <SortableHead label="Diunggah Oleh" sortKey="diunggahOleh" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                <SortableHead label="Status Validasi" sortKey="statusValidasi" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                <SortableHead label="Aktif di Validasi" sortKey="aktifDiValidasi" activeKey={sortKey} dir={sortDir} onSort={toggleSort} className="text-center" />
                 <TableHead className="text-right">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredAreas.length === 0 ? (
+              {sortedAreas.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="text-center py-8 text-gray-500">
                     {searchQuery || jenisFilter !== 'all' || statusFilter !== 'all'
@@ -413,17 +380,9 @@ export function ProhibitedAreasTab({
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredAreas.map((area) => (
+                sortedAreas.map((area) => (
                   <TableRow key={area.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-3 h-3 rounded-full"
-                          style={{ backgroundColor: area.warna }}
-                        />
-                        <span>{area.namaKawasan}</span>
-                      </div>
-                    </TableCell>
+                    <TableCell>{area.namaKawasan}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className="whitespace-nowrap">
                         {area.jenisKawasan}
@@ -433,8 +392,8 @@ export function ProhibitedAreasTab({
                     <TableCell className="text-gray-600">
                       {area.dasarHukum || '-'}
                     </TableCell>
-                    <TableCell className="text-gray-600">{area.tanggalEfektif}</TableCell>
-                    <TableCell className="text-gray-600">{area.diunggahOleh}</TableCell>
+                    <TableCell className="text-gray-600">{formatDate(area.tanggalEfektif)}</TableCell>
+                    <TableCell className="text-gray-600">{area.diunggahOlehNama || '-'}</TableCell>
                     <TableCell>
                       <Badge
                         variant={area.statusValidasi === 'Lolos' ? 'default' : 'secondary'}
@@ -449,7 +408,7 @@ export function ProhibitedAreasTab({
                     </TableCell>
                     <TableCell className="text-center">
                       <Switch
-                        checked={area.aktifDiValidasi}
+                        checked={optimisticActive[area.id] ?? area.aktifDiValidasi}
                         onCheckedChange={() => handleToggleActive(area)}
                       />
                     </TableCell>
@@ -474,8 +433,8 @@ export function ProhibitedAreasTab({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => toast.success('File berhasil diunduh')}
-                          title="Unduh"
+                          onClick={() => handleDownloadArea(area)}
+                          title="Unduh GeoJSON"
                         >
                           <Download className="h-4 w-4" />
                         </Button>
@@ -497,300 +456,6 @@ export function ProhibitedAreasTab({
           </Table>
         </div>
       </div>
-
-      {/* Add Area Dialog */}
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Tambah Kawasan Non-SPPTG</DialogTitle>
-            <DialogDescription>
-              Tambahkan kawasan yang tidak dapat diterbitkan SPPTG untuk preventive check.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="kml-file">File KML/KMZ/GPX</Label>
-              <Input
-                id="kml-file"
-                type="file"
-                accept=".kml,.kmz,.gpx"
-                onChange={handleFileUpload}
-                disabled={isParsingFile}
-                className="mt-2"
-              />
-              <p className="text-xs text-gray-500 mt-2">
-                Maks 50 MB. Geometry: Polygon/MultiPolygon. Koordinat: WGS84 (EPSG:4326)
-              </p>
-              {isParsingFile && (
-                <p className="text-xs text-blue-600 mt-2">Memproses file...</p>
-              )}
-              {formData.geomGeoJSON && (
-                <p className="text-xs text-green-600 mt-2">
-                  ✓ File berhasil diparse. Geometry siap digunakan.
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-4 pt-4 border-t">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <Label htmlFor="namaKawasan">Nama Kawasan *</Label>
-                <Input
-                  id="namaKawasan"
-                  value={formData.namaKawasan || ''}
-                  onChange={(e) => setFormData({ ...formData, namaKawasan: e.target.value })}
-                  placeholder="Contoh: Hutan Lindung Cikole"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="jenisKawasan">Jenis Kawasan *</Label>
-                <Select
-                  value={formData.jenisKawasan}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, jenisKawasan: value as ProhibitedAreaType })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih jenis" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {jenisKawasanOptions.map((jenis) => (
-                      <SelectItem key={jenis} value={jenis}>
-                        {jenis}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label htmlFor="sumberData">Sumber Data *</Label>
-                <Input
-                  id="sumberData"
-                  value={formData.sumberData || ''}
-                  onChange={(e) => setFormData({ ...formData, sumberData: e.target.value })}
-                  placeholder="Contoh: KLHK"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="dasarHukum">Dasar Hukum/No. SK</Label>
-                <Input
-                  id="dasarHukum"
-                  value={formData.dasarHukum || ''}
-                  onChange={(e) => setFormData({ ...formData, dasarHukum: e.target.value })}
-                  placeholder="Contoh: SK No. 123/2020"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="tanggalEfektif">Tanggal Efektif *</Label>
-                <Input
-                  id="tanggalEfektif"
-                  type="date"
-                  value={formData.tanggalEfektif || ''}
-                  onChange={(e) => setFormData({ ...formData, tanggalEfektif: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="warna">Warna Layer</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="warna"
-                    type="color"
-                    value={formData.warna || '#3b82f6'}
-                    onChange={(e) => setFormData({ ...formData, warna: e.target.value })}
-                    className="h-10 w-20"
-                  />
-                  <Input
-                    value={formData.warna || '#3b82f6'}
-                    onChange={(e) => setFormData({ ...formData, warna: e.target.value })}
-                    placeholder="#3b82f6"
-                    className="flex-1"
-                  />
-                </div>
-              </div>
-
-              <div className="col-span-2">
-                <Label htmlFor="catatan">Catatan</Label>
-                <Textarea
-                  id="catatan"
-                  value={formData.catatan || ''}
-                  onChange={(e) => setFormData({ ...formData, catatan: e.target.value })}
-                  placeholder="Catatan tambahan (opsional)"
-                  rows={3}
-                />
-              </div>
-
-              <div className="col-span-2 flex items-center gap-2">
-                <Switch
-                  id="aktifDiValidasi"
-                  checked={formData.aktifDiValidasi ?? true}
-                  onCheckedChange={(checked) =>
-                    setFormData({ ...formData, aktifDiValidasi: checked })
-                  }
-                />
-                <Label htmlFor="aktifDiValidasi" className="cursor-pointer">
-                  Aktif di Validasi
-                </Label>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
-              Batal
-            </Button>
-            <Button onClick={handleSaveArea} className="bg-blue-600 hover:bg-blue-700">
-              Simpan
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Area Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Kawasan Non‑SPPTG</DialogTitle>
-            <DialogDescription>Perbarui informasi kawasan.</DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <Label htmlFor="edit-namaKawasan">Nama Kawasan *</Label>
-                <Input
-                  id="edit-namaKawasan"
-                  value={formData.namaKawasan || ''}
-                  onChange={(e) => setFormData({ ...formData, namaKawasan: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="edit-jenisKawasan">Jenis Kawasan *</Label>
-                <Select
-                  value={formData.jenisKawasan}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, jenisKawasan: value as ProhibitedAreaType })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {jenisKawasanOptions.map((jenis) => (
-                      <SelectItem key={jenis} value={jenis}>
-                        {jenis}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label htmlFor="edit-sumberData">Sumber Data *</Label>
-                <Input
-                  id="edit-sumberData"
-                  value={formData.sumberData || ''}
-                  onChange={(e) => setFormData({ ...formData, sumberData: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="edit-dasarHukum">Dasar Hukum/No. SK</Label>
-                <Input
-                  id="edit-dasarHukum"
-                  value={formData.dasarHukum || ''}
-                  onChange={(e) => setFormData({ ...formData, dasarHukum: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="edit-tanggalEfektif">Tanggal Efektif *</Label>
-                <Input
-                  id="edit-tanggalEfektif"
-                  type="date"
-                  value={formData.tanggalEfektif || ''}
-                  onChange={(e) => setFormData({ ...formData, tanggalEfektif: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="edit-warna">Warna Layer</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="edit-warna"
-                    type="color"
-                    value={formData.warna || '#3b82f6'}
-                    onChange={(e) => setFormData({ ...formData, warna: e.target.value })}
-                    className="h-10 w-20"
-                  />
-                  <Input
-                    value={formData.warna || '#3b82f6'}
-                    onChange={(e) => setFormData({ ...formData, warna: e.target.value })}
-                    className="flex-1"
-                  />
-                </div>
-              </div>
-
-              <div className="col-span-2">
-                <Label htmlFor="edit-statusValidasi">Status Validasi</Label>
-                <Select
-                  value={formData.statusValidasi}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, statusValidasi: value as ValidationStatus })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Lolos">Lolos</SelectItem>
-                    <SelectItem value="Perlu Perbaikan">Perlu Perbaikan</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="col-span-2">
-                <Label htmlFor="edit-catatan">Catatan</Label>
-                <Textarea
-                  id="edit-catatan"
-                  value={formData.catatan || ''}
-                  onChange={(e) => setFormData({ ...formData, catatan: e.target.value })}
-                  rows={3}
-                />
-              </div>
-
-              <div className="col-span-2 flex items-center gap-2">
-                <Switch
-                  id="edit-aktifDiValidasi"
-                  checked={formData.aktifDiValidasi ?? true}
-                  onCheckedChange={(checked) =>
-                    setFormData({ ...formData, aktifDiValidasi: checked })
-                  }
-                />
-                <Label htmlFor="edit-aktifDiValidasi" className="cursor-pointer">
-                  Aktif di Validasi
-                </Label>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-              Batal
-            </Button>
-            <Button onClick={handleUpdateArea} className="bg-blue-600 hover:bg-blue-700">
-              Simpan Perubahan
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Preview Dialog */}
       <Dialog open={isPreviewDialogOpen} onOpenChange={setIsPreviewDialogOpen}>
@@ -832,7 +497,7 @@ export function ProhibitedAreasTab({
               </div>
               <div>
                 <p className="text-xs text-gray-600">Tanggal Efektif</p>
-                <p className="text-sm">{selectedArea?.tanggalEfektif}</p>
+                <p className="text-sm">{formatDate(selectedArea?.tanggalEfektif)}</p>
               </div>
               {selectedArea?.catatan && (
                 <div className="col-span-2">
@@ -862,91 +527,132 @@ export function ProhibitedAreasTab({
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* Summary */}
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5" />
-                <div>
-                  <p className="text-orange-900">
-                    <strong>Ditemukan 2 pengajuan SPPTG tumpang tindih</strong>
-                  </p>
-                  <p className="text-sm text-orange-700 mt-1">
-                    Pengajuan berikut terindikasi tumpang tindih dengan kawasan non-SPPTG yang aktif
-                  </p>
+            {isLoadingOverlaps ? (
+              <div className="flex items-center justify-center py-10 text-sm text-gray-500">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2" />
+                Menghitung tumpang tindih...
+              </div>
+            ) : overlapError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                Gagal menghitung tumpang tindih. Silakan coba lagi.
+              </div>
+            ) : overlapRows.length === 0 ? (
+              <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+                <div className="flex items-start gap-3">
+                  <Shield className="h-5 w-5 text-green-600 mt-0.5" />
+                  <div>
+                    <p className="text-green-900">
+                      <strong>Tidak ada pengajuan yang tumpang tindih</strong>
+                    </p>
+                    <p className="text-sm text-green-700 mt-1">
+                      Semua pengajuan SPPTG berada di luar kawasan Non-SPPTG yang aktif.
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <>
+                {/* Summary */}
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5" />
+                    <div>
+                      <p className="text-orange-900">
+                        <strong>
+                          Ditemukan {overlapSubmissionCount} pengajuan SPPTG tumpang tindih
+                        </strong>
+                      </p>
+                      <p className="text-sm text-orange-700 mt-1">
+                        Pengajuan berikut terindikasi tumpang tindih dengan kawasan Non-SPPTG
+                        yang aktif. Buka detail untuk meninjau dan menentukan statusnya.
+                      </p>
+                    </div>
+                  </div>
+                </div>
 
-            {/* Results Table */}
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50">
-                    <TableHead>ID Pengajuan</TableHead>
-                    <TableHead>Pemilik</TableHead>
-                    <TableHead>Desa/Kecamatan</TableHead>
-                    <TableHead>Luas Overlap</TableHead>
-                    <TableHead>Kawasan</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Aksi</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow>
-                    <TableCell>2025-01-0234</TableCell>
-                    <TableCell>Budi Santoso</TableCell>
-                    <TableCell>Sukapura, Kejaksan</TableCell>
-                    <TableCell>125 m²</TableCell>
-                    <TableCell>Tanah Pemerintah</TableCell>
-                    <TableCell>
-                      <Badge className="bg-red-100 text-red-700 hover:bg-red-100">
-                        SKT ditolak
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="sm">
-                        Buka Detail
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>2025-01-0456</TableCell>
-                    <TableCell>Ahmad Fauzi</TableCell>
-                    <TableCell>Karangsari, Lemahwungkuk</TableCell>
-                    <TableCell>78 m²</TableCell>
-                    <TableCell>Sempadan Sungai</TableCell>
-                    <TableCell>
-                      <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-100">
-                        SKT ditinjau ulang
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="sm">
-                        Buka Detail
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </div>
+                {/* Results Table — scrolls horizontally on narrow screens */}
+                <div className="border rounded-lg overflow-x-auto">
+                  <Table className="min-w-205">
+                    <TableHeader>
+                      <TableRow className="bg-gray-50">
+                        <TableHead>ID Pengajuan</TableHead>
+                        <TableHead>Pemilik</TableHead>
+                        <TableHead>Desa/Kecamatan</TableHead>
+                        <TableHead>Luas Overlap</TableHead>
+                        <TableHead>Kawasan</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Aksi</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {overlapRows.map((row, index) => (
+                        <TableRow key={`${row.submissionId}-${row.namaKawasan}-${index}`}>
+                          <TableCell className="font-mono text-xs">#{row.submissionId}</TableCell>
+                          <TableCell>{row.namaPemilik}</TableCell>
+                          <TableCell className="text-gray-600">
+                            {row.desaNama || `Desa #${row.submissionId}`}
+                            {row.kecamatan ? `, ${row.kecamatan}` : ''}
+                          </TableCell>
+                          <TableCell>
+                            {Math.round(row.luasOverlap).toLocaleString('id-ID')} m²
+                            <span className="text-gray-500 text-xs">
+                              {' '}
+                              ({row.percentageOverlap.toFixed(2)}%)
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-gray-600">{row.namaKawasan}</TableCell>
+                          <TableCell>
+                            <StatusBadge status={row.status as StatusSPPTG} />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setIsOverlapCheckDialogOpen(false);
+                                router.push(`/app/pengajuan/${row.submissionId}`);
+                              }}
+                            >
+                              Buka Detail
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsOverlapCheckDialogOpen(false)}>
               Tutup
             </Button>
-            <Button
-              onClick={() => {
-                toast.success('Pengajuan telah ditandai terindikasi overlap');
-                setIsOverlapCheckDialogOpen(false);
-              }}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              Tandai Pengajuan Terindikasi Overlap
-            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus Kawasan Non-SPPTG?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Hapus kawasan {selectedArea?.namaKawasan}? Tindakan ini tidak dapat dibatalkan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -5,6 +5,8 @@ import {
   updateProhibitedAreaSchema,
 } from '@/lib/validation';
 import * as queries from '@/server/db/queries/prohibitedAreas';
+import { findOverlappingSubmissions } from '@/server/postgis';
+import { getSubmissionScopeForUser } from '@/server/authz';
 import { sql, eq } from 'drizzle-orm';
 import { prohibitedAreas } from '@/server/db/schema';
 import { TRPCError } from '@trpc/server';
@@ -33,6 +35,16 @@ export const prohibitedAreasRouter = router({
       }
       return area;
     }),
+
+  /**
+   * System-wide overlap report: submissions intersecting an *active* kawasan,
+   * scoped to what the caller may see (superadmin = all, admin/verifikator =
+   * their desa, viewer = their own submissions).
+   */
+  checkOverlaps: protectedProcedure.query(async ({ ctx }) => {
+    const scope = getSubmissionScopeForUser(ctx.appUser!);
+    return findOverlappingSubmissions(scope);
+  }),
 
   create: adminProcedure
     .input(createProhibitedAreaSchema)
@@ -150,18 +162,22 @@ export const prohibitedAreasRouter = router({
           return `${lon} ${lat}`;
         }).join(',');
 
-        // Update with geometry conversion
+        // Update with geometry conversion.
+        // NB: only return the id — a bare .returning() reads back the `geom`
+        // column, and drizzle's geometry() type only parses Point, so a Polygon
+        // throws "Unsupported geometry type". (This is why create, which returns
+        // { id } only, works but edit was failing.)
         const result = await ctx.db
           .update(prohibitedAreas)
           .set({
             ...Object.fromEntries(
               Object.entries(updateData).filter(([key]) => key !== 'geomGeoJSON')
             ),
-            geom: sql`ST_PolygonFromText('POLYGON((${sanitizedCoords}))',4326)`,
+            geom: sql.raw(`ST_PolygonFromText('POLYGON((${sanitizedCoords}))',4326)`),
             updatedAt: new Date(),
           })
           .where(eq(prohibitedAreas.id, input.id))
-          .returning();
+          .returning({ id: prohibitedAreas.id });
 
         return result[0];
       }

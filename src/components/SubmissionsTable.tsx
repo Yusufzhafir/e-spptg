@@ -10,6 +10,13 @@ import {
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog';
+import {
   Eye,
   Edit,
   Check,
@@ -19,14 +26,19 @@ import {
   ChevronsUpDown,
   ChevronLeft,
   ChevronRight,
+  Pencil,
+  FilePlus2,
 } from 'lucide-react';
 import { Submission } from '../types';
 import { StatusBadge } from './StatusBadge';
+import { formatDate } from '@/lib/format-date';
+
+export type EditMode = 'existing' | 'duplicate';
 
 interface SubmissionsTableProps {
   submissions: Submission[];
   onViewDetail: (submission: Submission) => void;
-  onEdit: (submission: Submission) => void;
+  onEdit: (submission: Submission, mode: EditMode) => void;
   onToggleValidity: (submission: Submission) => void;
   isTogglingValidity: boolean;
   /** When set, the table pages to and highlights this submission's row */
@@ -80,6 +92,7 @@ export function SubmissionsTable({
   const [sortDir, setSortDir] = useState<SortDirection>('desc');
   const [page, setPage] = useState(0);
   const [highlightId, setHighlightId] = useState<number | null>(null);
+  const [editTarget, setEditTarget] = useState<Submission | null>(null);
   const rowRefs = useRef<Record<number, HTMLTableRowElement | null>>({});
 
   const sorted = useMemo(() => {
@@ -202,10 +215,10 @@ export function SubmissionsTable({
                 </div>
               </TableCell>
               <TableCell>
-                {submission.villageId.toString()}, {submission.kecamatan}
+                {submission.desaNama || `Desa #${submission.villageId}`}, {submission.kecamatan}
               </TableCell>
               <TableCell>{submission.luas.toLocaleString()}</TableCell>
-              <TableCell>{submission.tanggalPengajuan.toLocaleDateString()}</TableCell>
+              <TableCell>{formatDate(submission.tanggalPengajuan)}</TableCell>
               <TableCell>
                 <StatusBadge status={submission.status} />
               </TableCell>
@@ -264,7 +277,7 @@ export function SubmissionsTable({
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => onEdit(submission)}
+                    onClick={() => setEditTarget(submission)}
                     title="Edit pengajuan"
                   >
                     <Edit className="w-4 h-4" />
@@ -306,6 +319,54 @@ export function SubmissionsTable({
           </Button>
         </div>
       </div>
+
+      {/* Edit choice dialog */}
+      <Dialog open={editTarget !== null} onOpenChange={(open) => !open && setEditTarget(null)}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Edit Pengajuan</DialogTitle>
+            <DialogDescription>
+              Pilih cara mengedit pengajuan{' '}
+              <span className="font-medium text-gray-900">
+                {editTarget?.namaPemilik}
+              </span>
+              .
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (editTarget) onEdit(editTarget, 'existing');
+                setEditTarget(null);
+              }}
+              className="flex flex-col items-start gap-2 rounded-lg border border-gray-200 p-4 text-left transition-colors hover:border-blue-400 hover:bg-blue-50"
+            >
+              <Pencil className="h-5 w-5 text-blue-600" />
+              <span className="font-medium text-gray-900">Edit yang ada</span>
+              <span className="text-xs text-gray-500">
+                Ubah pengajuan ini di tempat — data ter-update pada pengajuan yang sama.
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (editTarget) onEdit(editTarget, 'duplicate');
+                setEditTarget(null);
+              }}
+              className="flex flex-col items-start gap-2 rounded-lg border border-gray-200 p-4 text-left transition-colors hover:border-green-400 hover:bg-green-50"
+            >
+              <FilePlus2 className="h-5 w-5 text-green-600" />
+              <span className="font-medium text-gray-900">Buat pengajuan baru</span>
+              <span className="text-xs text-gray-500">
+                Buat pengajuan baru dengan semua nilai input terisi dari pengajuan ini.
+              </span>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

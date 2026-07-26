@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -37,6 +38,9 @@ interface SettingsProps {
   villages: Village[];
   prohibitedAreas: ProhibitedArea[];
   onUpdateUsers?: (users: User[]) => void;
+  onCreateUser?: (
+    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'nomorHP' | 'status'>
+  ) => void;
   onUpdateUser?: (
     id: number,
     data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'nomorHP' | 'status'>>
@@ -66,6 +70,7 @@ export function Settings({
   villages,
   prohibitedAreas,
   onUpdateUsers,
+  onCreateUser,
   onUpdateUser,
   onToggleUserStatus,
   onUpdateVillages,
@@ -82,9 +87,23 @@ export function Settings({
   isUpdatingProhibitedArea = false,
   currentUserId,
 }: SettingsProps) {
-  const [activeTab, setActiveTab] = useState('users');
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const [activeTab, setActiveTab] = useState(() => {
+    const tab = searchParams.get('tab');
+    return tab === 'prohibited' || tab === 'villages' || tab === 'users' ? tab : 'users';
+  });
   const { hasRole } = useAuthRole();
   const isSuperadmin = hasRole('Superadmin');
+
+  // Keep ?tab= in sync so the URL is shareable and survives a refresh
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', tab);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
 
   // Handle tab state when user role changes or unauthorized tab access
   // Sync state during render to avoid cascading updates from useEffect
@@ -119,7 +138,7 @@ export function Settings({
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
         <TabsList className="bg-white border-b border-gray-200 w-full justify-start rounded-none h-auto p-0">
           <TabsTrigger
             value="users"
@@ -149,6 +168,7 @@ export function Settings({
             villages={villages}
             canManageVillageAssignment={isSuperadmin}
             onUpdateUsers={onUpdateUsers}
+            onCreateUser={onCreateUser}
             onUpdateUser={onUpdateUser}
             onToggleUserStatus={onToggleUserStatus}
           />
