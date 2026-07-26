@@ -72,7 +72,7 @@ export default function EditKawasanPage() {
 
   return (
     <RequireRole
-      allowedRoles={['Superadmin', 'Admin', 'Verifikator']}
+      allowedRoles={['Superadmin', 'Admin']}
       showError={true}
       redirectTo="/app"
     >

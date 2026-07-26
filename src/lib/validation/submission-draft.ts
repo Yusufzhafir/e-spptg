@@ -69,7 +69,7 @@ export const step1BerkasSchema = z.object({
 
   nik: z
     .string()
-    .length(16, 'NIK harus 16 karakter')
+    .length(16, 'NIK harus 16 angka')
     .regex(/^[0-9]{16}$/, 'NIK hanya boleh angka'),
 
   villageId: z.number().int('Desa harus dipilih'),

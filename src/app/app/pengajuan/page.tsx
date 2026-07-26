@@ -294,7 +294,7 @@ export default function DraftsListPage() {
             </div>
           ) : (
           <>
-          <Table>
+          <Table className="min-w-200">
             <TableHeader>
               <TableRow>
                 {isPrivilegedView && <TableHead>Pemilik</TableHead>}

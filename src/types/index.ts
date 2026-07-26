@@ -96,6 +96,8 @@ export interface User {
   status: UserStatus;
   nomorHP: string | null;
   terakhirMasuk: Date | null;
+  /** Last modification time, used as the default table sort. */
+  updatedAt?: Date | string | null;
 }
 
 export interface Village {
@@ -111,6 +113,8 @@ export interface Village {
   kabupaten: string;
   provinsi: string;
   jumlahPengajuan: number;
+  /** Last modification time, used as the default table sort. */
+  updatedAt?: Date | string | null;
 }
 
 export type ProhibitedAreaType = 
@@ -142,6 +146,8 @@ export interface ProhibitedArea {
   warna: string;
   catatan: string | null;
   geomGeoJSON : string | null
+  /** Last modification time, used as the default table sort. */
+  updatedAt?: Date | string | null;
 }
 
 // Submission Flow Types

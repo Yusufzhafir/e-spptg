@@ -136,6 +136,7 @@ export default function PengaturanPage() {
       status: u.status,
       nomorHP: u.nomorHP || null,
       terakhirMasuk: u.terakhirMasuk ? new Date(u.terakhirMasuk) : null,
+      updatedAt: u.updatedAt ?? null,
     }));
   }, [usersData]);
 
@@ -154,6 +155,7 @@ export default function PengaturanPage() {
       kabupaten: v.kabupaten,
       provinsi: v.provinsi,
       jumlahPengajuan: v.jumlahPengajuan || 0,
+      updatedAt: v.updatedAt ?? null,
     }));
   }, [villagesData]);
 
@@ -176,6 +178,7 @@ export default function PengaturanPage() {
       warna: a.warna,
       catatan: a.catatan,
       geomGeoJSON: a.geom as string | null,
+      updatedAt: a.updatedAt ?? null,
     }));
   }, [prohibitedAreasData]);
 

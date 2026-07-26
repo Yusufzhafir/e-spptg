@@ -14,6 +14,7 @@ import {
   TableRow,
 } from './ui/table';
 import { useTableSort, SortableHead } from './table-sort';
+import { useAuthRole } from './AuthRoleProvider';
 import { formatDate } from '@/lib/format-date';
 import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
 import { trpc } from '@/trpc/client';
@@ -70,6 +71,12 @@ export function ProhibitedAreasTab({
   onUpdateProhibitedAreas,
 }: ProhibitedAreasTabProps) {
   const router = useRouter();
+  const { user: currentUser } = useAuthRole();
+  // create/update/delete are adminProcedure on the server. A Verifikator can
+  // view kawasan but every mutating action would 403, so hide those controls
+  // instead of letting them fill in a whole form and fail on save.
+  const canManageKawasan =
+    currentUser?.peran === 'Superadmin' || currentUser?.peran === 'Admin';
   const [searchQuery, setSearchQuery] = useState('');
   const [jenisFilter, setJenisFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -172,10 +179,12 @@ export function ProhibitedAreasTab({
         return area.statusValidasi;
       case 'aktifDiValidasi':
         return area.aktifDiValidasi ? 1 : 0;
+      case 'updatedAt':
+        return area.updatedAt ? new Date(area.updatedAt).getTime() : 0;
       default:
         return '';
     }
-  });
+  }, { key: 'updatedAt', dir: 'desc' });
 
   const handleAddArea = () => {
     router.push('/app/pengaturan/kawasan/tambah');
@@ -343,20 +352,22 @@ export function ProhibitedAreasTab({
             <AlertTriangle className="h-4 w-4 mr-2" />
             Cek Tumpang Tindih
           </Button>
-          <Button
-            onClick={handleAddArea}
-            className="bg-blue-600 hover:bg-blue-700 flex-1 lg:flex-initial"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Tambah Kawasan Non‑SPPTG
-          </Button>
+          {canManageKawasan && (
+            <Button
+              onClick={handleAddArea}
+              className="bg-blue-600 hover:bg-blue-700 flex-1 lg:flex-initial"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Tambah Kawasan Non‑SPPTG
+            </Button>
+          )}
         </div>
       </div>
 
       {/* Table */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <Table>
+          <Table className="min-w-250">
             <TableHeader>
               <TableRow className="bg-gray-50">
                 <SortableHead label="Nama Kawasan" sortKey="namaKawasan" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
@@ -410,6 +421,7 @@ export function ProhibitedAreasTab({
                       <Switch
                         checked={optimisticActive[area.id] ?? area.aktifDiValidasi}
                         onCheckedChange={() => handleToggleActive(area)}
+                        disabled={!canManageKawasan}
                       />
                     </TableCell>
                     <TableCell className="text-right">
@@ -422,14 +434,16 @@ export function ProhibitedAreasTab({
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleEditArea(area)}
-                          title="Edit"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
+                        {canManageKawasan && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEditArea(area)}
+                            title="Edit"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -438,15 +452,17 @@ export function ProhibitedAreasTab({
                         >
                           <Download className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDeleteArea(area)}
-                          title="Hapus"
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {canManageKawasan && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteArea(area)}
+                            title="Hapus"
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -482,7 +498,7 @@ export function ProhibitedAreasTab({
             </div>
 
             {/* Info */}
-            <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg">
+            <div className="grid grid-cols-1 gap-4 rounded-lg bg-gray-50 p-4 sm:grid-cols-2">
               <div>
                 <p className="text-xs text-gray-600">Jenis Kawasan</p>
                 <p className="text-sm">{selectedArea?.jenisKawasan}</p>

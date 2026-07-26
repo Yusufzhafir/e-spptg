@@ -175,10 +175,12 @@ export function VillagesTab({
         return village.provinsi?.toLowerCase();
       case 'jumlahPengajuan':
         return village.jumlahPengajuan ?? 0;
+      case 'updatedAt':
+        return village.updatedAt ? new Date(village.updatedAt).getTime() : 0;
       default:
         return '';
     }
-  });
+  }, { key: 'updatedAt', dir: 'desc' });
 
   const handleWilayahChange = (patch: WilayahValue) => {
     setFormData((prev) => ({ ...prev, ...patch }));
@@ -492,7 +494,7 @@ export function VillagesTab({
 
       {/* Table */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <Table>
+        <Table className="min-w-225">
           <TableHeader>
             <TableRow className="bg-gray-50">
               <SortableHead label="Kode Desa (BPS)" sortKey="kodeDesa" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
@@ -912,7 +914,7 @@ export function VillagesTab({
               </div>
             ) : (
               <div className="rounded-lg border border-gray-200 overflow-hidden">
-                <Table>
+                <Table className="min-w-150">
                   <TableHeader>
                     <TableRow className="bg-gray-50">
                       <TableHead>ID</TableHead>

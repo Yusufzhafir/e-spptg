@@ -9,6 +9,15 @@ import {
   BreadcrumbSeparator,
 } from './ui/breadcrumb';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { Users as UsersIcon, MapPin, ShieldAlert } from 'lucide-react';
+
+/** Segmented-control tab button: raised white "pill" when active. */
+const tabTriggerClass =
+  'group flex shrink-0 items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition-all hover:bg-white/60 hover:text-gray-900 data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm sm:px-4';
+
+/** Record-count pill inside each tab. */
+const tabCountClass =
+  'rounded-full bg-gray-200/80 px-1.5 py-0.5 text-xs leading-none tabular-nums text-gray-600 transition-colors group-data-[state=active]:bg-blue-100 group-data-[state=active]:text-blue-700';
 import { UsersTab } from './UsersTab';
 import { VillagesTab } from './VillagesTab';
 import { ProhibitedAreasTab } from './ProhibitedAreasTab';
@@ -130,35 +139,33 @@ export function Settings({
         </Breadcrumb>
 
         <div className="mt-4">
-          <h1 className="text-gray-900">Pengaturan</h1>
-          <p className="text-gray-600 mt-2">
-            Kelola pengguna, data referensi desa, dan kawasan non-SPPTG untuk sistem verifikasi
+          <h1 className="text-xl font-semibold text-gray-900 sm:text-2xl">Pengaturan</h1>
+          <p className="mt-1 text-sm text-gray-600 sm:text-base">
+            Kelola pengguna, data referensi desa, dan kawasan Non-SPPTG untuk sistem verifikasi.
           </p>
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs — segmented control; scrolls sideways on narrow screens instead of
+          cramming the labels together. */}
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className="bg-white border-b border-gray-200 w-full justify-start rounded-none h-auto p-0">
-          <TabsTrigger
-            value="users"
-            className="data-[state=active]:border-b-2 data-[state=active]:border-blue-600 data-[state=active]:text-blue-600 rounded-none px-6 py-3"
-          >
-            Pengguna
+        <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-gray-100/80 p-1">
+          <TabsTrigger value="users" className={tabTriggerClass}>
+            <UsersIcon className="h-4 w-4" />
+            <span>Pengguna</span>
+            <span className={tabCountClass}>{users.length}</span>
           </TabsTrigger>
           {isSuperadmin && (
-            <TabsTrigger
-              value="villages"
-              className="data-[state=active]:border-b-2 data-[state=active]:border-blue-600 data-[state=active]:text-blue-600 rounded-none px-6 py-3"
-            >
-              Desa
+            <TabsTrigger value="villages" className={tabTriggerClass}>
+              <MapPin className="h-4 w-4" />
+              <span>Desa</span>
+              <span className={tabCountClass}>{villages.length}</span>
             </TabsTrigger>
           )}
-          <TabsTrigger
-            value="prohibited"
-            className="data-[state=active]:border-b-2 data-[state=active]:border-blue-600 data-[state=active]:text-blue-600 rounded-none px-6 py-3"
-          >
-            Kawasan Non‑SPPTG
+          <TabsTrigger value="prohibited" className={tabTriggerClass}>
+            <ShieldAlert className="h-4 w-4" />
+            <span className="whitespace-nowrap">Kawasan Non‑SPPTG</span>
+            <span className={tabCountClass}>{prohibitedAreas.length}</span>
           </TabsTrigger>
         </TabsList>
 

@@ -511,7 +511,13 @@ export const submissionsRouter = router({
         .input(dashboardFilterSchema)
         .query(async ({ ctx, input }) => {
             const scope = getSubmissionScopeForUser(ctx.appUser!);
-            const data = await submissionQueries.getKPIDataScoped({ ...input, ...scope });
+            // onlyValid: invalid entries are hidden from the map, so counting
+            // them here would contradict what the user sees.
+            const data = await submissionQueries.getKPIDataScoped({
+                ...input,
+                ...scope,
+                onlyValid: true,
+            });
             const kpi = {
                 'SPPTG terdata': 0,
                 'SPPTG terdaftar': 0,
@@ -536,7 +542,11 @@ export const submissionsRouter = router({
         .input(dashboardFilterSchema)
         .query(async ({ ctx, input }) => {
             const scope = getSubmissionScopeForUser(ctx.appUser!);
-            return submissionQueries.getMonthlyStats({ ...input, ...scope });
+            return submissionQueries.getMonthlyStats({
+                ...input,
+                ...scope,
+                onlyValid: true,
+            });
         }),
 });
 

@@ -2,6 +2,7 @@
 
 import { ReactNode, useState, createContext, useContext } from 'react';
 import { Sidebar } from '@/components/Sidebar';
+import { BottomNav } from '@/components/BottomNav';
 import { Header } from '@/components/Header';
 import { Submission, StatusSPPTG, SubmissionDraft } from '@/types';
 import { toast } from 'sonner';
@@ -25,18 +26,24 @@ export function useAppState() {
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const [, setSubmissions] = useState<Submission[]>([]);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const pathname = usePathname();
   const router = useRouter();
 
   // infer "currentPage" from the route (under /app)
   const currentPage =
-    pathname === '/app/pengaturan'
+    pathname.startsWith('/app/pengaturan')
       ? 'pengaturan'
       : pathname.startsWith('/app/pengajuan')
         ? 'pengajuan'
         : 'beranda';
+
+  const pageTitle =
+    currentPage === 'pengaturan'
+      ? 'Pengaturan'
+      : currentPage === 'pengajuan'
+        ? 'Pengajuan'
+        : 'Dashboard';
 
   // === Handlers that navigate between pages ===
 
@@ -146,7 +153,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   };
 
   const handlePageChange = (page: string) => {
-    setSidebarOpen(false);
     if (page === 'pengaturan') router.push('/app/pengaturan');
     else if (page === 'pengajuan') router.push('/app/pengajuan');
     else router.push('/app');
@@ -155,16 +161,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <AppStateContext.Provider value={contextValue}>
       <div className="min-h-screen bg-gray-50 flex">
-        <Sidebar
-          currentPage={currentPage}
-          onPageChange={handlePageChange}
-          isOpen={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
-        />
+        <Sidebar currentPage={currentPage} onPageChange={handlePageChange} />
         <div className="flex flex-1 flex-col min-w-0">
-          <Header onMenuClick={() => setSidebarOpen(true)} />
-          <main className="flex-1 p-4 sm:p-6">{children}</main>
+          <Header title={pageTitle} />
+          {/* pb-20 keeps content clear of the fixed bottom nav below lg */}
+          <main className="flex-1 p-4 pb-20 sm:p-6 lg:pb-6">{children}</main>
         </div>
+        <BottomNav currentPage={currentPage} />
       </div>
     </AppStateContext.Provider>
   );

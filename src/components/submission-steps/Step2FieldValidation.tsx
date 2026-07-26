@@ -677,7 +677,7 @@ export function Step2FieldValidation({
 
         {draft.saksiList.length > 0 && (
           <div className="border border-gray-200 rounded-lg overflow-hidden">
-            <Table>
+            <Table className="min-w-150">
               <TableHeader>
                 <TableRow className="bg-gray-50">
                   <TableHead>Nama Saksi</TableHead>
@@ -874,7 +874,7 @@ export function Step2FieldValidation({
               </div>
             ) : (
               <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <Table>
+                <Table className="min-w-150">
                   <TableHeader>
                     <TableRow className="bg-gray-50">
                       <TableHead className="w-12">No.</TableHead>
@@ -1173,7 +1173,7 @@ export function Step2FieldValidation({
                 </div>
 
                 <div className="border rounded-lg overflow-hidden">
-                  <Table>
+                  <Table className="min-w-150">
                     <TableHeader>
                       <TableRow className="bg-gray-50">
                         <TableHead>Nama Kawasan</TableHead>
