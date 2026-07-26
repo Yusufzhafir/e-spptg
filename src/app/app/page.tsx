@@ -1,5 +1,8 @@
 import { Suspense } from 'react';
+import type { Metadata } from 'next';
 import DashboardPageClient from './DashboardPageClient';
+
+export const metadata: Metadata = { title: 'Beranda' };
 
 function AppDashboardFallback() {
   return (

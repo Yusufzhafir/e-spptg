@@ -847,7 +847,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                 </div>
 
                 <div className="border rounded-lg overflow-hidden max-h-64 overflow-y-auto">
-                  <Table>
+                  <Table className="min-w-200">
                     <TableHeader>
                       <TableRow className="bg-gray-50">
                         <TableHead>Nama Kawasan</TableHead>

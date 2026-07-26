@@ -172,7 +172,7 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
 
             <div className="mt-4 p-4 bg-gray-50 rounded-lg">
               <h3 className="mb-3">Metadata Lahan</h3>
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                 <div>
                   <p className="text-gray-600">Luas</p>
                   <p>{submission.luas.toLocaleString()} m²</p>
@@ -206,27 +206,28 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
       <Card>
         <CardContent className="pt-6">
           <Tabs defaultValue="informasi">
-            <TabsList className="grid w-full grid-cols-4">
+            {/* 2 columns on phones so the labels stay readable, 4 from sm up */}
+            <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4">
               <TabsTrigger value="informasi">
-                <FileText className="w-4 h-4 mr-2" />
+                <FileText className="w-4 h-4 mr-1 sm:mr-2" />
                 Informasi
               </TabsTrigger>
               <TabsTrigger value="dokumen">
-                <FileText className="w-4 h-4 mr-2" />
+                <FileText className="w-4 h-4 mr-1 sm:mr-2" />
                 Dokumen
               </TabsTrigger>
               <TabsTrigger value="riwayat">
-                <Clock className="w-4 h-4 mr-2" />
+                <Clock className="w-4 h-4 mr-1 sm:mr-2" />
                 Riwayat Status
               </TabsTrigger>
               <TabsTrigger value="komentar">
-                <MessageSquare className="w-4 h-4 mr-2" />
+                <MessageSquare className="w-4 h-4 mr-1 sm:mr-2" />
                 Komentar
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="informasi" className="space-y-4 mt-4">
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                 <div>
                   <h3 className="mb-4">Data Pemilik</h3>
                   <div className="space-y-3">

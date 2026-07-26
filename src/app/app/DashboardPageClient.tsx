@@ -49,6 +49,7 @@ export default function DashboardPageClient() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const utils = trpc.useUtils();
 
   const filters = useMemo(() => parseDashboardFilters(searchParams), [searchParams]);
   const focusParam = searchParams.get('focus');
@@ -130,6 +131,10 @@ export default function DashboardPageClient() {
           : 'Pengajuan ditandai invalid dan disembunyikan dari peta'
       );
       void refetchSubmissions();
+      // The charts count only valid submissions, so they must recompute when a
+      // submission's validity flips.
+      void utils.submissions.kpi.invalidate();
+      void utils.submissions.monthlyStats.invalidate();
     },
     onError: (error) => {
       toast.error(`Gagal memperbarui status validasi: ${error.message}`);

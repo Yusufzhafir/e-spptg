@@ -310,7 +310,7 @@ export function KawasanGeometryEditor({
           </p>
         ) : (
           <div className="mt-2 overflow-hidden rounded-lg border border-gray-200">
-            <Table>
+            <Table className="min-w-150">
               <TableHeader>
                 <TableRow className="bg-gray-50">
                   <TableHead className="w-12">No.</TableHead>

@@ -53,7 +53,8 @@ type SortKey =
   | 'tanggalPengajuan'
   | 'status'
   | 'isValid'
-  | 'verifikator';
+  | 'verifikator'
+  | 'updatedAt';
 
 type SortDirection = 'asc' | 'desc';
 
@@ -77,6 +78,8 @@ function getSortValue(s: Submission, key: SortKey): number | string {
       return s.isValid ? 1 : 0;
     case 'verifikator':
       return (s.verifikatorName || '').toLowerCase();
+    case 'updatedAt':
+      return new Date(s.updatedAt).getTime() || 0;
   }
 }
 
@@ -88,7 +91,7 @@ export function SubmissionsTable({
   isTogglingValidity,
   focusSubmissionId,
 }: SubmissionsTableProps) {
-  const [sortKey, setSortKey] = useState<SortKey>('tanggalPengajuan');
+  const [sortKey, setSortKey] = useState<SortKey>('updatedAt');
   const [sortDir, setSortDir] = useState<SortDirection>('desc');
   const [page, setPage] = useState(0);
   const [highlightId, setHighlightId] = useState<number | null>(null);
@@ -180,7 +183,7 @@ export function SubmissionsTable({
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-      <Table>
+      <Table className="min-w-250">
         <TableHeader>
           <TableRow>
             {sortableHead('ID', 'id')}

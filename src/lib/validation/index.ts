@@ -15,8 +15,8 @@ export const createUserSchema = z.object({
   nama: z.string().min(2, 'Nama minimal 2 karakter'),
   nipNik: z
     .string()
-    .min(5, 'NIP/NIK minimal 5 karakter')
-    .max(20, 'NIP/NIK maksimal 20 karakter'),
+    .min(5, 'NIP/NIK minimal 5 angka')
+    .max(20, 'NIP/NIK maksimal 20 angka'),
   peran: z.enum(['Superadmin', 'Admin', 'Verifikator', 'Viewer']).optional(),
   assignedVillageId: z.number().int().nullable().optional(),
 });

@@ -23,7 +23,7 @@ export default function TambahKawasanPage() {
 
   return (
     <RequireRole
-      allowedRoles={['Superadmin', 'Admin', 'Verifikator']}
+      allowedRoles={['Superadmin', 'Admin']}
       showError={true}
       redirectTo="/app"
     >

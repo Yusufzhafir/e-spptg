@@ -77,6 +77,13 @@ export function Dashboard({
     { name: 'Ditinjau', count: kpiData['SPPTG ditinjau ulang'], fill: '#eab308' },
   ];
 
+  // The trend chart must stay readable as months accumulate: past ~8 points the
+  // labels collide and the line gets squeezed, so give every point a minimum
+  // width (scrolling horizontally instead of compressing) and tilt the labels.
+  const trendPointCount = monthlyData.length;
+  const isTrendCrowded = trendPointCount > 8;
+  const trendMinWidth = Math.max(trendPointCount * 64, 280);
+
   return (
     <div className="space-y-6">
       {/* KPI Cards */}
@@ -140,21 +147,38 @@ export function Dashboard({
               <CardTitle>Tren Pengajuan</CardTitle>
             </CardHeader>
             <CardContent className="min-h-60 flex-1">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={monthlyData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="bulan" tick={{ fontSize: 12 }} />
-                  <YAxis allowDecimals={false} />
-                  <Tooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="pengajuan"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    dot={{ fill: '#3b82f6' }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              {/* Scrolls sideways once the points no longer fit, so the line is
+                  never squashed and no label is clipped. */}
+              <div className="h-full w-full overflow-x-auto">
+                <div className="h-full min-h-60" style={{ minWidth: `${trendMinWidth}px` }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart
+                      data={monthlyData}
+                      margin={{ top: 8, right: 16, left: 0, bottom: isTrendCrowded ? 24 : 4 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis
+                        dataKey="bulan"
+                        tick={{ fontSize: 12 }}
+                        interval={0}
+                        angle={isTrendCrowded ? -45 : 0}
+                        textAnchor={isTrendCrowded ? 'end' : 'middle'}
+                        height={isTrendCrowded ? 56 : 30}
+                      />
+                      <YAxis allowDecimals={false} width={36} />
+                      <Tooltip />
+                      <Line
+                        type="monotone"
+                        dataKey="pengajuan"
+                        name="Jumlah"
+                        stroke="#3b82f6"
+                        strokeWidth={2}
+                        dot={{ fill: '#3b82f6' }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
@@ -170,7 +194,7 @@ export function Dashboard({
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} interval={0} />
                   <YAxis allowDecimals={false} />
                   <Tooltip />
-                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                  <Bar dataKey="count" name="Jumlah" radius={[4, 4, 0, 0]}>
                     {statusBarData.map((entry) => (
                       <Cell key={entry.name} fill={entry.fill} />
                     ))}

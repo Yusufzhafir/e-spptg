@@ -64,7 +64,7 @@ export function FilterPanel({
           </form>
 
           <Select value={statusFilter} onValueChange={onStatusFilterChange}>
-            <SelectTrigger className="w-[200px]">
+            <SelectTrigger className="w-full sm:w-[200px]">
               <SelectValue placeholder="Filter Status" />
             </SelectTrigger>
             <SelectContent>
@@ -76,10 +76,10 @@ export function FilterPanel({
             </SelectContent>
           </Select>
 
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
             <Input
               type="date"
-              className="w-[150px]"
+              className="w-full sm:w-37.5"
               placeholder="Dari tanggal"
               value={dateFrom}
               onChange={(e) => onDateFromChange(e.target.value)}
@@ -87,7 +87,7 @@ export function FilterPanel({
             <span className="text-gray-400">-</span>
             <Input
               type="date"
-              className="w-[150px]"
+              className="w-full sm:w-37.5"
               placeholder="Sampai tanggal"
               value={dateTo}
               onChange={(e) => onDateToChange(e.target.value)}

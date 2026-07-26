@@ -34,6 +34,8 @@ export type SubmissionDashboardFilters = SubmissionScopeFilters & {
     kecamatan?: string;
     dateFrom?: string;
     dateTo?: string;
+    /** Count only submissions flagged valid (shown on the map). Used by the charts. */
+    onlyValid?: boolean;
 };
 
 /**
@@ -41,8 +43,12 @@ export type SubmissionDashboardFilters = SubmissionScopeFilters & {
  * list and the KPI / monthly-trend charts always describe the same data set.
  */
 function buildSubmissionConditions(filters: SubmissionDashboardFilters) {
-    const { search, status, desaId, kecamatan, dateFrom, dateTo } = filters;
+    const { search, status, desaId, kecamatan, dateFrom, dateTo, onlyValid } = filters;
     const conditions = buildScopeConditions(filters);
+
+    if (onlyValid) {
+        conditions.push(eq(submissions.isValid, true));
+    }
 
     if (search) {
         conditions.push(

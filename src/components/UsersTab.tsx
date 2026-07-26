@@ -129,10 +129,12 @@ export function UsersTab({
         return user.status;
       case 'terakhirMasuk':
         return user.terakhirMasuk ? new Date(user.terakhirMasuk).getTime() : 0;
+      case 'updatedAt':
+        return user.updatedAt ? new Date(user.updatedAt).getTime() : 0;
       default:
         return '';
     }
-  });
+  }, { key: 'updatedAt', dir: 'desc' });
 
   const handleAddUser = () => {
     setErrors({});
@@ -351,7 +353,7 @@ export function UsersTab({
 
       {/* Table */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <Table>
+        <Table className="min-w-250">
           <TableHeader>
             <TableRow className="bg-gray-50">
               <SortableHead label="Nama" sortKey="nama" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
@@ -497,7 +499,15 @@ export function UsersTab({
               <Input
                 id="nipNik"
                 value={formData.nipNik || ''}
-                onChange={(e) => { setFormData({ ...formData, nipNik: e.target.value }); clearError('nipNik'); }}
+                onChange={(e) => {
+                  // NIP/NIK is digits only, max 20 — enforce while typing so the
+                  // field can never hold a value the schema would reject.
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 20);
+                  setFormData({ ...formData, nipNik: value });
+                  clearError('nipNik');
+                }}
+                inputMode="numeric"
+                maxLength={20}
                 placeholder="Masukkan NIP atau NIK"
                 className={errorClass('nipNik')}
               />
@@ -631,7 +641,15 @@ export function UsersTab({
               <Input
                 id="edit-nipNik"
                 value={formData.nipNik || ''}
-                onChange={(e) => { setFormData({ ...formData, nipNik: e.target.value }); clearError('nipNik'); }}
+                onChange={(e) => {
+                  // NIP/NIK is digits only, max 20 — enforce while typing so the
+                  // field can never hold a value the schema would reject.
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 20);
+                  setFormData({ ...formData, nipNik: value });
+                  clearError('nipNik');
+                }}
+                inputMode="numeric"
+                maxLength={20}
                 className={errorClass('nipNik')}
               />
               <FieldError message={errors.nipNik} />

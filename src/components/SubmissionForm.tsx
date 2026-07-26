@@ -97,7 +97,7 @@ export function SubmissionForm({ onSubmit, onCancel }: SubmissionFormProps) {
           {/* Step 1: Data Pemilik */}
           {step === 1 && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="namaPemilik">Nama Pemilik *</Label>
                   <Input
@@ -130,7 +130,7 @@ export function SubmissionForm({ onSubmit, onCancel }: SubmissionFormProps) {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="nomorHP">Nomor HP *</Label>
                   <Input
@@ -157,7 +157,7 @@ export function SubmissionForm({ onSubmit, onCancel }: SubmissionFormProps) {
           {/* Step 2: Data Lahan */}
           {step === 2 && (
             <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div className="space-y-2">
                   <Label htmlFor="desa">Desa *</Label>
                   <Input
@@ -187,7 +187,7 @@ export function SubmissionForm({ onSubmit, onCancel }: SubmissionFormProps) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="luas">Luas (m²) *</Label>
                   <Input
