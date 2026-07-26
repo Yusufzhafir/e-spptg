@@ -185,6 +185,7 @@ export const calculateKPIData = (submissions: Submission[]): KPIData => {
     "SPPTG terdata": submissions.filter((s) => s.status === 'SPPTG terdata').length,
     "SPPTG ditolak": submissions.filter((s) => s.status === 'SPPTG ditolak').length,
     "SPPTG ditinjau ulang": submissions.filter((s) => s.status === 'SPPTG ditinjau ulang').length,
+    "Terbit SPPTG": submissions.filter((s) => s.status === 'Terbit SPPTG').length,
     total: submissions.length,
   };
 };

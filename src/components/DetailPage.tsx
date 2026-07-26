@@ -189,7 +189,7 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
                 <div>
                   <p className="text-gray-600">Lokasi</p>
                   <p>
-                    {submission.villageId}, {submission.kecamatan}
+                    {submission.desaNama || `Desa #${submission.villageId}`}, {submission.kecamatan}
                   </p>
                 </div>
                 <div>
@@ -259,7 +259,7 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
                   <div className="space-y-3">
                     <div>
                       <p className="text-sm text-gray-600">Desa</p>
-                      <p>{submission.villageId}</p>
+                      <p>{submission.desaNama || `Desa #${submission.villageId}`}</p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Kecamatan</p>

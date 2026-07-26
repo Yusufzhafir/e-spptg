@@ -107,8 +107,14 @@ export async function calculateAllOverlaps(
           pa.id AS prohibited_area_id,
           pa.nama_kawasan,
           pa.jenis_kawasan,
-          ST_Area(ST_Intersection(s.geom, pa.geom))::double precision AS luas_overlap,
-          (ST_Area(ST_Intersection(s.geom, pa.geom)) / NULLIF(ST_Area(s.geom), 0) * 100)::double precision AS percentage_overlap,
+          -- Cast to geography so the result is real m². Plain ST_Area on SRID
+          -- 4326 geometry returns SQUARE DEGREES, which the UI was labelling
+          -- "m²" — a 27.569 m² overlap displayed as "0.0000022 m²".
+          ST_Area(ST_Intersection(s.geom, pa.geom)::geography)::double precision AS luas_overlap,
+          (
+            ST_Area(ST_Intersection(s.geom, pa.geom)::geography)
+            / NULLIF(ST_Area(s.geom::geography), 0) * 100
+          )::double precision AS percentage_overlap,
           ST_Intersection(s.geom, pa.geom) AS intersection_geom
         FROM submissions s
         JOIN prohibited_areas pa ON ST_Intersects(s.geom, pa.geom)

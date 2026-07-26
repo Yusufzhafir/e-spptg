@@ -78,6 +78,7 @@ export interface KPIData {
   'SPPTG terdaftar': number;
   'SPPTG ditolak': number;
   'SPPTG ditinjau ulang': number;
+  'Terbit SPPTG': number;
   total: number;
 }
 

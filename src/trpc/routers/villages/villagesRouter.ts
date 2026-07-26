@@ -1,4 +1,4 @@
-import { protectedProcedure, adminProcedure, router } from '../../init';
+import { protectedProcedure, superadminProcedure, router } from '../../init';
 import { z } from 'zod';
 import {
   createVillageSchema,
@@ -38,13 +38,16 @@ export const villagesRouter = router({
       return village;
     }),
 
-  create: adminProcedure
+  // Desa is master data affecting every scope, and Admins are themselves
+  // desa-scoped — so only Superadmin may mutate it. This matches the UI, which
+  // only shows the Desa tab to Superadmin.
+  create: superadminProcedure
     .input(createVillageSchema)
     .mutation(async ({ input }) => {
       return queries.createVillage(input);
     }),
 
-  update: adminProcedure
+  update: superadminProcedure
     .input(
       z.object({
         id: z.number().int(),
@@ -55,7 +58,7 @@ export const villagesRouter = router({
       return queries.updateVillage(input.id, input.data);
     }),
 
-  delete: adminProcedure
+  delete: superadminProcedure
     .input(z.object({ id: z.number().int() }))
     .mutation(async ({ input }) => {
       return queries.deleteVillage(input.id);

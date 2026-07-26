@@ -73,6 +73,7 @@ export function FilterPanel({
               <SelectItem value="SPPTG terdata">SPPTG terdata</SelectItem>
               <SelectItem value="SPPTG ditolak">SPPTG ditolak</SelectItem>
               <SelectItem value="SPPTG ditinjau ulang">SPPTG ditinjau ulang</SelectItem>
+              <SelectItem value="Terbit SPPTG">Terbit SPPTG</SelectItem>
             </SelectContent>
           </Select>
 

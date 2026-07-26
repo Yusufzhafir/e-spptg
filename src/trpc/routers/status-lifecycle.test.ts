@@ -180,25 +180,37 @@ describe('rejection & revision carry their reason into the history', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Known gap: the "reason required" rule lives only in the UI (Step3Results).
-// Pinned here so the current behaviour is explicit — if it is ever enforced
-// server-side these expectations should flip to `rejects`.
+// Reason is mandatory for rejection / revision — enforced server-side so a
+// direct API call can't leave an unexplained decision in the audit trail.
 // ---------------------------------------------------------------------------
-describe('reason requirement is UI-only (not enforced by the API)', () => {
-  it.each(REASON_REQUIRED)('%s is accepted without alasan', async (status) => {
-    const result = await submissionsRouter
-      .createCaller(VERIFIKATOR())
-      .updateStatus({ submissionId: SUBMISSION_ID, newStatus: status });
-
-    expect(result.success).toBe(true);
-    expect(updateStatusMock).toHaveBeenCalledWith(
-      SUBMISSION_ID,
-      status,
-      3,
-      undefined,
-      undefined
-    );
+describe('reason is required for rejection & revision', () => {
+  it.each(REASON_REQUIRED)('%s is rejected without alasan', async (status) => {
+    await expect(
+      submissionsRouter
+        .createCaller(VERIFIKATOR())
+        .updateStatus({ submissionId: SUBMISSION_ID, newStatus: status })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    expect(updateStatusMock).not.toHaveBeenCalled();
   });
+
+  it.each(REASON_REQUIRED)('%s is rejected when alasan is only whitespace', async (status) => {
+    await expect(
+      submissionsRouter
+        .createCaller(VERIFIKATOR())
+        .updateStatus({ submissionId: SUBMISSION_ID, newStatus: status, alasan: '   ' })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    expect(updateStatusMock).not.toHaveBeenCalled();
+  });
+
+  it.each(['SPPTG terdata', 'SPPTG terdaftar', 'Terbit SPPTG'] as StatusSPPTG[])(
+    '%s does not require alasan',
+    async (status) => {
+      const result = await submissionsRouter
+        .createCaller(VERIFIKATOR())
+        .updateStatus({ submissionId: SUBMISSION_ID, newStatus: status });
+      expect(result.success).toBe(true);
+    }
+  );
 });
 
 // ---------------------------------------------------------------------------

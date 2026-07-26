@@ -227,14 +227,14 @@ describe('CRUD Desa', () => {
     provinsi: 'Jawa Barat',
   };
 
-  it.each([
-    ['Superadmin', SUPERADMIN],
-    ['Admin', ADMIN],
-  ])('%s can create/update/delete a desa', async (_label, makeCtx) => {
+  // Desa is master data spanning every scope, so only Superadmin may mutate it
+  // (Admins are themselves desa-scoped). This mirrors the UI, which shows the
+  // Desa tab to Superadmin only.
+  it('Superadmin can create/update/delete a desa', async () => {
     createVillageMock.mockResolvedValue({ id: 1 } as never);
     updateVillageMock.mockResolvedValue({ id: 1 } as never);
     deleteVillageMock.mockResolvedValue({ id: 1 } as never);
-    const caller = villagesRouter.createCaller(makeCtx());
+    const caller = villagesRouter.createCaller(SUPERADMIN());
 
     await caller.create(villageInput);
     await caller.update({ id: 1, data: { namaDesa: 'Cibeureum Baru' } });
@@ -246,6 +246,7 @@ describe('CRUD Desa', () => {
   });
 
   it.each([
+    ['Admin', ADMIN],
     ['Verifikator', VERIFIKATOR],
     ['Viewer', VIEWER],
   ])('%s cannot create/update/delete a desa', async (_label, makeCtx) => {
