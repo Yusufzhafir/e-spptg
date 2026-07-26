@@ -14,6 +14,7 @@ import { computeOverlaps } from '@/server/postgis';
 import { sql, eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { normalizeOverlapRows } from '@/lib/overlap-results';
+import { deriveSubmissionStatus } from '@/lib/submission-status';
 import {
     assertCanAccessDraft,
     assertCanAccessSubmission,
@@ -71,6 +72,10 @@ export const submissionsRouter = router({
                         status?: string;
                         juruUkur?: { nomorHP?: string };
                         coordinatesGeografis?: Array<{ latitude: number; longitude: number }>;
+                        // Step 4 (Terbitkan SPPTG) results
+                        nomorSPPTG?: string;
+                        tanggalTerbit?: string;
+                        dokumenSPPTG?: { documentId?: number } | null;
                     };
 
                     // Validate required fields
@@ -109,12 +114,10 @@ export const submissionsRouter = router({
                         }
                     }
 
-                    // Build submission data
-                    // Use status from draft payload if valid, otherwise default to 'SPPTG terdata'
-                    const validStatuses = ['SPPTG terdata', 'SPPTG terdaftar', 'SPPTG ditolak', 'SPPTG ditinjau ulang'] as const;
-                    const submissionStatus = (payload.status && validStatuses.includes(payload.status as typeof validStatuses[number]))
-                        ? (payload.status as typeof validStatuses[number])
-                        : 'SPPTG terdata' as const;
+                    // Build submission data. See deriveSubmissionStatus: a
+                    // completed Step 4 issues the certificate ('Terbit SPPTG'),
+                    // otherwise the Step 3 decision applies.
+                    const submissionStatus = deriveSubmissionStatus(payload);
 
                     const submissionData = {
                         namaPemilik: payload.namaPemohon,
@@ -412,8 +415,8 @@ export const submissionsRouter = router({
                     pg.id AS kawasan_id,
                     pg.nama_kawasan,
                     pg.jenis_kawasan::text AS jenis_kawasan,
-                    ST_Area(ST_Intersection(ig.geom, pg.geom))::double precision AS luas_overlap,
-                    (ST_Area(ST_Intersection(ig.geom, pg.geom)) / NULLIF(ST_Area(ig.geom), 0) * 100)::double precision as percentage_overlap,
+                    ST_Area(ST_Intersection(ig.geom, pg.geom)::geography)::double precision AS luas_overlap,
+                    (ST_Area(ST_Intersection(ig.geom, pg.geom)::geography) / NULLIF(ST_Area(ig.geom::geography), 0) * 100)::double precision as percentage_overlap,
                     'ProhibitedArea' as sumber
                 FROM prohibited_geom pg
                 CROSS JOIN input_geom ig
@@ -425,8 +428,8 @@ export const submissionsRouter = router({
                     sg.id AS kawasan_id,
                     sg.nama_pemilik AS nama_kawasan,
                     sg.status AS jenis_kawasan,
-                    ST_Area(ST_Intersection(ig.geom, sg.geom))::double precision AS luas_overlap,
-                    (ST_Area(ST_Intersection(ig.geom, sg.geom)) / NULLIF(ST_Area(ig.geom), 0) * 100)::double precision as percentage_overlap,
+                    ST_Area(ST_Intersection(ig.geom, sg.geom)::geography)::double precision AS luas_overlap,
+                    (ST_Area(ST_Intersection(ig.geom, sg.geom)::geography) / NULLIF(ST_Area(ig.geom::geography), 0) * 100)::double precision as percentage_overlap,
                     'Submission' as sumber
                 FROM submission_geom sg
                 CROSS JOIN input_geom ig
@@ -453,6 +456,19 @@ export const submissionsRouter = router({
                     ownerUserId: submission.ownerUserId,
                     villageId: submission.villageId,
                 });
+
+                // Rejecting or sending back for revision must be justified —
+                // enforce it here, not just in the UI, so a direct API call
+                // cannot leave an unexplained entry in the audit trail.
+                const requiresReason =
+                    input.newStatus === 'SPPTG ditolak' ||
+                    input.newStatus === 'SPPTG ditinjau ulang';
+                if (requiresReason && !input.alasan?.trim()) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: `Alasan wajib diisi untuk status "${input.newStatus}".`,
+                    });
+                }
 
                 const result = await submissionQueries.updateSubmissionStatus(
                     input.submissionId,
@@ -523,6 +539,7 @@ export const submissionsRouter = router({
                 'SPPTG terdaftar': 0,
                 'SPPTG ditolak': 0,
                 'SPPTG ditinjau ulang': 0,
+                'Terbit SPPTG': 0,
                 'total': 0,
             };
 

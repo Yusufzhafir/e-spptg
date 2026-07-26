@@ -71,6 +71,13 @@
       "when": 1785100000000,
       "tag": "0009_nullable_clerk_user_id",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785200000000,
+      "tag": "0010_fix_overlap_geom_type",
+      "breakpoints": true
     }
   ]
 }

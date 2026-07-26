@@ -32,6 +32,7 @@ import {
 import { Submission } from '../types';
 import { StatusBadge } from './StatusBadge';
 import { formatDate } from '@/lib/format-date';
+import { useAuthRole } from './AuthRoleProvider';
 
 export type EditMode = 'existing' | 'duplicate';
 
@@ -91,6 +92,13 @@ export function SubmissionsTable({
   isTogglingValidity,
   focusSubmissionId,
 }: SubmissionsTableProps) {
+  const { user: currentUser } = useAuthRole();
+  // Editing (drafts.createFromSubmission) and the validity toggle both reject
+  // Viewers on the server, so hide those actions rather than offer a click that
+  // can only fail. Null while the session loads, so nothing flashes in.
+  const canProcess = Boolean(
+    currentUser && currentUser.peran !== 'Viewer'
+  );
   const [sortKey, setSortKey] = useState<SortKey>('updatedAt');
   const [sortDir, setSortDir] = useState<SortDirection>('desc');
   const [page, setPage] = useState(0);
@@ -241,34 +249,36 @@ export function SubmissionsTable({
               <TableCell className="text-sm">{submission.verifikatorName || '-'}</TableCell>
               <TableCell className="text-right">
                 <div className="flex items-center justify-end gap-2">
-                  <Button
-                    variant={submission.isValid ? 'outline' : 'default'}
-                    size="sm"
-                    disabled={isTogglingValidity}
-                    onClick={() => onToggleValidity(submission)}
-                    className={
-                      submission.isValid
-                        ? 'text-gray-700'
-                        : 'bg-green-600 hover:bg-green-700'
-                    }
-                    title={
-                      submission.isValid
-                        ? 'Tandai invalid (sembunyikan dari peta)'
-                        : 'Tandai valid (tampilkan di peta)'
-                    }
-                  >
-                    {submission.isValid ? (
-                      <>
-                        <EyeOff className="w-4 h-4 mr-1" />
-                        Invalid
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-4 h-4 mr-1" />
-                        Valid
-                      </>
-                    )}
-                  </Button>
+                  {canProcess && (
+                    <Button
+                      variant={submission.isValid ? 'outline' : 'default'}
+                      size="sm"
+                      disabled={isTogglingValidity}
+                      onClick={() => onToggleValidity(submission)}
+                      className={
+                        submission.isValid
+                          ? 'text-gray-700'
+                          : 'bg-green-600 hover:bg-green-700'
+                      }
+                      title={
+                        submission.isValid
+                          ? 'Tandai invalid (sembunyikan dari peta)'
+                          : 'Tandai valid (tampilkan di peta)'
+                      }
+                    >
+                      {submission.isValid ? (
+                        <>
+                          <EyeOff className="w-4 h-4 mr-1" />
+                          Invalid
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4 mr-1" />
+                          Valid
+                        </>
+                      )}
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"
@@ -277,14 +287,16 @@ export function SubmissionsTable({
                   >
                     <Eye className="w-4 h-4" />
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setEditTarget(submission)}
-                    title="Edit pengajuan"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </Button>
+                  {canProcess && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setEditTarget(submission)}
+                      title="Edit pengajuan"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </Button>
+                  )}
                 </div>
               </TableCell>
             </TableRow>

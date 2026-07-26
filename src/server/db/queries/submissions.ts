@@ -90,9 +90,13 @@ export async function getSubmissionById(
 ) {
     const queryDb = tx || db;
     const {geom,...rest} = getTableColumns(submissions)
-    const [result] = await queryDb.select(rest).from(submissions).where(
-        eq(submissions.id, id),
-    ).limit(1)
+    // Resolve the desa name so the detail page can show it instead of a raw id.
+    const [result] = await queryDb
+        .select({ ...rest, desaNama: villages.namaDesa })
+        .from(submissions)
+        .leftJoin(villages, eq(submissions.villageId, villages.id))
+        .where(eq(submissions.id, id))
+        .limit(1)
 
     return result ?? null
 }
@@ -170,10 +174,13 @@ export async function createSubmission(
     tx?: DBTransaction
 ) {
     const queryDb = tx || db;
+    // Never RETURNING the `geom` column: drizzle's geometry() type only parses
+    // Point, so reading a Polygon back throws "Unsupported geometry type".
+    const { geom: _geom, ...columns } = getTableColumns(submissions);
     const result = await queryDb
         .insert(submissions)
         .values(data)
-        .returning();
+        .returning(columns);
     return result[0];
 }
 
@@ -206,6 +213,20 @@ export async function updateSubmissionStatus(
 ) {
     const queryDb = tx || db;
 
+    // Read the current status *before* writing: the UPDATE ... RETURNING row
+    // already holds the new value, so using it would record statusBefore ===
+    // statusAfter and make the audit trail useless.
+    const [previous] = await queryDb
+        .select({ status: submissions.status })
+        .from(submissions)
+        .where(eq(submissions.id, id))
+        .limit(1);
+
+    // Never RETURNING the `geom` column: drizzle's geometry() type only parses
+    // Point, so reading a Polygon back throws "Unsupported geometry type" —
+    // which previously made every status change fail.
+    const { geom: _geom, ...columns } = getTableColumns(submissions);
+
     const result = await queryDb
         .update(submissions)
         .set({
@@ -214,13 +235,13 @@ export async function updateSubmissionStatus(
             updatedAt: new Date(),
         })
         .where(eq(submissions.id, id))
-        .returning();
+        .returning(columns);
 
     if (result[0]) {
         // Insert into status_history
         await queryDb.insert(statusHistory).values({
             submissionId: id,
-            statusBefore: (result[0]).status,
+            statusBefore: previous?.status ?? newStatus,
             statusAfter: newStatus,
             petugas: verifikator,
             alasan,
@@ -234,9 +255,14 @@ export async function updateSubmissionStatus(
 export async function getSubmissionOverlaps(submissionId: number, tx?: DBTransaction) {
     const queryDb = tx || db;
 
-    return queryDb.query.overlapResults.findMany({
-        where: eq(overlapResults.submissionId, submissionId),
-    });
+    // Select explicit columns instead of findMany(): the latter also reads
+    // `intersectionGeom`, and drizzle's geometry() type only parses Point, so a
+    // cached Polygon intersection would throw "Unsupported geometry type".
+    const { intersectionGeom: _geom, ...columns } = getTableColumns(overlapResults);
+    return queryDb
+        .select(columns)
+        .from(overlapResults)
+        .where(eq(overlapResults.submissionId, submissionId));
 }
 
 /** Remove cached overlap rows for a submission (used before recomputing on edit). */

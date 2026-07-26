@@ -5,6 +5,7 @@ const ALLOWED_STATUSES = new Set([
   'SPPTG terdata',
   'SPPTG ditolak',
   'SPPTG ditinjau ulang',
+  'Terbit SPPTG',
 ]);
 
 type SearchParamsLike = Pick<URLSearchParams, 'get' | 'entries'>;

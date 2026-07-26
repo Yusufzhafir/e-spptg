@@ -218,6 +218,7 @@ export default function DashboardPageClient() {
     'SPPTG terdaftar': kpiData?.['SPPTG terdaftar'] || 0,
     'SPPTG ditolak': kpiData?.['SPPTG ditolak'] || 0,
     'SPPTG ditinjau ulang': kpiData?.['SPPTG ditinjau ulang'] || 0,
+    'Terbit SPPTG': kpiData?.['Terbit SPPTG'] || 0,
     total: kpiData?.total || 0,
   };
 
