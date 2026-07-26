@@ -154,6 +154,41 @@ function DrawingMapInternal({
     onCoordinatesChangeRef.current = onCoordinatesChange;
   }, [coordinates, onCoordinatesChange]);
 
+  // Terra Draw's select mode can throw "Unsupported geometry type for coordinate
+  // points" from its own async internals (e.g. when hydrating/deselecting an
+  // existing polygon on the edit screen). The polygon we persist is unaffected —
+  // the geometry lives in React state, not in the throwing render pass — so
+  // swallow just this one benign message instead of letting it surface as a dev
+  // error overlay. Scoped to while the map is mounted; nothing else is hidden.
+  useEffect(() => {
+    const isTerraDrawGeometryError = (value: unknown): boolean => {
+      const message =
+        typeof value === 'string'
+          ? value
+          : value instanceof Error
+            ? value.message
+            : '';
+      return message.includes('Unsupported geometry type');
+    };
+    const onError = (event: ErrorEvent) => {
+      if (isTerraDrawGeometryError(event.error) || isTerraDrawGeometryError(event.message)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    };
+    const onRejection = (event: PromiseRejectionEvent) => {
+      if (isTerraDrawGeometryError(event.reason)) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener('error', onError, true);
+    window.addEventListener('unhandledrejection', onRejection, true);
+    return () => {
+      window.removeEventListener('error', onError, true);
+      window.removeEventListener('unhandledrejection', onRejection, true);
+    };
+  }, []);
+
   // Read the current polygon/points from Terra Draw and push them to the parent
   const propagateFromMap = useCallback(() => {
     const draw = drawRef.current;

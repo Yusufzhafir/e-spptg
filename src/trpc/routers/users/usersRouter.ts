@@ -5,6 +5,7 @@ import {
   updateUserSchema,
 } from '@/lib/validation';
 import * as queries from '@/server/db/queries/user';
+import { assertCanManageUser } from '@/server/authz';
 import { TRPCError } from '@trpc/server';
 import { clerkClient } from '@clerk/nextjs/server';
 
@@ -33,8 +34,25 @@ export const usersRouter = router({
         offset: z.number().int().nonnegative().default(0),
       })
     )
-    .query(async ({ input }) => {
-      return queries.listUsers(input.limit, input.offset);
+    .query(async ({ ctx, input }) => {
+      const actor = ctx.appUser!;
+      // Superadmin sees everyone; Admin/Verifikator only their own desa;
+      // anyone else (Viewer) only their own account.
+      if (actor.peran === 'Superadmin') {
+        return queries.listUsers(input.limit, input.offset);
+      }
+      if (
+        (actor.peran === 'Admin' || actor.peran === 'Verifikator') &&
+        actor.assignedVillageId != null
+      ) {
+        return queries.listUsersByVillage(
+          actor.assignedVillageId,
+          input.limit,
+          input.offset
+        );
+      }
+      const self = await queries.getUserById(actor.id);
+      return self ? [self] : [];
     }),
 
   byId: protectedProcedure
@@ -122,14 +140,24 @@ export const usersRouter = router({
         });
       }
 
+      // Hierarchy + desa scope: Admin may only manage same-desa accounts strictly
+      // below Admin (Verifikator/Viewer); Verifikator may manage no one.
+      assertCanManageUser(ctx.appUser!, targetUser);
+
       const nextRole = input.data.peran ?? targetUser.peran;
-      if (!isSuperadmin && nextRole !== 'Viewer') {
+      // Non-superadmins may not change a user's role or reassign their desa; they
+      // can only edit the other fields of accounts they already manage.
+      if (!isSuperadmin && input.data.peran !== undefined && input.data.peran !== targetUser.peran) {
         throw new TRPCError({
           code: 'FORBIDDEN',
-          message: 'Hanya superadmin yang dapat menetapkan peran Admin/Verifikator.',
+          message: 'Hanya superadmin yang dapat mengubah peran pengguna.',
         });
       }
-      if (!isSuperadmin && input.data.assignedVillageId !== undefined) {
+      if (
+        !isSuperadmin &&
+        input.data.assignedVillageId !== undefined &&
+        input.data.assignedVillageId !== targetUser.assignedVillageId
+      ) {
         throw new TRPCError({
           code: 'FORBIDDEN',
           message: 'Hanya superadmin yang dapat mengubah desa penugasan.',
@@ -167,7 +195,7 @@ export const usersRouter = router({
 
   toggleStatus: adminProcedure
     .input(z.object({ id: z.number().int() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const user = await queries.getUserById(input.id);
       if (!user) {
         throw new TRPCError({
@@ -175,6 +203,7 @@ export const usersRouter = router({
           message: 'Pengguna tidak ditemukan',
         });
       }
+      assertCanManageUser(ctx.appUser!, user);
       const newStatus = user.status === 'Aktif' ? 'Nonaktif' : 'Aktif';
       return queries.updateUser(input.id, { status: newStatus });
     }),

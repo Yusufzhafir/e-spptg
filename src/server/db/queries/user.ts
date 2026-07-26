@@ -103,6 +103,22 @@ export async function listUsers(limit = 50, offset = 0, tx?: DBTransaction) {
   });
 }
 
+/** Users scoped to a single desa (for Admin/Verifikator visibility). */
+export async function listUsersByVillage(
+  villageId: number,
+  limit = 50,
+  offset = 0,
+  tx?: DBTransaction
+) {
+  const queryDb = tx || db;
+
+  return queryDb.query.users.findMany({
+    where: eq(users.assignedVillageId, villageId),
+    limit,
+    offset,
+  });
+}
+
 export async function updateUser(
   id: number,
   data: Partial<typeof users.$inferInsert>,

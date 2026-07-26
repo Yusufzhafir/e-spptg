@@ -146,11 +146,31 @@ export default function DashboardPageClient() {
     [updateValidityMutation]
   );
 
+  // KPI cards + charts use the same filters as the table, minus paging, so the
+  // "Tren Pengajuan" and "Jumlah SPPTG per Status" charts follow the filter bar.
+  const chartFilterInput = useMemo(
+    () => ({
+      status: filters.status === 'all' ? undefined : filters.status,
+      search: filters.search || undefined,
+      desaId: filters.desaId ? Number(filters.desaId) : undefined,
+      kecamatan: !filters.desaId && filters.kecamatan ? filters.kecamatan : undefined,
+      dateFrom: filters.dateFrom || undefined,
+      dateTo: filters.dateTo || undefined,
+    }),
+    [filters.dateFrom, filters.dateTo, filters.desaId, filters.kecamatan, filters.search, filters.status]
+  );
+
   // Fetch KPI data
-  const { data: kpiData, isLoading: isLoadingKPI, error: kpiError } = trpc.submissions.kpi.useQuery();
+  const { data: kpiData, isLoading: isLoadingKPI, error: kpiError } = trpc.submissions.kpi.useQuery(
+    chartFilterInput,
+    { placeholderData: (previous) => previous }
+  );
 
   // Fetch monthly stats
-  const { data: monthlyStatsData, isLoading: isLoadingMonthly, error: monthlyError } = trpc.submissions.monthlyStats.useQuery();
+  const { data: monthlyStatsData, isLoading: isLoadingMonthly, error: monthlyError } = trpc.submissions.monthlyStats.useQuery(
+    chartFilterInput,
+    { placeholderData: (previous) => previous }
+  );
 
   // Fetch villages for Desa filter options
   const { data: villagesData, isLoading: isLoadingVillages, error: villagesError } = trpc.villages.list.useQuery({

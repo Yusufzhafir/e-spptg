@@ -22,9 +22,12 @@ export default function EditKawasanPage() {
 
   const updateMutation = trpc.prohibitedAreas.update.useMutation({
     onSuccess: async () => {
-      await utils.prohibitedAreas.list.invalidate();
+      // Invalidate the whole router, not just `list`: `byId` backs this edit
+      // screen, so leaving it cached made a re-opened page show the old polygon
+      // until a hard refresh.
+      await utils.prohibitedAreas.invalidate();
       toast.success('Kawasan Non-SPPTG berhasil diperbarui.');
-      router.push('/app/pengaturan');
+      router.push('/app/pengaturan?tab=prohibited');
     },
     onError: (error) => {
       toast.error(error.message || 'Gagal memperbarui kawasan Non-SPPTG.');
@@ -57,6 +60,16 @@ export default function EditKawasanPage() {
     };
   }, [data]);
 
+  // KawasanForm (and the map inside it) seed their state once on mount. React
+  // Query can hand us cached data first and the fresh row a moment later, so key
+  // the form on the record's revision: when newer data lands, the form remounts
+  // and the map redraws the saved polygon instead of the stale one.
+  const formKey = useMemo(() => {
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return 'kawasan-empty';
+    return `kawasan-${row.id}-${new Date(row.updatedAt).getTime()}`;
+  }, [data]);
+
   return (
     <RequireRole
       allowedRoles={['Superadmin', 'Admin', 'Verifikator']}
@@ -80,6 +93,7 @@ export default function EditKawasanPage() {
         </div>
       ) : (
         <KawasanForm
+          key={formKey}
           mode="edit"
           initialArea={initialArea}
           isSubmitting={updateMutation.isPending}

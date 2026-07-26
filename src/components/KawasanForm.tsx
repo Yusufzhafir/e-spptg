@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProhibitedArea, ProhibitedAreaType, ValidationStatus } from '../types';
 import { CreateProhibitedAreaInput } from '@/types/prohibitedAreas';
+import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -42,7 +43,7 @@ interface KawasanFormProps {
 
 function buildInitialFormData(initialArea?: ProhibitedArea): KawasanFormData {
   if (!initialArea) {
-    return { aktifDiValidasi: true, statusValidasi: 'Lolos', warna: '#3b82f6' };
+    return { aktifDiValidasi: true, statusValidasi: 'Lolos', warna: KAWASAN_NON_SPPTG_COLOR };
   }
   let parsedGeoJSON: KawasanFormData['geomGeoJSON'] = null;
   if (initialArea.geomGeoJSON) {
@@ -109,7 +110,8 @@ export function KawasanForm({ mode, initialArea, isSubmitting, onSubmit }: Kawas
       tanggalEfektif: tanggalEfektifDate,
       statusValidasi: (formData.statusValidasi as ValidationStatus) || 'Lolos',
       aktifDiValidasi: formData.aktifDiValidasi ?? true,
-      warna: formData.warna || '#3b82f6',
+      // Kawasan Non-SPPTG are always red; the color is no longer user-editable.
+      warna: KAWASAN_NON_SPPTG_COLOR,
       catatan: formData.catatan ?? null,
       geomGeoJSON: formData.geomGeoJSON,
     };
@@ -117,9 +119,9 @@ export function KawasanForm({ mode, initialArea, isSubmitting, onSubmit }: Kawas
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6">
+    <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" onClick={() => router.push('/app/pengaturan')}>
+        <Button variant="ghost" size="sm" onClick={() => router.push('/app/pengaturan?tab=prohibited')}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Kembali
         </Button>
@@ -136,134 +138,123 @@ export function KawasanForm({ mode, initialArea, isSubmitting, onSubmit }: Kawas
         </p>
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-4">
-        <KawasanGeometryEditor
-          initialGeoJSON={formData.geomGeoJSON}
-          excludeAreaId={mode === 'edit' ? initialArea?.id : undefined}
-          onChange={(g) =>
-            setFormData((prev) => ({ ...prev, geomGeoJSON: g as typeof prev.geomGeoJSON }))
-          }
-        />
+      {/* Two columns on desktop: geometry on the left, attributes on the right.
+          Stacks on smaller screens. items-start so the shorter panel doesn't
+          stretch to match the taller one. */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="lg:col-span-7 rounded-lg border border-gray-200 bg-white p-4">
+          <KawasanGeometryEditor
+            initialGeoJSON={formData.geomGeoJSON}
+            excludeAreaId={mode === 'edit' ? initialArea?.id : undefined}
+            onChange={(g) =>
+              setFormData((prev) => ({ ...prev, geomGeoJSON: g as typeof prev.geomGeoJSON }))
+            }
+          />
+        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t pt-4">
-          <div className="sm:col-span-2">
-            <Label htmlFor="namaKawasan">Nama Kawasan<RequiredMark /></Label>
-            <Input
-              id="namaKawasan"
-              value={formData.namaKawasan || ''}
-              onChange={(e) => { setFormData({ ...formData, namaKawasan: e.target.value }); clearError('namaKawasan'); }}
-              className={errorClass('namaKawasan')}
-              placeholder="Contoh: Hutan Lindung Cikole"
-            />
-            <FieldError message={errors.namaKawasan} />
-          </div>
-
-          <div>
-            <Label htmlFor="jenisKawasan">Jenis Kawasan<RequiredMark /></Label>
-            <SearchableSelect
-              id="jenisKawasan"
-              value={formData.jenisKawasan ?? ''}
-              onValueChange={(value) => { clearError('jenisKawasan'); setFormData({ ...formData, jenisKawasan: value as ProhibitedAreaType }); }}
-              placeholder="Pilih jenis"
-              searchPlaceholder="Cari jenis..."
-              className={errorClass('jenisKawasan')}
-              options={jenisKawasanOptions.map((jenis) => ({ value: jenis, label: jenis }))}
-            />
-            <FieldError message={errors.jenisKawasan} />
-          </div>
-
-          <div>
-            <Label htmlFor="sumberData">Sumber Data<RequiredMark /></Label>
-            <Input
-              id="sumberData"
-              value={formData.sumberData || ''}
-              onChange={(e) => { setFormData({ ...formData, sumberData: e.target.value }); clearError('sumberData'); }}
-              className={errorClass('sumberData')}
-              placeholder="Contoh: KLHK"
-            />
-            <FieldError message={errors.sumberData} />
-          </div>
-
-          <div>
-            <Label htmlFor="dasarHukum">Dasar Hukum/No. SK</Label>
-            <Input
-              id="dasarHukum"
-              value={formData.dasarHukum || ''}
-              onChange={(e) => setFormData({ ...formData, dasarHukum: e.target.value })}
-              placeholder="Contoh: SK No. 123/2020"
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="tanggalEfektif">Tanggal Efektif<RequiredMark /></Label>
-            <Input
-              id="tanggalEfektif"
-              type="date"
-              value={formData.tanggalEfektif || ''}
-              onChange={(e) => { setFormData({ ...formData, tanggalEfektif: e.target.value }); clearError('tanggalEfektif'); }}
-              className={errorClass('tanggalEfektif')}
-            />
-            <FieldError message={errors.tanggalEfektif} />
-          </div>
-
-          <div>
-            <Label htmlFor="warna">Warna Layer</Label>
-            <div className="flex gap-2">
+        <div className="lg:col-span-5 rounded-lg border border-gray-200 bg-white p-4">
+          <h2 className="mb-4 text-sm font-semibold text-gray-900">Informasi Kawasan</h2>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="namaKawasan">Nama Kawasan<RequiredMark /></Label>
               <Input
-                id="warna"
-                type="color"
-                value={formData.warna || '#3b82f6'}
-                onChange={(e) => setFormData({ ...formData, warna: e.target.value })}
-                className="h-10 w-20"
+                id="namaKawasan"
+                value={formData.namaKawasan || ''}
+                onChange={(e) => { setFormData({ ...formData, namaKawasan: e.target.value }); clearError('namaKawasan'); }}
+                className={errorClass('namaKawasan')}
+                placeholder="Contoh: Hutan Lindung Cikole"
               />
+              <FieldError message={errors.namaKawasan} />
+            </div>
+
+            <div>
+              <Label htmlFor="jenisKawasan">Jenis Kawasan<RequiredMark /></Label>
+              <SearchableSelect
+                id="jenisKawasan"
+                value={formData.jenisKawasan ?? ''}
+                onValueChange={(value) => { clearError('jenisKawasan'); setFormData({ ...formData, jenisKawasan: value as ProhibitedAreaType }); }}
+                placeholder="Pilih jenis"
+                searchPlaceholder="Cari jenis..."
+                className={errorClass('jenisKawasan')}
+                options={jenisKawasanOptions.map((jenis) => ({ value: jenis, label: jenis }))}
+              />
+              <FieldError message={errors.jenisKawasan} />
+            </div>
+
+            <div>
+              <Label htmlFor="sumberData">Sumber Data<RequiredMark /></Label>
               <Input
-                value={formData.warna || '#3b82f6'}
-                onChange={(e) => setFormData({ ...formData, warna: e.target.value })}
-                placeholder="#3b82f6"
-                className="flex-1"
+                id="sumberData"
+                value={formData.sumberData || ''}
+                onChange={(e) => { setFormData({ ...formData, sumberData: e.target.value }); clearError('sumberData'); }}
+                className={errorClass('sumberData')}
+                placeholder="Contoh: KLHK"
+              />
+              <FieldError message={errors.sumberData} />
+            </div>
+
+            <div>
+              <Label htmlFor="dasarHukum">Dasar Hukum/No. SK</Label>
+              <Input
+                id="dasarHukum"
+                value={formData.dasarHukum || ''}
+                onChange={(e) => setFormData({ ...formData, dasarHukum: e.target.value })}
+                placeholder="Contoh: SK No. 123/2020"
               />
             </div>
-          </div>
 
-          <div>
-            <Label htmlFor="statusValidasi">Status Validasi</Label>
-            <SearchableSelect
-              id="statusValidasi"
-              value={formData.statusValidasi ?? 'Lolos'}
-              onValueChange={(value) =>
-                setFormData({ ...formData, statusValidasi: value as ValidationStatus })
-              }
-              placeholder="Pilih status"
-              searchPlaceholder="Cari status..."
-              options={[
-                { value: 'Lolos', label: 'Lolos' },
-                { value: 'Perlu Perbaikan', label: 'Perlu Perbaikan' },
-              ]}
-            />
-          </div>
+            <div>
+              <Label htmlFor="tanggalEfektif">Tanggal Efektif<RequiredMark /></Label>
+              <Input
+                id="tanggalEfektif"
+                type="date"
+                value={formData.tanggalEfektif || ''}
+                onChange={(e) => { setFormData({ ...formData, tanggalEfektif: e.target.value }); clearError('tanggalEfektif'); }}
+                className={errorClass('tanggalEfektif')}
+              />
+              <FieldError message={errors.tanggalEfektif} />
+            </div>
 
-          <div className="sm:col-span-2">
-            <Label htmlFor="catatan">Catatan</Label>
-            <Textarea
-              id="catatan"
-              value={formData.catatan || ''}
-              onChange={(e) => setFormData({ ...formData, catatan: e.target.value })}
-              placeholder="Catatan tambahan (opsional)"
-              rows={3}
-            />
-          </div>
+            <div>
+              <Label htmlFor="statusValidasi">Status Validasi</Label>
+              <SearchableSelect
+                id="statusValidasi"
+                value={formData.statusValidasi ?? 'Lolos'}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, statusValidasi: value as ValidationStatus })
+                }
+                placeholder="Pilih status"
+                searchPlaceholder="Cari status..."
+                options={[
+                  { value: 'Lolos', label: 'Lolos' },
+                  { value: 'Perlu Perbaikan', label: 'Perlu Perbaikan' },
+                ]}
+              />
+            </div>
 
-          <div className="sm:col-span-2 flex items-center gap-2">
-            <Switch
-              id="aktifDiValidasi"
-              checked={formData.aktifDiValidasi ?? true}
-              onCheckedChange={(checked) =>
-                setFormData({ ...formData, aktifDiValidasi: checked })
-              }
-            />
-            <Label htmlFor="aktifDiValidasi" className="cursor-pointer">
-              Aktif di Validasi
-            </Label>
+            <div>
+              <Label htmlFor="catatan">Catatan</Label>
+              <Textarea
+                id="catatan"
+                value={formData.catatan || ''}
+                onChange={(e) => setFormData({ ...formData, catatan: e.target.value })}
+                placeholder="Catatan tambahan (opsional)"
+                rows={3}
+              />
+            </div>
+
+            <div className="flex items-center gap-2 border-t pt-4">
+              <Switch
+                id="aktifDiValidasi"
+                checked={formData.aktifDiValidasi ?? true}
+                onCheckedChange={(checked) =>
+                  setFormData({ ...formData, aktifDiValidasi: checked })
+                }
+              />
+              <Label htmlFor="aktifDiValidasi" className="cursor-pointer">
+                Aktif di Validasi
+              </Label>
+            </div>
           </div>
         </div>
       </div>
@@ -271,7 +262,7 @@ export function KawasanForm({ mode, initialArea, isSubmitting, onSubmit }: Kawas
       <div className="flex justify-end gap-2">
         <Button
           variant="outline"
-          onClick={() => router.push('/app/pengaturan')}
+          onClick={() => router.push('/app/pengaturan?tab=prohibited')}
           disabled={isSubmitting}
         >
           Batal

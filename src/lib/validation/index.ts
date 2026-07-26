@@ -144,6 +144,22 @@ export const uploadFileSchema = z.object({
 // Query Schemas
 // ============================================================================
 
+/**
+ * Dashboard filters shared by the submissions list and the KPI / monthly-trend
+ * charts, so all three describe the same data set. Optional: no input = unfiltered.
+ */
+export const dashboardFilterSchema = z
+  .object({
+    search: z.string().optional(),
+    status: z.string().optional(),
+    desaId: z.number().int().positive().optional(),
+    kecamatan: z.string().optional(),
+    dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  })
+  .optional()
+  .default({});
+
 export const listSubmissionsSchema = z.object({
   search: z.string().optional(),
   status: z.string().optional(),

@@ -1,5 +1,8 @@
+# Build scripts pnpm is allowed to run. Without approving these, pnpm 11 blocks
+# them and the `pnpm install` that runs before scripts (e.g. `pnpm migrate:*`)
+# exits with ERR_PNPM_IGNORED_BUILDS.
 allowBuilds:
-  '@clerk/shared': set this to true or false
-  esbuild: set this to true or false
-  sharp: set this to true or false
-  unrs-resolver: set this to true or false
+  '@clerk/shared': true
+  esbuild: true
+  sharp: true
+  unrs-resolver: true

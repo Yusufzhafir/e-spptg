@@ -11,6 +11,7 @@ import { DrawingMap, type ReferencePolygon } from './maps/DrawingMap';
 import { trpc } from '@/trpc/client';
 import { coordinatesToGeoJSON, geoJSONToPaths } from '@/lib/map-utils';
 import { parseGeospatialFile } from '@/lib/kmz-parser';
+import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
 import {
   parseUtmInputStrings,
   toLatLonFromUtm,
@@ -93,7 +94,7 @@ export function KawasanGeometryEditor({
     }>;
     areas.forEach((area) => {
       if (excludeAreaId && area.id === excludeAreaId) return;
-      const color = area.warna || '#ef4444';
+      const color = KAWASAN_NON_SPPTG_COLOR;
       geoJSONToPaths(area.geom).forEach((path, i) => {
         result.push({
           id: `kw-${area.id}-${i}`,
@@ -438,7 +439,6 @@ export function KawasanGeometryEditor({
             onCoordinatesChange={handleCoordinatesChange}
             recenterSignal={recenterSignal}
             referencePolygons={referencePolygons}
-            enableCoordinateEditing={false}
           />
         </div>
 

@@ -13,6 +13,8 @@ import {
 } from './ui/table';
 import { useTableSort, SortableHead } from './table-sort';
 import { formatDateTime } from '@/lib/format-date';
+import { useAuthRole } from './AuthRoleProvider';
+import { canManageUser, canViewUser } from '@/lib/user-access';
 import { RequiredMark } from './RequiredMark';
 import { SearchableSelect } from './SearchableSelect';
 import { FieldError } from './FieldError';
@@ -70,6 +72,8 @@ export function UsersTab({
   onUpdateUser,
   onToggleUserStatus,
 }: UsersTabProps) {
+  const { user: currentUser } = useAuthRole();
+  const canAddUser = currentUser?.peran === 'Superadmin' || currentUser?.peran === 'Admin';
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -90,6 +94,10 @@ export function UsersTab({
 
   // Filter users
   const filteredUsers = users.filter((user) => {
+    // Defense-in-depth: the server already scopes the list, but never render a
+    // row the current user isn't allowed to see.
+    const matchesVisibility = !currentUser || canViewUser(currentUser, user);
+
     const matchesSearch =
       !searchQuery ||
       user.nama.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -99,7 +107,7 @@ export function UsersTab({
     const matchesRole = roleFilter === 'all' || user.peran === roleFilter;
     const matchesStatus = statusFilter === 'all' || user.status === statusFilter;
 
-    return matchesSearch && matchesRole && matchesStatus;
+    return matchesVisibility && matchesSearch && matchesRole && matchesStatus;
   });
 
   const {
@@ -321,10 +329,12 @@ export function UsersTab({
           </Select>
         </div>
 
-        <Button onClick={handleAddUser} className="bg-blue-600 hover:bg-blue-700 w-full md:w-auto">
-          <Plus className="h-4 w-4 mr-2" />
-          Tambah Pengguna
-        </Button>
+        {canAddUser && (
+          <Button onClick={handleAddUser} className="bg-blue-600 hover:bg-blue-700 w-full md:w-auto">
+            <Plus className="h-4 w-4 mr-2" />
+            Tambah Pengguna
+          </Button>
+        )}
       </div>
 
       {/* Permission Note */}
@@ -416,32 +426,36 @@ export function UsersTab({
                     {formatDateTime(user.terakhirMasuk)}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEditUser(user)}
-                        title="Edit"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeactivateUser(user)}
-                        title={user.status === 'Aktif' ? 'Nonaktifkan' : 'Aktifkan'}
-                      >
-                        <Power className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleResetPassword(user)}
-                        title="Reset Sandi"
-                      >
-                        <KeyRound className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    {currentUser && canManageUser(currentUser, user) ? (
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEditUser(user)}
+                          title="Edit"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeactivateUser(user)}
+                          title={user.status === 'Aktif' ? 'Nonaktifkan' : 'Aktifkan'}
+                        >
+                          <Power className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleResetPassword(user)}
+                          title="Reset Sandi"
+                        >
+                          <KeyRound className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <span className="text-gray-400 text-sm">—</span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))

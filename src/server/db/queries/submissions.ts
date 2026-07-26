@@ -26,6 +26,55 @@ function buildScopeConditions(filters: SubmissionScopeFilters) {
     return conditions;
 }
 
+/** Dashboard filter set shared by the list and the KPI/tren charts. */
+export type SubmissionDashboardFilters = SubmissionScopeFilters & {
+    search?: string;
+    status?: string;
+    desaId?: number;
+    kecamatan?: string;
+    dateFrom?: string;
+    dateTo?: string;
+};
+
+/**
+ * Scope conditions + the dashboard's user-facing filters, so the submissions
+ * list and the KPI / monthly-trend charts always describe the same data set.
+ */
+function buildSubmissionConditions(filters: SubmissionDashboardFilters) {
+    const { search, status, desaId, kecamatan, dateFrom, dateTo } = filters;
+    const conditions = buildScopeConditions(filters);
+
+    if (search) {
+        conditions.push(
+            sql`(
+        ${submissions.namaPemilik} ILIKE ${`%${search}%`}
+        OR ${submissions.nik} LIKE ${`%${search}%`}
+        OR ${submissions.kecamatan} ILIKE ${`%${search}%`}
+      )`
+        );
+    }
+
+    if (status && status !== 'all') {
+        conditions.push(eq(submissions.status, status as StatusSPPTG));
+    }
+
+    if (typeof desaId === 'number') {
+        conditions.push(eq(submissions.villageId, desaId));
+    } else if (kecamatan) {
+        conditions.push(sql`LOWER(${submissions.kecamatan}) = LOWER(${kecamatan})`);
+    }
+
+    if (dateFrom) {
+        conditions.push(sql`DATE(${submissions.tanggalPengajuan}) >= ${dateFrom}`);
+    }
+
+    if (dateTo) {
+        conditions.push(sql`DATE(${submissions.tanggalPengajuan}) <= ${dateTo}`);
+    }
+
+    return conditions;
+}
+
 /**
  * Get submission by ID
  */
@@ -70,35 +119,16 @@ export async function listSubmissions(filters: {
         offset = 0
     } = filters;
 
-    const conditions = buildScopeConditions({ ownerUserId, villageId });
-
-    if (search) {
-        conditions.push(
-            sql`(
-        ${submissions.namaPemilik} ILIKE ${`%${search}%`}
-        OR ${submissions.nik} LIKE ${`%${search}%`}
-        OR ${submissions.kecamatan} ILIKE ${`%${search}%`}
-      )`
-        );
-    }
-
-    if (status && status !== 'all') {
-        conditions.push(eq(submissions.status, status as StatusSPPTG));
-    }
-
-    if (typeof desaId === 'number') {
-        conditions.push(eq(submissions.villageId, desaId));
-    } else if (kecamatan) {
-        conditions.push(sql`LOWER(${submissions.kecamatan}) = LOWER(${kecamatan})`);
-    }
-
-    if (dateFrom) {
-        conditions.push(sql`DATE(${submissions.tanggalPengajuan}) >= ${dateFrom}`);
-    }
-
-    if (dateTo) {
-        conditions.push(sql`DATE(${submissions.tanggalPengajuan}) <= ${dateTo}`);
-    }
+    const conditions = buildSubmissionConditions({
+        ownerUserId,
+        villageId,
+        search,
+        status,
+        desaId,
+        kecamatan,
+        dateFrom,
+        dateTo,
+    });
 
     const {geom,...restOfTheColumn} = getTableColumns(submissions)
     const items = await queryDb.select({
@@ -209,9 +239,9 @@ export async function deleteSubmissionOverlaps(submissionId: number, tx?: DBTran
     await queryDb.delete(overlapResults).where(eq(overlapResults.submissionId, submissionId));
 }
 
-export async function getKPIDataScoped(filters: SubmissionScopeFilters, tx?: DBTransaction) {
+export async function getKPIDataScoped(filters: SubmissionDashboardFilters, tx?: DBTransaction) {
     const queryDb = tx || db;
-    const conditions = buildScopeConditions(filters);
+    const conditions = buildSubmissionConditions(filters);
     const result = await queryDb
         .select({
             status: submissions.status,
@@ -225,11 +255,11 @@ export async function getKPIDataScoped(filters: SubmissionScopeFilters, tx?: DBT
 }
 
 export async function getMonthlyStats(
-    filters: SubmissionScopeFilters = {},
+    filters: SubmissionDashboardFilters = {},
     tx?: DBTransaction
 ) {
     const queryDb = tx || db;
-    const conditions = buildScopeConditions(filters);
+    const conditions = buildSubmissionConditions(filters);
     const result = await queryDb
         .select({
             month: sql<string>`TO_CHAR(${submissions.tanggalPengajuan}, 'YYYY-MM')`,

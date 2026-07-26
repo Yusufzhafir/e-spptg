@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { CreateProhibitedAreaInput, UpdateProhibitedAreaInput } from '@/types/prohibitedAreas';
 
 export default function PengaturanPage() {
+  const utils = trpc.useUtils();
   const { data: usersData, refetch: refetchUsers } = trpc.users.list.useQuery({
     limit: 1000,
     offset: 0,
@@ -96,10 +97,15 @@ export default function PengaturanPage() {
     },
   });
 
+  // Only used by the "Aktif di Validasi" toggle in the tab (add/edit live on
+  // their own pages and toast there). The switch already shows the new state, so
+  // a success toast on every flip is just noise — errors are still surfaced.
   const updateProhibitedAreaMutation = trpc.prohibitedAreas.update.useMutation({
     onSuccess: () => {
       refetchProhibitedAreas();
-      toast.success('Kawasan Non-SPPTG berhasil diperbarui.');
+      // Also drop the cached single-area query, otherwise opening the edit page
+      // after a toggle here would render stale data.
+      void utils.prohibitedAreas.byId.invalidate();
     },
     onError: (error) => {
       toast.error(error.message || 'Gagal memperbarui kawasan Non-SPPTG.');
@@ -109,6 +115,7 @@ export default function PengaturanPage() {
   const deleteProhibitedAreaMutation = trpc.prohibitedAreas.delete.useMutation({
     onSuccess: () => {
       refetchProhibitedAreas();
+      void utils.prohibitedAreas.byId.invalidate();
       toast.success('Kawasan Non-SPPTG berhasil dihapus.');
     },
     onError: (error) => {

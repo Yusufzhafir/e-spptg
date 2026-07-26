@@ -15,6 +15,10 @@ import {
 } from './ui/table';
 import { useTableSort, SortableHead } from './table-sort';
 import { formatDate } from '@/lib/format-date';
+import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
+import { trpc } from '@/trpc/client';
+import { StatusBadge } from './StatusBadge';
+import type { StatusSPPTG } from '../types';
 import { SearchableSelect } from './SearchableSelect';
 import {
   Dialog,
@@ -74,6 +78,21 @@ export function ProhibitedAreasTab({
   const [isOverlapCheckDialogOpen, setIsOverlapCheckDialogOpen] = useState(false);
   const [selectedArea, setSelectedArea] = useState<ProhibitedArea | null>(null);
 
+  // Overlap report is computed on demand (PostGIS), only while the dialog is open
+  const {
+    data: overlapData,
+    isLoading: isLoadingOverlaps,
+    isError: overlapError,
+  } = trpc.prohibitedAreas.checkOverlaps.useQuery(undefined, {
+    enabled: isOverlapCheckDialogOpen,
+  });
+  const overlapRows = useMemo(() => overlapData ?? [], [overlapData]);
+  // A submission can overlap several kawasan — count distinct submissions
+  const overlapSubmissionCount = useMemo(
+    () => new Set(overlapRows.map((r) => r.submissionId)).size,
+    [overlapRows]
+  );
+
   // Optimistic override for the "Aktif di Validasi" toggle (id -> value)
   const [optimisticActive, setOptimisticActive] = useState<Record<number, boolean>>({});
 
@@ -105,7 +124,7 @@ export function ProhibitedAreasTab({
         latitude: coord[1],
         longitude: coord[0],
       }));
-      const hexColor = selectedArea.warna?.replace('#', '');
+      const hexColor = KAWASAN_NON_SPPTG_COLOR.replace('#', '');
       return generateStaticMapUrl(coordinates, {
         mapType: 'terrain',
         fillColor: hexColor,
@@ -363,15 +382,7 @@ export function ProhibitedAreasTab({
               ) : (
                 sortedAreas.map((area) => (
                   <TableRow key={area.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-3 h-3 rounded-full"
-                          style={{ backgroundColor: area.warna }}
-                        />
-                        <span>{area.namaKawasan}</span>
-                      </div>
-                    </TableCell>
+                    <TableCell>{area.namaKawasan}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className="whitespace-nowrap">
                         {area.jenisKawasan}
@@ -516,87 +527,107 @@ export function ProhibitedAreasTab({
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* Summary */}
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5" />
-                <div>
-                  <p className="text-orange-900">
-                    <strong>Ditemukan 2 pengajuan SPPTG tumpang tindih</strong>
-                  </p>
-                  <p className="text-sm text-orange-700 mt-1">
-                    Pengajuan berikut terindikasi tumpang tindih dengan kawasan non-SPPTG yang aktif
-                  </p>
+            {isLoadingOverlaps ? (
+              <div className="flex items-center justify-center py-10 text-sm text-gray-500">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2" />
+                Menghitung tumpang tindih...
+              </div>
+            ) : overlapError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                Gagal menghitung tumpang tindih. Silakan coba lagi.
+              </div>
+            ) : overlapRows.length === 0 ? (
+              <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+                <div className="flex items-start gap-3">
+                  <Shield className="h-5 w-5 text-green-600 mt-0.5" />
+                  <div>
+                    <p className="text-green-900">
+                      <strong>Tidak ada pengajuan yang tumpang tindih</strong>
+                    </p>
+                    <p className="text-sm text-green-700 mt-1">
+                      Semua pengajuan SPPTG berada di luar kawasan Non-SPPTG yang aktif.
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <>
+                {/* Summary */}
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5" />
+                    <div>
+                      <p className="text-orange-900">
+                        <strong>
+                          Ditemukan {overlapSubmissionCount} pengajuan SPPTG tumpang tindih
+                        </strong>
+                      </p>
+                      <p className="text-sm text-orange-700 mt-1">
+                        Pengajuan berikut terindikasi tumpang tindih dengan kawasan Non-SPPTG
+                        yang aktif. Buka detail untuk meninjau dan menentukan statusnya.
+                      </p>
+                    </div>
+                  </div>
+                </div>
 
-            {/* Results Table */}
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50">
-                    <TableHead>ID Pengajuan</TableHead>
-                    <TableHead>Pemilik</TableHead>
-                    <TableHead>Desa/Kecamatan</TableHead>
-                    <TableHead>Luas Overlap</TableHead>
-                    <TableHead>Kawasan</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Aksi</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow>
-                    <TableCell>2025-01-0234</TableCell>
-                    <TableCell>Budi Santoso</TableCell>
-                    <TableCell>Sukapura, Kejaksan</TableCell>
-                    <TableCell>125 m²</TableCell>
-                    <TableCell>Tanah Pemerintah</TableCell>
-                    <TableCell>
-                      <Badge className="bg-red-100 text-red-700 hover:bg-red-100">
-                        SKT ditolak
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="sm">
-                        Buka Detail
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>2025-01-0456</TableCell>
-                    <TableCell>Ahmad Fauzi</TableCell>
-                    <TableCell>Karangsari, Lemahwungkuk</TableCell>
-                    <TableCell>78 m²</TableCell>
-                    <TableCell>Sempadan Sungai</TableCell>
-                    <TableCell>
-                      <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-100">
-                        SKT ditinjau ulang
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="sm">
-                        Buka Detail
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </div>
+                {/* Results Table — scrolls horizontally on narrow screens */}
+                <div className="border rounded-lg overflow-x-auto">
+                  <Table className="min-w-205">
+                    <TableHeader>
+                      <TableRow className="bg-gray-50">
+                        <TableHead>ID Pengajuan</TableHead>
+                        <TableHead>Pemilik</TableHead>
+                        <TableHead>Desa/Kecamatan</TableHead>
+                        <TableHead>Luas Overlap</TableHead>
+                        <TableHead>Kawasan</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Aksi</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {overlapRows.map((row, index) => (
+                        <TableRow key={`${row.submissionId}-${row.namaKawasan}-${index}`}>
+                          <TableCell className="font-mono text-xs">#{row.submissionId}</TableCell>
+                          <TableCell>{row.namaPemilik}</TableCell>
+                          <TableCell className="text-gray-600">
+                            {row.desaNama || `Desa #${row.submissionId}`}
+                            {row.kecamatan ? `, ${row.kecamatan}` : ''}
+                          </TableCell>
+                          <TableCell>
+                            {Math.round(row.luasOverlap).toLocaleString('id-ID')} m²
+                            <span className="text-gray-500 text-xs">
+                              {' '}
+                              ({row.percentageOverlap.toFixed(2)}%)
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-gray-600">{row.namaKawasan}</TableCell>
+                          <TableCell>
+                            <StatusBadge status={row.status as StatusSPPTG} />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setIsOverlapCheckDialogOpen(false);
+                                router.push(`/app/pengajuan/${row.submissionId}`);
+                              }}
+                            >
+                              Buka Detail
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsOverlapCheckDialogOpen(false)}>
               Tutup
-            </Button>
-            <Button
-              onClick={() => {
-                toast.success('Pengajuan telah ditandai terindikasi overlap');
-                setIsOverlapCheckDialogOpen(false);
-              }}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              Tandai Pengajuan Terindikasi Overlap
             </Button>
           </DialogFooter>
         </DialogContent>

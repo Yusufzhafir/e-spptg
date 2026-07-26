@@ -4,6 +4,7 @@ import {
     createSubmissionFromDraftSchema,
     updateSubmissionStatusSchema,
     listSubmissionsSchema,
+    dashboardFilterSchema,
 } from '@/lib/validation';
 import * as submissionQueries from '@/server/db/queries/submissions';
 import * as draftQueries from '@/server/db/queries/drafts';
@@ -504,32 +505,39 @@ export const submissionsRouter = router({
             };
         }),
 
-    kpi: protectedProcedure.query(async ({ ctx }) => {
-        const scope = getSubmissionScopeForUser(ctx.appUser!);
-        const data = await submissionQueries.getKPIDataScoped(scope);
-        const kpi = {
-            'SPPTG terdata': 0,
-            'SPPTG terdaftar': 0,
-            'SPPTG ditolak': 0,
-            'SPPTG ditinjau ulang': 0,
-            'total': 0,
-        };
+    // KPI cards + "Jumlah SPPTG per Status" chart. Accepts the dashboard filters
+    // so the numbers always describe the same set as the Daftar Pengajuan table.
+    kpi: protectedProcedure
+        .input(dashboardFilterSchema)
+        .query(async ({ ctx, input }) => {
+            const scope = getSubmissionScopeForUser(ctx.appUser!);
+            const data = await submissionQueries.getKPIDataScoped({ ...input, ...scope });
+            const kpi = {
+                'SPPTG terdata': 0,
+                'SPPTG terdaftar': 0,
+                'SPPTG ditolak': 0,
+                'SPPTG ditinjau ulang': 0,
+                'total': 0,
+            };
 
-        data.forEach((item) => {
-            const count = +item.count
-            if (item.status in kpi && !Number.isNaN(count)) {
-                kpi[item.status as keyof typeof kpi] = count;
-                kpi.total += count;
-            }
-        });
+            data.forEach((item) => {
+                const count = +item.count
+                if (item.status in kpi && !Number.isNaN(count)) {
+                    kpi[item.status as keyof typeof kpi] = count;
+                    kpi.total += count;
+                }
+            });
 
-        return kpi;
-    }),
+            return kpi;
+        }),
 
-    monthlyStats: protectedProcedure.query(async ({ ctx }) => {
-        const scope = getSubmissionScopeForUser(ctx.appUser!);
-        return submissionQueries.getMonthlyStats(scope);
-    }),
+    // "Tren Pengajuan" chart — same filter set as the KPI query.
+    monthlyStats: protectedProcedure
+        .input(dashboardFilterSchema)
+        .query(async ({ ctx, input }) => {
+            const scope = getSubmissionScopeForUser(ctx.appUser!);
+            return submissionQueries.getMonthlyStats({ ...input, ...scope });
+        }),
 });
 
 function buildGeometryFromCoordinates(payload: object) {

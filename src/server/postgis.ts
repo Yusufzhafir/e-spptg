@@ -15,6 +15,80 @@ export interface OverlapCalculation {
   intersectionGeom: unknown; // PostGIS geometry
 }
 
+/** One submission × kawasan overlap pair, for the system-wide overlap report. */
+export interface SubmissionOverlapRow {
+  submissionId: number;
+  namaPemilik: string;
+  desaNama: string | null;
+  kecamatan: string;
+  status: string;
+  namaKawasan: string;
+  jenisKawasan: string;
+  luasOverlap: number;
+  percentageOverlap: number;
+}
+
+/**
+ * System-wide "Cek Tumpang Tindih": every submission whose polygon intersects an
+ * *active* prohibited area, scoped to what the caller may see.
+ *
+ * NB: areas are measured by casting to `geography` so the result is real m² —
+ * plain ST_Area on SRID 4326 geometry returns square degrees.
+ */
+export async function findOverlappingSubmissions(
+  scope: { ownerUserId?: number; villageId?: number } = {},
+  tx?: DBTransaction
+): Promise<SubmissionOverlapRow[]> {
+  const queryDb = tx || db;
+
+  // Only submissions that are actually shown on the map count as a conflict:
+  // `is_valid = false` means the entry was flagged invalid and its polygon is
+  // hidden, so reporting it as an overlap contradicts what the user can see.
+  const conditions = [sql`pa.aktif_di_validasi = true`, sql`s.is_valid = true`];
+  if (scope.ownerUserId !== undefined) {
+    conditions.push(sql`s.owner_user_id = ${scope.ownerUserId}`);
+  }
+  if (scope.villageId !== undefined) {
+    conditions.push(sql`s."villageId" = ${scope.villageId}`);
+  }
+
+  const result = await queryDb.execute(sql`
+    SELECT
+      s.id AS submission_id,
+      s.nama_pemilik,
+      s.kecamatan,
+      s.status,
+      v.nama_desa,
+      pa.nama_kawasan,
+      pa.jenis_kawasan,
+      ST_Area(ST_Intersection(s.geom, pa.geom)::geography)::double precision AS luas_overlap,
+      (
+        ST_Area(ST_Intersection(s.geom, pa.geom)::geography)
+        / NULLIF(ST_Area(s.geom::geography), 0) * 100
+      )::double precision AS percentage_overlap
+    FROM submissions s
+    JOIN prohibited_areas pa ON ST_Intersects(s.geom, pa.geom)
+    LEFT JOIN villages v ON v.id = s."villageId"
+    WHERE ${sql.join(conditions, sql` AND `)}
+    ORDER BY luas_overlap DESC
+  `);
+
+  return (result.rows || []).map((row: unknown) => {
+    const r = row as Record<string, unknown>;
+    return {
+      submissionId: Number(r.submission_id),
+      namaPemilik: String(r.nama_pemilik ?? ''),
+      desaNama: r.nama_desa == null ? null : String(r.nama_desa),
+      kecamatan: String(r.kecamatan ?? ''),
+      status: String(r.status ?? ''),
+      namaKawasan: String(r.nama_kawasan ?? ''),
+      jenisKawasan: String(r.jenis_kawasan ?? ''),
+      luasOverlap: Number(r.luas_overlap ?? 0),
+      percentageOverlap: Number(r.percentage_overlap ?? 0),
+    };
+  });
+}
+
 /**
  * Find all overlapping prohibited areas and calculate their overlap metrics
  * Returns an array of overlap calculations that can be used in JavaScript
