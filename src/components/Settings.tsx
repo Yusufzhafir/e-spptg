@@ -37,6 +37,9 @@ interface SettingsProps {
   villages: Village[];
   prohibitedAreas: ProhibitedArea[];
   onUpdateUsers?: (users: User[]) => void;
+  onCreateUser?: (
+    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'nomorHP' | 'status'>
+  ) => void;
   onUpdateUser?: (
     id: number,
     data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'nomorHP' | 'status'>>
@@ -66,6 +69,7 @@ export function Settings({
   villages,
   prohibitedAreas,
   onUpdateUsers,
+  onCreateUser,
   onUpdateUser,
   onToggleUserStatus,
   onUpdateVillages,
@@ -149,6 +153,7 @@ export function Settings({
             villages={villages}
             canManageVillageAssignment={isSuperadmin}
             onUpdateUsers={onUpdateUsers}
+            onCreateUser={onCreateUser}
             onUpdateUser={onUpdateUser}
             onToggleUserStatus={onToggleUserStatus}
           />

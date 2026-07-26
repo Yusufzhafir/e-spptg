@@ -157,7 +157,7 @@ export const prohibitedAreasRouter = router({
             ...Object.fromEntries(
               Object.entries(updateData).filter(([key]) => key !== 'geomGeoJSON')
             ),
-            geom: sql`ST_PolygonFromText('POLYGON((${sanitizedCoords}))',4326)`,
+            geom: sql.raw(`ST_PolygonFromText('POLYGON((${sanitizedCoords}))',4326)`),
             updatedAt: new Date(),
           })
           .where(eq(prohibitedAreas.id, input.id))

@@ -16,6 +16,7 @@ type SubmissionListItem = {
   nomorHP: string;
   email: string;
   villageId: number;
+  desaNama?: string | null;
   kecamatan: string;
   kabupaten: string;
   luas: number;
@@ -50,6 +51,8 @@ export default function DashboardPageClient() {
   const searchParams = useSearchParams();
 
   const filters = useMemo(() => parseDashboardFilters(searchParams), [searchParams]);
+  const focusParam = searchParams.get('focus');
+  const urlFocusId = focusParam ? Number(focusParam) : null;
 
   const updateFilterParams = useCallback(
     (patch: DashboardFilterPatch) => {
@@ -165,6 +168,7 @@ export default function DashboardPageClient() {
     nomorHP: s.nomorHP,
     email: s.email,
     villageId: s.villageId,
+    desaNama: s.desaNama ?? null,
     kecamatan: s.kecamatan,
     kabupaten: s.kabupaten,
     luas: s.luas,
@@ -213,7 +217,7 @@ export default function DashboardPageClient() {
       'ID',
       'Nama Pemilik',
       'NIK',
-      'Desa (ID)',
+      'Desa',
       'Kecamatan',
       'Kabupaten',
       'Luas (m2)',
@@ -232,7 +236,7 @@ export default function DashboardPageClient() {
         s.id,
         s.namaPemilik,
         s.nik,
-        s.villageId,
+        s.desaNama || `Desa #${s.villageId}`,
         s.kecamatan,
         s.kabupaten,
         s.luas,
@@ -263,8 +267,12 @@ export default function DashboardPageClient() {
     router.push(`/app/pengajuan/${submission.id}`);
   };
 
-  const handleEditSubmission = (submission: Submission) => {
-    router.push(`/app/pengajuan/${submission.id}/edit`);
+  const handleEditSubmission = (
+    submission: Submission,
+    mode: 'existing' | 'duplicate'
+  ) => {
+    const suffix = mode === 'duplicate' ? '?mode=duplicate' : '';
+    router.push(`/app/pengajuan/${submission.id}/edit${suffix}`);
   };
 
   const isInitialLoading =
@@ -313,6 +321,7 @@ export default function DashboardPageClient() {
       onToggleValidity={handleToggleValidity}
       isTogglingValidity={updateValidityMutation.isPending}
       onExportCsv={handleExportCsv}
+      urlFocusId={urlFocusId}
     />
   );
 }

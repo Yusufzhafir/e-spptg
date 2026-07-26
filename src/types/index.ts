@@ -22,6 +22,8 @@ export interface Submission {
   
   // Data Lahan
   villageId: number;
+  /** Resolved village display name (null when the village no longer exists) */
+  desaNama?: string | null;
   kecamatan: string;
   kabupaten: string;
   luas: number; // m²
@@ -84,7 +86,8 @@ export type UserStatus = 'Aktif' | 'Nonaktif';
 
 export interface User {
   id: number;
-  clerkUserId: string;
+  /** Null until the user first logs in via Clerk (pre-registered from the app). */
+  clerkUserId: string | null;
   nama: string;
   nipNik: string;
   email: string;
@@ -133,6 +136,7 @@ export interface ProhibitedArea {
   tanggalEfektif: string;
   tanggalUnggah: string;
   diunggahOleh: number | null;
+  diunggahOlehNama?: string | null;
   statusValidasi: ValidationStatus;
   aktifDiValidasi: boolean;
   warna: string;

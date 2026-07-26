@@ -95,7 +95,7 @@ export async function createDraftFromSubmission(
     userId: number;
     villageId: number | null;
     payload: Record<string, unknown>;
-    editingSubmissionId: number;
+    editingSubmissionId: number | null;
     currentStep?: number;
   },
   tx?: DBTransaction

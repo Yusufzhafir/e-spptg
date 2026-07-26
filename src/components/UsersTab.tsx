@@ -11,6 +11,12 @@ import {
   TableHeader,
   TableRow,
 } from './ui/table';
+import { useTableSort, SortableHead } from './table-sort';
+import { formatDateTime } from '@/lib/format-date';
+import { RequiredMark } from './RequiredMark';
+import { SearchableSelect } from './SearchableSelect';
+import { FieldError } from './FieldError';
+import { createUserSchema } from '@/lib/validation';
 import {
   Dialog,
   DialogContent,
@@ -45,6 +51,9 @@ interface UsersTabProps {
   villages: Village[];
   canManageVillageAssignment?: boolean;
   onUpdateUsers?: (users: User[]) => void;
+  onCreateUser?: (
+    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'nomorHP' | 'status'>
+  ) => void;
   onUpdateUser?: (
     id: number,
     data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'nomorHP' | 'status'>>
@@ -57,6 +66,7 @@ export function UsersTab({
   villages,
   canManageVillageAssignment = false,
   onUpdateUsers,
+  onCreateUser,
   onUpdateUser,
   onToggleUserStatus,
 }: UsersTabProps) {
@@ -68,6 +78,15 @@ export function UsersTab({
   const [isDeactivateDialogOpen, setIsDeactivateDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [formData, setFormData] = useState<Partial<User>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const errorClass = (field: string) => (errors[field] ? 'border-red-500' : undefined);
+  const clearError = (field: string) =>
+    setErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
 
   // Filter users
   const filteredUsers = users.filter((user) => {
@@ -83,7 +102,32 @@ export function UsersTab({
     return matchesSearch && matchesRole && matchesStatus;
   });
 
+  const {
+    sorted: sortedUsers,
+    sortKey,
+    sortDir,
+    toggleSort,
+  } = useTableSort<User>(filteredUsers, (user, key) => {
+    switch (key) {
+      case 'nama':
+        return user.nama?.toLowerCase();
+      case 'nipNik':
+        return user.nipNik;
+      case 'email':
+        return user.email?.toLowerCase();
+      case 'peran':
+        return user.peran;
+      case 'status':
+        return user.status;
+      case 'terakhirMasuk':
+        return user.terakhirMasuk ? new Date(user.terakhirMasuk).getTime() : 0;
+      default:
+        return '';
+    }
+  });
+
   const handleAddUser = () => {
+    setErrors({});
     setFormData({
       peran: 'Viewer',
       assignedVillageId: null,
@@ -93,6 +137,7 @@ export function UsersTab({
   };
 
   const handleEditUser = (user: User) => {
+    setErrors({});
     setSelectedUser(user);
     setFormData(user);
     setIsEditDialogOpen(true);
@@ -103,52 +148,76 @@ export function UsersTab({
     setIsDeactivateDialogOpen(true);
   };
 
-  const handleSaveUser = () => {
-    if (!formData.nama || !formData.nipNik || !formData.email || !formData.peran) {
-      toast.error('Harap lengkapi semua field yang wajib diisi');
-      return;
+  const validateUser = () => {
+    const next: Record<string, string> = {};
+    const result = createUserSchema.safeParse({
+      email: formData.email ?? '',
+      nama: formData.nama ?? '',
+      nipNik: formData.nipNik ?? '',
+      peran: formData.peran,
+      assignedVillageId: formData.assignedVillageId ?? null,
+    });
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        const field = String(issue.path[0] ?? '');
+        if (field && !next[field]) next[field] = issue.message;
+      }
     }
-
+    if (!formData.peran) next.peran = 'Peran wajib dipilih';
     if (
       (formData.peran === 'Admin' || formData.peran === 'Verifikator') &&
       typeof formData.assignedVillageId !== 'number'
     ) {
-      toast.error('Desa penugasan wajib dipilih untuk Admin/Verifikator');
+      next.assignedVillageId = 'Desa penugasan wajib dipilih untuk Admin/Verifikator';
+    }
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  };
+
+  const handleSaveUser = () => {
+    if (!validateUser()) {
+      toast.error('Harap lengkapi field wajib yang ditandai merah');
       return;
     }
 
-    const newUser: User = {
-      id: new Date().getTime(),
-      nama: formData.nama,
-      nipNik: formData.nipNik,
-      email: formData.email,
-      peran: formData.peran as UserRole,
-      assignedVillageId: formData.assignedVillageId ?? null,
-      status: (formData.status as UserStatus) || 'Aktif',
-      nomorHP: formData.nomorHP || null,
-      clerkUserId: '',
-      terakhirMasuk: new Date(),
-    };
-
-    if (onUpdateUsers) {
+    if (onCreateUser) {
+      onCreateUser({
+        nama: formData.nama ?? '',
+        nipNik: formData.nipNik ?? '',
+        email: formData.email ?? '',
+        peran: formData.peran as UserRole,
+        assignedVillageId: formData.assignedVillageId ?? null,
+        status: (formData.status as UserStatus) || 'Aktif',
+        nomorHP: formData.nomorHP || null,
+      });
+    } else if (onUpdateUsers) {
+      const newUser: User = {
+        id: new Date().getTime(),
+        nama: formData.nama ?? '',
+        nipNik: formData.nipNik ?? '',
+        email: formData.email ?? '',
+        peran: formData.peran as UserRole,
+        assignedVillageId: formData.assignedVillageId ?? null,
+        status: (formData.status as UserStatus) || 'Aktif',
+        nomorHP: formData.nomorHP || null,
+        clerkUserId: null,
+        terakhirMasuk: null,
+      };
       onUpdateUsers([...users, newUser]);
     } else {
-      toast.error('Penambahan pengguna harus dilakukan melalui integrasi Clerk');
+      toast.error('Penambahan pengguna tidak tersedia.');
       return;
     }
     setIsAddDialogOpen(false);
     setFormData({});
-    toast.success('Pengguna berhasil ditambahkan.');
+    // Success toast is shown by the create mutation's onSuccess handler.
   };
 
   const handleUpdateUser = () => {
     if (!selectedUser) return;
 
-    if (
-      (formData.peran === 'Admin' || formData.peran === 'Verifikator') &&
-      typeof formData.assignedVillageId !== 'number'
-    ) {
-      toast.error('Desa penugasan wajib dipilih untuk Admin/Verifikator');
+    if (!validateUser()) {
+      toast.error('Harap lengkapi field wajib yang ditandai merah');
       return;
     }
 
@@ -275,24 +344,25 @@ export function UsersTab({
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50">
-              <TableHead>Nama</TableHead>
-              <TableHead>NIP/NIK</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Peran</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Terakhir Masuk</TableHead>
+              <SortableHead label="Nama" sortKey="nama" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+              <SortableHead label="NIP/NIK" sortKey="nipNik" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+              <SortableHead label="Email" sortKey="email" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+              <SortableHead label="Peran" sortKey="peran" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+              <SortableHead label="Status" sortKey="status" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+              <TableHead>Status Akun</TableHead>
+              <SortableHead label="Terakhir Masuk" sortKey="terakhirMasuk" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
               <TableHead className="text-right">Aksi</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredUsers.length === 0 ? (
+            {sortedUsers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                <TableCell colSpan={8} className="text-center py-8 text-gray-500">
                   Tidak ada pengguna yang ditemukan
                 </TableCell>
               </TableRow>
             ) : (
-              filteredUsers.map((user) => (
+              sortedUsers.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell>{user.nama}</TableCell>
                   <TableCell className="text-gray-600">{user.nipNik}</TableCell>
@@ -325,8 +395,25 @@ export function UsersTab({
                       {user.status}
                     </Badge>
                   </TableCell>
+                  <TableCell>
+                    {user.clerkUserId ? (
+                      <Badge
+                        variant="outline"
+                        className="border-green-600 text-green-700 bg-green-50"
+                      >
+                        Terhubung
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="border-amber-500 text-amber-700 bg-amber-50"
+                      >
+                        Menunggu login
+                      </Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="text-gray-600 text-sm">
-                    {user.terakhirMasuk?.toLocaleDateString() || '-'}
+                    {formatDateTime(user.terakhirMasuk)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
@@ -374,42 +461,54 @@ export function UsersTab({
           </DialogHeader>
 
           <div className="space-y-4">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+              Pengguna ditambahkan dengan status <strong>Menunggu login</strong>. Akun akan
+              otomatis terhubung saat pengguna login pertama kali via Clerk menggunakan email
+              yang sama. Email bisa memakai domain apa pun (tidak harus @gmail).
+            </div>
             <div>
-              <Label htmlFor="nama">Nama Lengkap *</Label>
+              <Label htmlFor="nama">Nama Lengkap<RequiredMark /></Label>
               <Input
                 id="nama"
                 value={formData.nama || ''}
-                onChange={(e) => setFormData({ ...formData, nama: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, nama: e.target.value }); clearError('nama'); }}
                 placeholder="Masukkan nama lengkap"
+                className={errorClass('nama')}
               />
+              <FieldError message={errors.nama} />
             </div>
 
             <div>
-              <Label htmlFor="nipNik">NIP/NIK *</Label>
+              <Label htmlFor="nipNik">NIP/NIK<RequiredMark /></Label>
               <Input
                 id="nipNik"
                 value={formData.nipNik || ''}
-                onChange={(e) => setFormData({ ...formData, nipNik: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, nipNik: e.target.value }); clearError('nipNik'); }}
                 placeholder="Masukkan NIP atau NIK"
+                className={errorClass('nipNik')}
               />
+              <FieldError message={errors.nipNik} />
             </div>
 
             <div>
-              <Label htmlFor="email">Email *</Label>
+              <Label htmlFor="email">Email<RequiredMark /></Label>
               <Input
                 id="email"
                 type="email"
                 value={formData.email || ''}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, email: e.target.value }); clearError('email'); }}
                 placeholder="nama@pemda.go.id"
+                className={errorClass('email')}
               />
+              <FieldError message={errors.email} />
             </div>
 
             <div>
-              <Label htmlFor="peran">Peran *</Label>
+              <Label htmlFor="peran">Peran<RequiredMark /></Label>
               <Select
                 value={formData.peran}
-                onValueChange={(value) =>
+                onValueChange={(value) => {
+                  clearError('peran');
                   setFormData({
                     ...formData,
                     peran: value as UserRole,
@@ -417,10 +516,10 @@ export function UsersTab({
                       value === 'Admin' || value === 'Verifikator'
                         ? formData.assignedVillageId ?? null
                         : null,
-                  })
-                }
+                  });
+                }}
               >
-                <SelectTrigger>
+                <SelectTrigger className={errorClass('peran')}>
                   <SelectValue placeholder="Pilih peran" />
                 </SelectTrigger>
                 <SelectContent>
@@ -436,33 +535,33 @@ export function UsersTab({
                   <SelectItem value="Viewer">Viewer</SelectItem>
                 </SelectContent>
               </Select>
+              <FieldError message={errors.peran} />
             </div>
 
             {(formData.peran === 'Admin' || formData.peran === 'Verifikator') && (
               <div>
-                <Label htmlFor="assignedVillageId">Desa Penugasan *</Label>
-                <Select
+                <Label htmlFor="assignedVillageId">Desa Penugasan<RequiredMark /></Label>
+                <SearchableSelect
+                  id="assignedVillageId"
                   disabled={!canManageVillageAssignment}
                   value={
                     typeof formData.assignedVillageId === 'number'
                       ? String(formData.assignedVillageId)
                       : ''
                   }
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, assignedVillageId: Number(value) })
-                  }
-                >
-                  <SelectTrigger id="assignedVillageId">
-                    <SelectValue placeholder="Pilih desa penugasan" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {villages.map((village) => (
-                      <SelectItem key={village.id} value={String(village.id)}>
-                        {village.namaDesa}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onValueChange={(value) => {
+                    clearError('assignedVillageId');
+                    setFormData({ ...formData, assignedVillageId: Number(value) });
+                  }}
+                  placeholder="Pilih desa penugasan"
+                  searchPlaceholder="Cari desa..."
+                  className={errorClass('assignedVillageId')}
+                  options={villages.map((village) => ({
+                    value: String(village.id),
+                    label: village.namaDesa,
+                  }))}
+                />
+                <FieldError message={errors.assignedVillageId} />
                 {!canManageVillageAssignment && (
                   <p className="mt-1 text-xs text-gray-500">
                     Hanya superadmin yang dapat mengubah penugasan desa.
@@ -503,38 +602,45 @@ export function UsersTab({
 
           <div className="space-y-4">
             <div>
-              <Label htmlFor="edit-nama">Nama Lengkap *</Label>
+              <Label htmlFor="edit-nama">Nama Lengkap<RequiredMark /></Label>
               <Input
                 id="edit-nama"
                 value={formData.nama || ''}
-                onChange={(e) => setFormData({ ...formData, nama: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, nama: e.target.value }); clearError('nama'); }}
+                className={errorClass('nama')}
               />
+              <FieldError message={errors.nama} />
             </div>
 
             <div>
-              <Label htmlFor="edit-nipNik">NIP/NIK *</Label>
+              <Label htmlFor="edit-nipNik">NIP/NIK<RequiredMark /></Label>
               <Input
                 id="edit-nipNik"
                 value={formData.nipNik || ''}
-                onChange={(e) => setFormData({ ...formData, nipNik: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, nipNik: e.target.value }); clearError('nipNik'); }}
+                className={errorClass('nipNik')}
               />
+              <FieldError message={errors.nipNik} />
             </div>
 
             <div>
-              <Label htmlFor="edit-email">Email *</Label>
+              <Label htmlFor="edit-email">Email<RequiredMark /></Label>
               <Input
                 id="edit-email"
                 type="email"
                 value={formData.email || ''}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, email: e.target.value }); clearError('email'); }}
+                className={errorClass('email')}
               />
+              <FieldError message={errors.email} />
             </div>
 
             <div>
-              <Label htmlFor="edit-peran">Peran *</Label>
+              <Label htmlFor="edit-peran">Peran<RequiredMark /></Label>
               <Select
                 value={formData.peran}
-                onValueChange={(value) =>
+                onValueChange={(value) => {
+                  clearError('peran');
                   setFormData({
                     ...formData,
                     peran: value as UserRole,
@@ -542,10 +648,10 @@ export function UsersTab({
                       value === 'Admin' || value === 'Verifikator'
                         ? formData.assignedVillageId ?? null
                         : null,
-                  })
-                }
+                  });
+                }}
               >
-                <SelectTrigger>
+                <SelectTrigger className={errorClass('peran')}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -561,33 +667,33 @@ export function UsersTab({
                   <SelectItem value="Viewer">Viewer</SelectItem>
                 </SelectContent>
               </Select>
+              <FieldError message={errors.peran} />
             </div>
 
             {(formData.peran === 'Admin' || formData.peran === 'Verifikator') && (
               <div>
-                <Label htmlFor="edit-assignedVillageId">Desa Penugasan *</Label>
-                <Select
+                <Label htmlFor="edit-assignedVillageId">Desa Penugasan<RequiredMark /></Label>
+                <SearchableSelect
+                  id="edit-assignedVillageId"
                   disabled={!canManageVillageAssignment}
                   value={
                     typeof formData.assignedVillageId === 'number'
                       ? String(formData.assignedVillageId)
                       : ''
                   }
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, assignedVillageId: Number(value) })
-                  }
-                >
-                  <SelectTrigger id="edit-assignedVillageId">
-                    <SelectValue placeholder="Pilih desa penugasan" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {villages.map((village) => (
-                      <SelectItem key={village.id} value={String(village.id)}>
-                        {village.namaDesa}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onValueChange={(value) => {
+                    clearError('assignedVillageId');
+                    setFormData({ ...formData, assignedVillageId: Number(value) });
+                  }}
+                  placeholder="Pilih desa penugasan"
+                  searchPlaceholder="Cari desa..."
+                  className={errorClass('assignedVillageId')}
+                  options={villages.map((village) => ({
+                    value: String(village.id),
+                    label: village.namaDesa,
+                  }))}
+                />
+                <FieldError message={errors.assignedVillageId} />
                 {!canManageVillageAssignment && (
                   <p className="mt-1 text-xs text-gray-500">
                     Hanya superadmin yang dapat mengubah penugasan desa.

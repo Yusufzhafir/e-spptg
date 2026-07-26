@@ -53,7 +53,6 @@ export const usersRouter = router({
   create: adminProcedure
     .input(
       createUserSchema.extend({
-        clerkUserId: z.string().min(1, 'Clerk User ID diperlukan'),
         nomorHP: z.string().optional(),
         status: z.enum(['Aktif', 'Nonaktif']).optional(),
       })
@@ -74,13 +73,25 @@ export const usersRouter = router({
         });
       }
 
+      // Prevent duplicates: the email is what links this pre-registered row to a
+      // Clerk account on first login, so it must be unique.
+      const existing = await queries.getUserByEmail(input.email);
+      if (existing) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'Email sudah terdaftar.',
+        });
+      }
+
       const assignedVillageId = normalizeAssignedVillageByRole(
         role,
         input.assignedVillageId
       );
 
+      // No Clerk account yet — the user is pre-registered and will be linked by
+      // email when they first log in via Clerk.
       return queries.createUser({
-        clerkUserId: input.clerkUserId,
+        clerkUserId: null,
         email: input.email,
         nama: input.nama,
         nipNik: input.nipNik,
@@ -132,8 +143,10 @@ export const usersRouter = router({
           : targetUser.assignedVillageId
       );
 
-      if (input.data.peran) {
-        
+      // Only sync to Clerk once the user is actually linked to a Clerk account.
+      // Pre-registered users (no clerkUserId yet) get their role from the DB row,
+      // which is applied to Clerk metadata when they first log in if needed.
+      if (input.data.peran && targetUser.clerkUserId) {
         try {
           const client = await clerkClient();
           await client.users.updateUserMetadata(targetUser.clerkUserId, {

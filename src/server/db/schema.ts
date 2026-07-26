@@ -103,7 +103,10 @@ export const users = pgTable(
       cache: 1,
     }),
     nama: varchar('nama', { length: 255 }).notNull(),
-    clerkUserId: varchar('clerk_user_id', { length: 255 }).notNull().unique(),
+    // Nullable: an admin can pre-register a user from the app before they have
+    // ever logged in via Clerk. The row is linked to a Clerk account (by email)
+    // on that user's first login. Unique still holds for non-null values.
+    clerkUserId: varchar('clerk_user_id', { length: 255 }).unique(),
     nipNik: varchar('nip_nik', { length: 20 }).notNull(),
     email: varchar('email', { length: 255 }).notNull(),
     peran: userRoleEnum('peran').notNull(),
@@ -421,5 +424,36 @@ export const comments = pgTable(
   },
   (t) => [
     index('comments_submission_idx').on(t.submissionId),
+  ]
+);
+
+// ============================================================================
+// NOTIFICATIONS TABLE (submission created/updated events)
+// ============================================================================
+
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({
+      name: "notifications_id_seq",
+      startWith: 1,
+      increment: 1,
+      minValue: 1,
+      maxValue: (9223372036854775807n) as unknown as number,
+      cache: 1,
+    }),
+    submissionId: bigint('submission_id', { mode: 'number' }).notNull(),
+    type: varchar('type', { length: 20 }).notNull(), // 'created' | 'updated'
+    status: statusSPPTGEnum('status').notNull(),
+    // Denormalised for cheap listing without a join
+    namaPemilik: varchar('nama_pemilik', { length: 255 }).notNull(),
+    villageId: bigint('village_id', { mode: 'number' }).notNull(),
+    ownerUserId: bigint('owner_user_id', { mode: 'number' }),
+    actorUserId: bigint('actor_user_id', { mode: 'number' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('notifications_created_idx').on(t.createdAt),
+    index('notifications_village_idx').on(t.villageId),
   ]
 );

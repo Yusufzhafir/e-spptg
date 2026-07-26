@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, Database, X, RefreshCw, FileText } from 'lucide-react';
 import { KPICard } from './KPICard';
 import { MapView } from './MapView';
-import { SubmissionsTable } from './SubmissionsTable';
+import { SubmissionsTable, type EditMode } from './SubmissionsTable';
 import { FilterPanel } from './FilterPanel';
 import { Submission, KPIData } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 
 interface DashboardProps {
   submissions: Submission[];
@@ -26,10 +26,12 @@ interface DashboardProps {
   desaOptions: Array<{ id: number; namaDesa: string }>;
   isRefreshing: boolean;
   onViewDetail: (submission: Submission) => void;
-  onEdit: (submission: Submission) => void;
+  onEdit: (submission: Submission, mode: EditMode) => void;
   onToggleValidity: (submission: Submission) => void;
   isTogglingValidity: boolean;
   onExportCsv: () => void;
+  /** Row to focus/highlight, driven by the ?focus= URL param (e.g. notifications) */
+  urlFocusId?: number | null;
 }
 
 export function Dashboard({
@@ -53,11 +55,28 @@ export function Dashboard({
   onToggleValidity,
   isTogglingValidity,
   onExportCsv,
+  urlFocusId,
 }: DashboardProps) {
   // Only submissions marked valid are drawn on the map (data & polygon).
   const validSubmissions = submissions.filter((s) => s.isValid);
-  // Row to focus/scroll to in the table when a map polygon is clicked.
-  const [focusSubmissionId, setFocusSubmissionId] = useState<number | null>(null);
+  // Row to focus/scroll to in the table (from a map polygon click or the
+  // ?focus= URL param set by notifications).
+  const [focusSubmissionId, setFocusSubmissionId] = useState<number | null>(urlFocusId ?? null);
+  useEffect(() => {
+    if (urlFocusId != null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync focus from URL/notification
+      setFocusSubmissionId(urlFocusId);
+    }
+  }, [urlFocusId]);
+
+  // SPPTG count per status for the bar chart
+  const statusBarData = [
+    { name: 'Terdaftar', count: kpiData['SPPTG terdaftar'], fill: '#22c55e' },
+    { name: 'Terdata', count: kpiData['SPPTG terdata'], fill: '#3b82f6' },
+    { name: 'Ditolak', count: kpiData['SPPTG ditolak'], fill: '#ef4444' },
+    { name: 'Ditinjau', count: kpiData['SPPTG ditinjau ulang'], fill: '#eab308' },
+  ];
+
   return (
     <div className="space-y-6">
       {/* KPI Cards */}
@@ -114,28 +133,53 @@ export function Dashboard({
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Tren Pengajuan</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={350}>
-              <LineChart data={monthlyData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="bulan" tick={{ fontSize: 12 }} />
-                <YAxis />
-                <Tooltip />
-                <Line
-                  type="monotone"
-                  dataKey="pengajuan"
-                  stroke="#3b82f6"
-                  strokeWidth={2}
-                  dot={{ fill: '#3b82f6' }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        <div className="flex flex-col gap-6">
+          {/* Top: submission trend (line) */}
+          <Card className="flex flex-1 flex-col">
+            <CardHeader>
+              <CardTitle>Tren Pengajuan</CardTitle>
+            </CardHeader>
+            <CardContent className="min-h-60 flex-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={monthlyData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="bulan" tick={{ fontSize: 12 }} />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Line
+                    type="monotone"
+                    dataKey="pengajuan"
+                    stroke="#3b82f6"
+                    strokeWidth={2}
+                    dot={{ fill: '#3b82f6' }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* Bottom: SPPTG count per status (bar) */}
+          <Card className="flex flex-1 flex-col">
+            <CardHeader>
+              <CardTitle>Jumlah SPPTG per Status</CardTitle>
+            </CardHeader>
+            <CardContent className="min-h-60 flex-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={statusBarData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} interval={0} />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                    {statusBarData.map((entry) => (
+                      <Cell key={entry.name} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Filter Panel */}

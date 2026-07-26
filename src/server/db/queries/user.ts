@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { UserRole, UserStatus } from '@/types';
 import { db, DBTransaction } from '../db';
 import { users } from '../schema';
@@ -13,6 +13,40 @@ export async function getUserByClerkId(clerkUserId: string, tx?: DBTransaction) 
   })
 }
 
+/** Any user with this email, regardless of link state. Used for dedup checks. */
+export async function getUserByEmail(email: string, tx?: DBTransaction) {
+  const queryDb = tx || db;
+  return queryDb.query.users.findFirst({
+    where: eq(users.email, email),
+  });
+}
+
+/**
+ * A user that was pre-registered from the app (no Clerk account linked yet)
+ * whose email matches. Used to link the row on first Clerk login.
+ */
+export async function getPendingUserByEmail(email: string, tx?: DBTransaction) {
+  const queryDb = tx || db;
+  return queryDb.query.users.findFirst({
+    where: and(eq(users.email, email), isNull(users.clerkUserId)),
+  });
+}
+
+/** Link a pre-registered app user to a Clerk account on first login. */
+export async function linkClerkAccount(
+  id: number,
+  clerkUserId: string,
+  tx?: DBTransaction
+) {
+  const queryDb = tx || db;
+  const result = await queryDb
+    .update(users)
+    .set({ clerkUserId, terakhirMasuk: new Date(), updatedAt: new Date() })
+    .where(eq(users.id, id))
+    .returning();
+  return result[0];
+}
+
 export async function getUserById(id: number, tx?: DBTransaction) {
   const queryDb = tx || db;
   return queryDb.query.users.findFirst(
@@ -23,7 +57,7 @@ export async function getUserById(id: number, tx?: DBTransaction) {
 }
 
 export async function createUser(data: {
-  clerkUserId: string;
+  clerkUserId?: string | null;
   email: string;
   nama: string;
   nipNik: string;
@@ -37,7 +71,7 @@ export async function createUser(data: {
   const result = await queryDb
     .insert(users)
     .values({
-      clerkUserId: data.clerkUserId,
+      clerkUserId: data.clerkUserId ?? null,
       email: data.email,
       nama: data.nama,
       nipNik: data.nipNik,
@@ -49,6 +83,15 @@ export async function createUser(data: {
     .returning();
 
   return result[0];
+}
+
+/** Record the user's last login time. */
+export async function touchUserLastLogin(id: number, tx?: DBTransaction) {
+  const queryDb = tx || db;
+  await queryDb
+    .update(users)
+    .set({ terakhirMasuk: new Date() })
+    .where(eq(users.id, id));
 }
 
 export async function listUsers(limit = 50, offset = 0, tx?: DBTransaction) {

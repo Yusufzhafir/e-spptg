@@ -26,6 +26,16 @@ export default function PengaturanPage() {
 
   const { data: currentUser } = trpc.auth.me.useQuery();
 
+  const createUserMutation = trpc.users.create.useMutation({
+    onSuccess: () => {
+      refetchUsers();
+      toast.success('Pengguna berhasil ditambahkan. Menunggu login pertama untuk terhubung.');
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Gagal menambahkan pengguna.');
+    },
+  });
+
   const updateUserMutation = trpc.users.update.useMutation({
     onSuccess: () => {
       refetchUsers();
@@ -153,6 +163,7 @@ export default function PengaturanPage() {
       tanggalUnggah:
         typeof a.tanggalUnggah === 'string' ? a.tanggalUnggah : new Date(a.tanggalUnggah).toISOString(),
       diunggahOleh: a.diunggahOleh,
+      diunggahOlehNama: a.diunggahOlehNama ?? null,
       statusValidasi: a.statusValidasi,
       aktifDiValidasi: a.aktifDiValidasi,
       warna: a.warna,
@@ -160,6 +171,20 @@ export default function PengaturanPage() {
       geomGeoJSON: a.geom as string | null,
     }));
   }, [prohibitedAreasData]);
+
+  const handleCreateUser = (
+    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'nomorHP' | 'status'>
+  ) => {
+    createUserMutation.mutate({
+      nama: data.nama,
+      nipNik: data.nipNik,
+      email: data.email,
+      peran: data.peran,
+      assignedVillageId: data.assignedVillageId ?? undefined,
+      status: data.status,
+      nomorHP: data.nomorHP || undefined,
+    });
+  };
 
   const handleUpdateUser = (
     id: number,
@@ -270,6 +295,7 @@ export default function PengaturanPage() {
         users={users}
         villages={villages}
         prohibitedAreas={prohibitedAreas}
+        onCreateUser={handleCreateUser}
         onUpdateUser={handleUpdateUser}
         onToggleUserStatus={handleToggleUserStatus}
         onUpdateProhibitedAreas={handleUpdateProhibitedAreas}

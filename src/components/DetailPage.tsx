@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { geomGeoJSONPolygonSchema } from '@/lib/validation';
 import { findCenter } from '@/lib/utils';
 import { trpc } from '@/trpc/client';
+import { formatDate } from '@/lib/format-date';
 
 interface DetailPageProps {
   submission: Submission;
@@ -193,7 +194,7 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
                 </div>
                 <div>
                   <p className="text-gray-600">Tanggal Pengajuan</p>
-                  <p>{submission.tanggalPengajuan.toLocaleDateString()}</p>
+                  <p>{formatDate(submission.tanggalPengajuan)}</p>
                 </div>
               </div>
             </div>

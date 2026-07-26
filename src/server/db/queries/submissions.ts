@@ -6,6 +6,7 @@ import {
     overlapResults,
     statusHistory,
     users,
+    villages,
 } from '../schema';
 import { FeedbackData, StatusSPPTG } from '@/types';
 
@@ -104,9 +105,12 @@ export async function listSubmissions(filters: {
             ...restOfTheColumn,
             // Resolve the verifikator's display name; null when the user was deleted
             verifikatorName: users.nama,
+            // Resolve the village's display name; null when the village was deleted
+            desaNama: villages.namaDesa,
         })
         .from(submissions)
         .leftJoin(users, eq(submissions.verifikator, users.id))
+        .leftJoin(villages, eq(submissions.villageId, villages.id))
         .where(
             conditions.length > 0 ? and(...conditions) : undefined
         ).offset(offset)

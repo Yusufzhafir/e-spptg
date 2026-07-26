@@ -1,0 +1,1 @@
+ALTER TABLE "users" ALTER COLUMN "clerk_user_id" DROP NOT NULL;
