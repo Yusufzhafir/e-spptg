@@ -54,11 +54,11 @@ interface UsersTabProps {
   canManageVillageAssignment?: boolean;
   onUpdateUsers?: (users: User[]) => void;
   onCreateUser?: (
-    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'nomorHP' | 'status'>
+    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'>
   ) => void;
   onUpdateUser?: (
     id: number,
-    data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'nomorHP' | 'status'>>
+    data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'>>
   ) => void;
   onToggleUserStatus?: (id: number) => void;
 }
@@ -74,6 +74,8 @@ export function UsersTab({
 }: UsersTabProps) {
   const { user: currentUser } = useAuthRole();
   const canAddUser = currentUser?.peran === 'Superadmin' || currentUser?.peran === 'Admin';
+  // Kecamatan options come from the villages reference data.
+  const kecamatanOptions = Array.from(new Set(villages.map((v) => v.kecamatan))).sort();
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -180,6 +182,9 @@ export function UsersTab({
     ) {
       next.assignedVillageId = 'Desa penugasan wajib dipilih untuk Admin/Verifikator';
     }
+    if (formData.peran === 'Kecamatan' && !formData.assignedKecamatan?.trim()) {
+      next.assignedKecamatan = 'Kecamatan penugasan wajib dipilih untuk peran Kecamatan';
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -197,6 +202,7 @@ export function UsersTab({
         email: formData.email ?? '',
         peran: formData.peran as UserRole,
         assignedVillageId: formData.assignedVillageId ?? null,
+        assignedKecamatan: formData.assignedKecamatan ?? null,
         status: (formData.status as UserStatus) || 'Aktif',
         nomorHP: formData.nomorHP || null,
       });
@@ -238,14 +244,19 @@ export function UsersTab({
         email: formData.email,
         peran: formData.peran as UserRole | undefined,
         assignedVillageId: formData.assignedVillageId ?? null,
+        assignedKecamatan: formData.assignedKecamatan ?? null,
         nomorHP: formData.nomorHP ?? null,
         status: formData.status as UserStatus | undefined,
       });
+      // Success toast comes from the update mutation's onSuccess — toasting
+      // here as well showed it twice, and did so even when the save failed.
     } else if (onUpdateUsers) {
       const updatedUsers = users.map((u) =>
         u.id === selectedUser.id ? { ...u, ...formData } : u
       );
       onUpdateUsers(updatedUsers);
+      // Local-only fallback has no mutation, so it reports success itself.
+      toast.success('Pengguna berhasil diperbarui.');
     } else {
       toast.error('Pembaruan pengguna tidak tersedia');
       return;
@@ -254,7 +265,6 @@ export function UsersTab({
     setIsEditDialogOpen(false);
     setSelectedUser(null);
     setFormData({});
-    toast.success('Pengguna berhasil diperbarui.');
   };
 
   const confirmDeactivate = () => {
@@ -556,6 +566,9 @@ export function UsersTab({
                   <SelectItem value="Verifikator" disabled={!canManageVillageAssignment}>
                     Verifikator
                   </SelectItem>
+                  <SelectItem value="Kecamatan" disabled={!canManageVillageAssignment}>
+                    Kecamatan
+                  </SelectItem>
                   <SelectItem value="Viewer">Viewer</SelectItem>
                 </SelectContent>
               </Select>
@@ -591,6 +604,26 @@ export function UsersTab({
                     Hanya superadmin yang dapat mengubah penugasan desa.
                   </p>
                 )}
+              </div>
+            )}
+
+            {formData.peran === 'Kecamatan' && (
+              <div>
+                <Label htmlFor="assignedKecamatan">Kecamatan Penugasan<RequiredMark /></Label>
+                <SearchableSelect
+                  id="assignedKecamatan"
+                  disabled={!canManageVillageAssignment}
+                  value={formData.assignedKecamatan ?? ''}
+                  onValueChange={(value) => {
+                    clearError('assignedKecamatan');
+                    setFormData({ ...formData, assignedKecamatan: value });
+                  }}
+                  placeholder="Pilih kecamatan penugasan"
+                  searchPlaceholder="Cari kecamatan..."
+                  className={errorClass('assignedKecamatan')}
+                  options={kecamatanOptions.map((k) => ({ value: k, label: k }))}
+                />
+                <FieldError message={errors.assignedKecamatan} />
               </div>
             )}
 
@@ -696,6 +729,9 @@ export function UsersTab({
                   <SelectItem value="Verifikator" disabled={!canManageVillageAssignment}>
                     Verifikator
                   </SelectItem>
+                  <SelectItem value="Kecamatan" disabled={!canManageVillageAssignment}>
+                    Kecamatan
+                  </SelectItem>
                   <SelectItem value="Viewer">Viewer</SelectItem>
                 </SelectContent>
               </Select>
@@ -731,6 +767,26 @@ export function UsersTab({
                     Hanya superadmin yang dapat mengubah penugasan desa.
                   </p>
                 )}
+              </div>
+            )}
+
+            {formData.peran === 'Kecamatan' && (
+              <div>
+                <Label htmlFor="edit-assignedKecamatan">Kecamatan Penugasan<RequiredMark /></Label>
+                <SearchableSelect
+                  id="edit-assignedKecamatan"
+                  disabled={!canManageVillageAssignment}
+                  value={formData.assignedKecamatan ?? ''}
+                  onValueChange={(value) => {
+                    clearError('assignedKecamatan');
+                    setFormData({ ...formData, assignedKecamatan: value });
+                  }}
+                  placeholder="Pilih kecamatan penugasan"
+                  searchPlaceholder="Cari kecamatan..."
+                  className={errorClass('assignedKecamatan')}
+                  options={kecamatanOptions.map((k) => ({ value: k, label: k }))}
+                />
+                <FieldError message={errors.assignedKecamatan} />
               </div>
             )}
 

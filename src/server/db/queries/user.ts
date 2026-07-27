@@ -63,6 +63,7 @@ export async function createUser(data: {
   nipNik: string;
   peran?: UserRole;
   assignedVillageId?: number | null;
+  assignedKecamatan?: string | null;
   nomorHP?: string;
   status?: UserStatus;
 }, tx?: DBTransaction) {
@@ -77,6 +78,7 @@ export async function createUser(data: {
       nipNik: data.nipNik,
       peran: data.peran || 'Viewer',
       assignedVillageId: data.assignedVillageId ?? null,
+      assignedKecamatan: data.assignedKecamatan ?? null,
       status: data.status || 'Aktif',
       nomorHP: data.nomorHP || null,
     })

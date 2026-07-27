@@ -9,8 +9,10 @@ import { assertCanManageUser } from '@/server/authz';
 import { TRPCError } from '@trpc/server';
 import { clerkClient } from '@clerk/nextjs/server';
 
+type AssignableRole = 'Superadmin' | 'Admin' | 'Verifikator' | 'Kecamatan' | 'Viewer';
+
 function normalizeAssignedVillageByRole(
-  role: 'Superadmin' | 'Admin' | 'Verifikator' | 'Viewer',
+  role: AssignableRole,
   assignedVillageId: number | null | undefined
 ) {
   if (role === 'Admin' || role === 'Verifikator') {
@@ -24,6 +26,27 @@ function normalizeAssignedVillageByRole(
   }
 
   return null;
+}
+
+/**
+ * Only the 'Kecamatan' role carries a kecamatan scope, and it is mandatory —
+ * without it the account would have no data to oversee. Every other role stores
+ * null so a stale value can never widen someone's access later.
+ */
+function normalizeAssignedKecamatanByRole(
+  role: AssignableRole,
+  assignedKecamatan: string | null | undefined
+) {
+  if (role !== 'Kecamatan') return null;
+
+  const kecamatan = assignedKecamatan?.trim();
+  if (!kecamatan) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Peran Kecamatan wajib memiliki satu kecamatan penugasan.',
+    });
+  }
+  return kecamatan;
 }
 
 export const usersRouter = router({
@@ -105,6 +128,10 @@ export const usersRouter = router({
         role,
         input.assignedVillageId
       );
+      const assignedKecamatan = normalizeAssignedKecamatanByRole(
+        role,
+        input.assignedKecamatan
+      );
 
       // No Clerk account yet — the user is pre-registered and will be linked by
       // email when they first log in via Clerk.
@@ -115,6 +142,7 @@ export const usersRouter = router({
         nipNik: input.nipNik,
         peran: role,
         assignedVillageId,
+        assignedKecamatan,
         status: input.status,
         nomorHP: input.nomorHP,
       });
@@ -170,6 +198,12 @@ export const usersRouter = router({
           ? input.data.assignedVillageId
           : targetUser.assignedVillageId
       );
+      const nextAssignedKecamatan = normalizeAssignedKecamatanByRole(
+        nextRole,
+        input.data.assignedKecamatan !== undefined
+          ? input.data.assignedKecamatan
+          : targetUser.assignedKecamatan
+      );
 
       // Only sync to Clerk once the user is actually linked to a Clerk account.
       // Pre-registered users (no clerkUserId yet) get their role from the DB row,
@@ -190,6 +224,7 @@ export const usersRouter = router({
       return queries.updateUser(input.id, {
         ...input.data,
         assignedVillageId: nextAssignedVillageId,
+        assignedKecamatan: nextAssignedKecamatan,
       });
     }),
 

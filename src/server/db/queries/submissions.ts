@@ -13,6 +13,8 @@ import { FeedbackData, StatusSPPTG } from '@/types';
 type SubmissionScopeFilters = {
     ownerUserId?: number;
     villageId?: number;
+    /** Scope for the 'Kecamatan' role — every desa in one kecamatan. */
+    scopeKecamatan?: string;
 };
 
 function buildScopeConditions(filters: SubmissionScopeFilters) {
@@ -22,6 +24,17 @@ function buildScopeConditions(filters: SubmissionScopeFilters) {
     }
     if (filters.villageId !== undefined) {
         conditions.push(eq(submissions.villageId, filters.villageId));
+    }
+    if (filters.scopeKecamatan !== undefined) {
+        // Resolve the kecamatan through `villages`, NOT submissions.kecamatan:
+        // that column is free text captured when the submission was created and
+        // is frequently stale or empty, so matching on it silently returned
+        // nothing. The desa -> kecamatan mapping in `villages` is authoritative.
+        conditions.push(
+            sql`${submissions.villageId} IN (
+                SELECT id FROM villages WHERE LOWER(kecamatan) = LOWER(${filters.scopeKecamatan})
+            )`
+        );
     }
     return conditions;
 }
@@ -90,9 +103,11 @@ export async function getSubmissionById(
 ) {
     const queryDb = tx || db;
     const {geom,...rest} = getTableColumns(submissions)
-    // Resolve the desa name so the detail page can show it instead of a raw id.
+    // Resolve the desa name (shown instead of a raw id) and the desa's kecamatan
+    // (authoritative for the 'Kecamatan' role — submissions.kecamatan is stale
+    // free text and must not be used for access decisions).
     const [result] = await queryDb
-        .select({ ...rest, desaNama: villages.namaDesa })
+        .select({ ...rest, desaNama: villages.namaDesa, desaKecamatan: villages.kecamatan })
         .from(submissions)
         .leftJoin(villages, eq(submissions.villageId, villages.id))
         .where(eq(submissions.id, id))
@@ -110,6 +125,7 @@ export async function listSubmissions(filters: {
     dateTo?: string;
     ownerUserId?: number;
     villageId?: number;
+    scopeKecamatan?: string;
     limit?: number;
     offset?: number;
 },
@@ -125,6 +141,7 @@ export async function listSubmissions(filters: {
         dateTo,
         ownerUserId,
         villageId,
+        scopeKecamatan,
         limit = 50,
         offset = 0
     } = filters;
@@ -132,6 +149,7 @@ export async function listSubmissions(filters: {
     const conditions = buildSubmissionConditions({
         ownerUserId,
         villageId,
+        scopeKecamatan,
         search,
         status,
         desaId,
@@ -147,6 +165,8 @@ export async function listSubmissions(filters: {
             verifikatorName: users.nama,
             // Resolve the village's display name; null when the village was deleted
             desaNama: villages.namaDesa,
+            // Authoritative kecamatan (submissions.kecamatan is stale free text)
+            desaKecamatan: villages.kecamatan,
         })
         .from(submissions)
         .leftJoin(users, eq(submissions.verifikator, users.id))
@@ -160,7 +180,8 @@ export async function listSubmissions(filters: {
         )
 
     const totalResult = await queryDb
-        .select({ count: sql<number>`count(*)` })
+        // ::int so this really is a number, matching the declared type
+        .select({ count: sql<number>`count(*)::int` })
         .from(submissions)
         .where(conditions.length > 0 ? and(...conditions) : undefined);
 
@@ -295,7 +316,10 @@ export async function getMonthlyStats(
     const result = await queryDb
         .select({
             month: sql<string>`TO_CHAR(${submissions.tanggalPengajuan}, 'YYYY-MM')`,
-            count: sql<number>`count(*)`,
+            // ::int matters — a bare count(*) is bigint, which node-postgres
+            // returns as a *string*. Recharts then compares those lexically
+            // ("10" < "8"), capping the Y axis at 8 and clipping bigger months.
+            count: sql<number>`count(*)::int`,
         })
         .from(submissions)
         .where(conditions.length > 0 ? and(...conditions) : undefined)

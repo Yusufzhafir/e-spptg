@@ -21,6 +21,8 @@ export const userRoleEnum = pgEnum('user_role', [
   'Superadmin',
   'Admin',
   'Verifikator',
+  // Read-only oversight for every desa in one kecamatan.
+  'Kecamatan',
   'Viewer',
 ]);
 
@@ -111,6 +113,8 @@ export const users = pgTable(
     email: varchar('email', { length: 255 }).notNull(),
     peran: userRoleEnum('peran').notNull(),
     assignedVillageId: bigint('assigned_village_id', { mode: 'number' }),
+    // Scope for the 'Kecamatan' role: every submission in this kecamatan.
+    assignedKecamatan: varchar('assigned_kecamatan', { length: 255 }),
     status: userStatusEnum('status').notNull().default('Aktif'),
     nomorHP: varchar('nomor_hp', { length: 15 }),
     terakhirMasuk: timestamp('terakhir_masuk'),

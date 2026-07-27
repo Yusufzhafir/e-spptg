@@ -4,7 +4,7 @@ import { createContext, useContext, ReactNode } from 'react';
 import { useAuth as useClerkAuth } from '@clerk/nextjs';
 import { trpc } from '@/trpc/client';
 
-type UserRole = 'Superadmin' | 'Admin' | 'Verifikator' | 'Viewer';
+type UserRole = 'Superadmin' | 'Admin' | 'Verifikator' | 'Kecamatan' | 'Viewer';
 
 type User = {
   id: number;
@@ -12,6 +12,7 @@ type User = {
   email: string;
   peran: UserRole;
   assignedVillageId: number | null;
+  assignedKecamatan: string | null;
   clerkUserId: string;
 };
 

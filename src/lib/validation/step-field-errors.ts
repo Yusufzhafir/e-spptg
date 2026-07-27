@@ -43,6 +43,11 @@ export function validateStep1Fields(draft: SubmissionDraft): StepFieldErrors {
     errors.dokumenPermohonan = 'Dokumen Surat Permohonan wajib diunggah';
   }
 
+  if (!draft.dokumenTidakSengketa) {
+    errors.dokumenTidakSengketa =
+      'Dokumen Surat Pernyataan Tidak Sengketa wajib diunggah';
+  }
+
   if (!draft.persetujuanData) {
     errors.persetujuanData =
       'Anda wajib mencentang pernyataan ini sebelum melanjutkan';

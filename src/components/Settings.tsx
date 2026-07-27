@@ -48,11 +48,11 @@ interface SettingsProps {
   prohibitedAreas: ProhibitedArea[];
   onUpdateUsers?: (users: User[]) => void;
   onCreateUser?: (
-    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'nomorHP' | 'status'>
+    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'>
   ) => void;
   onUpdateUser?: (
     id: number,
-    data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'nomorHP' | 'status'>>
+    data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'>>
   ) => void;
   onToggleUserStatus?: (id: number) => void;
   onUpdateVillages?: (villages: Village[]) => void; // Keep for backward compatibility

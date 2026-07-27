@@ -17,6 +17,7 @@ type SubmissionListItem = {
   email: string;
   villageId: number;
   desaNama?: string | null;
+  desaKecamatan?: string | null;
   kecamatan: string;
   kabupaten: string;
   luas: number;
@@ -194,6 +195,7 @@ export default function DashboardPageClient() {
     email: s.email,
     villageId: s.villageId,
     desaNama: s.desaNama ?? null,
+    desaKecamatan: s.desaKecamatan ?? null,
     kecamatan: s.kecamatan,
     kabupaten: s.kabupaten,
     luas: s.luas,
@@ -226,7 +228,8 @@ export default function DashboardPageClient() {
   const monthlyItems = (monthlyStatsData || []) as MonthlyStatItem[];
   const monthlyData = monthlyItems.map((stat) => ({
     bulan: stat.month,
-    pengajuan: stat.count,
+    // Coerce defensively: a string here silently breaks the chart's Y scale.
+    pengajuan: Number(stat.count) || 0,
   }));
 
   const villageItems = (villagesData || []) as VillageListItem[];

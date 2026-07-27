@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { RequireRole } from '@/components/RequireRole';
 import { useRouter } from 'next/navigation';
 import { trpc } from '@/trpc/client';
 import { Button } from '@/components/ui/button';
@@ -205,6 +206,12 @@ export default function DraftsListPage() {
   };
 
   return (
+    // 'Kecamatan' is dashboard-only oversight — no access to the pengajuan menu.
+    <RequireRole
+      allowedRoles={['Superadmin', 'Admin', 'Verifikator', 'Viewer']}
+      showError={true}
+      redirectTo="/app"
+    >
     <div className="space-y-6">
       {/* Header */}
       <div>
@@ -496,5 +503,6 @@ export default function DraftsListPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </RequireRole>
   );
 }

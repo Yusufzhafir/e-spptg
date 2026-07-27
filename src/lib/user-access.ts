@@ -24,6 +24,8 @@ const ROLE_LEVEL: Record<UserRole, number> = {
   Superadmin: 3,
   Admin: 2,
   Verifikator: 1,
+  // Read-only oversight: ranks alongside Viewer, manages nobody.
+  Kecamatan: 0,
   Viewer: 0,
 };
 

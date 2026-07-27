@@ -248,17 +248,20 @@ export function Step1DocumentUpload({
             <FieldError message={errors.dokumenPermohonan} />
           </div>
 
-          <FileUploadField
-            label="Surat Pernyataan Tidak Sengketa"
-            accept=".pdf"
-            maxSize={10}
-            value={draft.dokumenTidakSengketa}
-            onChange={(doc) => onPersistDraftPatch({ dokumenTidakSengketa: doc })}
-            category="Tidak Sengketa"
-            draftId={draft.id}
-            templateType="surat_pernyataan_tidak_sengketa.docx"
-            required={false}
-          />
+          <div>
+            <FileUploadField
+              label="Surat Pernyataan Tidak Sengketa"
+              accept=".pdf"
+              maxSize={10}
+              value={draft.dokumenTidakSengketa}
+              onChange={(doc) => onPersistDraftPatch({ dokumenTidakSengketa: doc })}
+              category="Tidak Sengketa"
+              draftId={draft.id}
+              templateType="surat_pernyataan_tidak_sengketa.docx"
+              error={Boolean(errors.dokumenTidakSengketa)}
+            />
+            <FieldError message={errors.dokumenTidakSengketa} />
+          </div>
         </div>
       </div>
 

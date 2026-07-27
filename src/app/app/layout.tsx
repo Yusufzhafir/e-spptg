@@ -57,7 +57,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       email: data.email || '',
       villageId: data.villageId || 0,
       kecamatan: data.kecamatan || '',
-      kabupaten: data.kabupaten || 'Cirebon',
+      kabupaten: data.kabupaten || '',
       luas: data.luas || 0,
       penggunaanLahan: data.penggunaanLahan || '',
       catatan: data.catatan || null,
@@ -119,7 +119,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       email: '',
       villageId: 0, // Need to get this from draft
       kecamatan: '',
-      kabupaten: 'Cirebon',
+      kabupaten: '',
       luas: draft.luasLahan || 0,
       penggunaanLahan: '',
       catatan: null,

@@ -80,9 +80,15 @@ export function Dashboard({
   // The trend chart must stay readable as months accumulate: past ~8 points the
   // labels collide and the line gets squeezed, so give every point a minimum
   // width (scrolling horizontally instead of compressing) and tilt the labels.
+  // The chart area gets an explicit pixel height — a percentage height inside a
+  // scroll container loses the space taken by the horizontal scrollbar, which
+  // clipped the bottom of the line once enough points appeared.
   const trendPointCount = monthlyData.length;
   const isTrendCrowded = trendPointCount > 8;
   const trendMinWidth = Math.max(trendPointCount * 64, 280);
+  // Tilted labels need more vertical room than horizontal ones.
+  const trendHeight = isTrendCrowded ? 300 : 240;
+  const trendAxisHeight = isTrendCrowded ? 68 : 30;
 
   return (
     <div className="space-y-6">
@@ -146,15 +152,15 @@ export function Dashboard({
             <CardHeader>
               <CardTitle>Tren Pengajuan</CardTitle>
             </CardHeader>
-            <CardContent className="min-h-60 flex-1">
+            <CardContent className="flex-1">
               {/* Scrolls sideways once the points no longer fit, so the line is
                   never squashed and no label is clipped. */}
-              <div className="h-full w-full overflow-x-auto">
-                <div className="h-full min-h-60" style={{ minWidth: `${trendMinWidth}px` }}>
+              <div className="w-full overflow-x-auto pb-1">
+                <div style={{ minWidth: `${trendMinWidth}px`, height: `${trendHeight}px` }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart
                       data={monthlyData}
-                      margin={{ top: 8, right: 16, left: 0, bottom: isTrendCrowded ? 24 : 4 }}
+                      margin={{ top: 8, right: 16, left: 0, bottom: 4 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis
@@ -163,7 +169,7 @@ export function Dashboard({
                         interval={0}
                         angle={isTrendCrowded ? -45 : 0}
                         textAnchor={isTrendCrowded ? 'end' : 'middle'}
-                        height={isTrendCrowded ? 56 : 30}
+                        height={trendAxisHeight}
                       />
                       <YAxis allowDecimals={false} width={36} />
                       <Tooltip />

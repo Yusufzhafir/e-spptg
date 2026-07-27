@@ -313,6 +313,7 @@ export const submissionsRouter = router({
             assertCanAccessSubmission(ctx.appUser!, {
                 ownerUserId: submission.ownerUserId,
                 villageId: submission.villageId,
+                desaKecamatan: submission.desaKecamatan,
             });
 
             return submission;
@@ -331,6 +332,7 @@ export const submissionsRouter = router({
                 dateTo: input.dateTo,
                 ownerUserId: scope.ownerUserId,
                 villageId: scope.villageId,
+                scopeKecamatan: scope.scopeKecamatan,
                 limit: input.limit,
                 offset: input.offset,
             });
@@ -350,6 +352,7 @@ export const submissionsRouter = router({
             assertCanAccessSubmission(ctx.appUser!, {
                 ownerUserId: submission.ownerUserId,
                 villageId: submission.villageId,
+                desaKecamatan: submission.desaKecamatan,
             });
 
             const overlaps = await submissionQueries.getSubmissionOverlaps(
@@ -455,6 +458,7 @@ export const submissionsRouter = router({
                 assertCanAccessSubmission(ctx.appUser!, {
                     ownerUserId: submission.ownerUserId,
                     villageId: submission.villageId,
+                    desaKecamatan: submission.desaKecamatan,
                 });
 
                 // Rejecting or sending back for revision must be justified —
@@ -509,6 +513,7 @@ export const submissionsRouter = router({
             assertCanAccessSubmission(ctx.appUser!, {
                 ownerUserId: submission.ownerUserId,
                 villageId: submission.villageId,
+                desaKecamatan: submission.desaKecamatan,
             });
 
             const result = await submissionQueries.updateSubmissionValidity(

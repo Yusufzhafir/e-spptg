@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, type DBTransaction } from '../db';
 import { notifications } from '../schema';
 import type { StatusSPPTG } from '@/types';
@@ -28,9 +28,10 @@ export async function createNotification(
  */
 export async function listNotificationsScoped(
   scope: {
-    role: 'Superadmin' | 'Admin' | 'Verifikator' | 'Viewer';
+    role: 'Superadmin' | 'Admin' | 'Verifikator' | 'Kecamatan' | 'Viewer';
     userId: number;
     assignedVillageId?: number | null;
+    assignedKecamatan?: string | null;
   },
   limit = 30,
   tx?: DBTransaction
@@ -40,6 +41,14 @@ export async function listNotificationsScoped(
   const conditions = [];
   if (scope.role === 'Viewer') {
     conditions.push(eq(notifications.ownerUserId, scope.userId));
+  } else if (scope.role === 'Kecamatan') {
+    // Notifications carry a villageId, so resolve the kecamatan through villages.
+    if (!scope.assignedKecamatan?.trim()) return [];
+    conditions.push(
+      sql`${notifications.villageId} IN (
+        SELECT id FROM villages WHERE LOWER(kecamatan) = LOWER(${scope.assignedKecamatan.trim()})
+      )`
+    );
   } else if (scope.role !== 'Superadmin') {
     if (scope.assignedVillageId == null) return [];
     conditions.push(eq(notifications.villageId, scope.assignedVillageId));

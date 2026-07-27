@@ -131,6 +131,7 @@ export const draftsRouter = router({
       assertCanAccessSubmission(ctx.appUser!, {
         ownerUserId: submission.ownerUserId,
         villageId: submission.villageId,
+        desaKecamatan: submission.desaKecamatan,
       });
 
       if (isPrivilegedProcessor(ctx.appUser!)) {
@@ -163,7 +164,7 @@ export const draftsRouter = router({
         alamatKTP: submission.alamat,
         email: submission.email,
         villageId: submission.villageId,
-        kecamatan: submission.kecamatan,
+        desaKecamatan: submission.desaKecamatan,
         kabupaten: submission.kabupaten,
         penggunaanLahan: submission.penggunaanLahan,
         catatan: submission.catatan,

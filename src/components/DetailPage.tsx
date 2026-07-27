@@ -184,12 +184,15 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
                 </div>
                 <div>
                   <p className="text-gray-600">Penggunaan</p>
-                  <p>{submission.penggunaanLahan}</p>
+                  <p>{submission.penggunaanLahan || '-'}</p>
                 </div>
                 <div>
                   <p className="text-gray-600">Lokasi</p>
                   <p>
-                    {submission.desaNama || `Desa #${submission.villageId}`}, {submission.kecamatan}
+                    {submission.desaNama || `Desa #${submission.villageId}`}
+                    {submission.desaKecamatan || submission.kecamatan
+                      ? `, ${submission.desaKecamatan || submission.kecamatan}`
+                      : ''}
                   </p>
                 </div>
                 <div>
@@ -280,7 +283,7 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Penggunaan Lahan</p>
-                      <p>{submission.penggunaanLahan}</p>
+                      <p>{submission.penggunaanLahan || '-'}</p>
                     </div>
                     {submission.catatan && (
                       <div>

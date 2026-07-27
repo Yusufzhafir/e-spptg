@@ -191,12 +191,16 @@ export async function saveDraftStep(
 export async function listAccessibleDrafts(
   scope: {
     userId: number;
-    role: 'Superadmin' | 'Admin' | 'Verifikator' | 'Viewer';
+    role: 'Superadmin' | 'Admin' | 'Verifikator' | 'Kecamatan' | 'Viewer';
     assignedVillageId?: number;
   },
   tx?: DBTransaction
 ) {
   const queryDb = tx || db;
+  // 'Kecamatan' is read-only dashboard oversight and takes no part in the
+  // pengajuan workflow, so it has no drafts at all.
+  if (scope.role === 'Kecamatan') return [];
+
   const isSuperadmin = scope.role === 'Superadmin';
   const isViewer = scope.role === 'Viewer';
 

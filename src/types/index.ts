@@ -24,6 +24,8 @@ export interface Submission {
   villageId: number;
   /** Resolved village display name (null when the village no longer exists) */
   desaNama?: string | null;
+  /** The desa's kecamatan; `kecamatan` above is stale free text. */
+  desaKecamatan?: string | null;
   kecamatan: string;
   kabupaten: string;
   luas: number; // m²
@@ -94,6 +96,8 @@ export interface User {
   email: string;
   peran: UserRole;
   assignedVillageId: number | null;
+  /** Scope for the 'Kecamatan' role. */
+  assignedKecamatan?: string | null;
   status: UserStatus;
   nomorHP: string | null;
   terakhirMasuk: Date | null;

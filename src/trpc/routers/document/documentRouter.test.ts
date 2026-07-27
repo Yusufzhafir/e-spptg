@@ -70,6 +70,7 @@ function createCtx(
     nipNik: '12345',
     peran,
     assignedVillageId,
+    assignedKecamatan: null,
     status: 'Aktif',
     nomorHP: null,
     terakhirMasuk: null,

@@ -45,6 +45,7 @@ function ctx(peran: UserRole, userId: number, assignedVillageId: number | null =
     nipNik: '12345',
     peran,
     assignedVillageId,
+    assignedKecamatan: null,
     status: 'Aktif',
     nomorHP: null,
     terakhirMasuk: null,
