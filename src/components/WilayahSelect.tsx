@@ -10,11 +10,43 @@ import { FieldError } from './FieldError';
 type Region = { id: string; name: string };
 
 const BASE = 'https://www.emsifa.com/api-wilayah-indonesia/api';
+/** Offline copy of the same dataset, served from /public. */
+const FALLBACK_URL = '/data/wilayah.json';
 
-async function fetchRegions(url: string): Promise<Region[]> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('Gagal memuat data wilayah');
-  return (await res.json()) as Region[];
+type WilayahFallback = {
+  provinces: Region[];
+  regencies: Record<string, Region[]>;
+  districts: Record<string, Region[]>;
+};
+
+let fallbackPromise: Promise<WilayahFallback> | null = null;
+
+/** Load (once) and cache the bundled dataset. */
+function loadFallback(): Promise<WilayahFallback> {
+  fallbackPromise ??= fetch(FALLBACK_URL).then((res) => {
+    if (!res.ok) throw new Error('Gagal memuat data wilayah cadangan');
+    return res.json() as Promise<WilayahFallback>;
+  });
+  return fallbackPromise;
+}
+
+/**
+ * Fetch a region list from the public wilayah API, falling back to the bundled
+ * JSON when that API is unreachable or erroring — the form stays usable offline
+ * or during an outage.
+ */
+async function fetchRegions(
+  url: string,
+  pick: (data: WilayahFallback) => Region[] | undefined
+): Promise<Region[]> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Gagal memuat data wilayah');
+    return (await res.json()) as Region[];
+  } catch {
+    const data = await loadFallback();
+    return pick(data) ?? [];
+  }
 }
 
 /** Build select options, injecting the stored value if it isn't in the fetched
@@ -58,7 +90,7 @@ interface WilayahSelectProps {
 export function WilayahSelect({ value, onChange, errors = {}, idPrefix = '' }: WilayahSelectProps) {
   const provincesQuery = useQuery({
     queryKey: ['wilayah', 'provinces'],
-    queryFn: () => fetchRegions(`${BASE}/provinces.json`),
+    queryFn: () => fetchRegions(`${BASE}/provinces.json`, (d) => d.provinces),
     staleTime: Infinity,
   });
 
@@ -69,7 +101,11 @@ export function WilayahSelect({ value, onChange, errors = {}, idPrefix = '' }: W
 
   const regenciesQuery = useQuery({
     queryKey: ['wilayah', 'regencies', provinceId],
-    queryFn: () => fetchRegions(`${BASE}/regencies/${provinceId}.json`),
+    queryFn: () =>
+      fetchRegions(
+        `${BASE}/regencies/${provinceId}.json`,
+        (d) => d.regencies[provinceId!]
+      ),
     enabled: Boolean(provinceId),
     staleTime: Infinity,
   });
@@ -81,7 +117,11 @@ export function WilayahSelect({ value, onChange, errors = {}, idPrefix = '' }: W
 
   const districtsQuery = useQuery({
     queryKey: ['wilayah', 'districts', regencyId],
-    queryFn: () => fetchRegions(`${BASE}/districts/${regencyId}.json`),
+    queryFn: () =>
+      fetchRegions(
+        `${BASE}/districts/${regencyId}.json`,
+        (d) => d.districts[regencyId!]
+      ),
     enabled: Boolean(regencyId),
     staleTime: Infinity,
   });
