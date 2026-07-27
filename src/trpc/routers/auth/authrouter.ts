@@ -8,6 +8,7 @@ export const authRouter = router({
       email: ctx.appUser!.email,
       peran: ctx.appUser!.peran,
       assignedVillageId: ctx.appUser!.assignedVillageId,
+      assignedKecamatan: ctx.appUser!.assignedKecamatan,
       clerkUserId: ctx.userId,
     };
   }),

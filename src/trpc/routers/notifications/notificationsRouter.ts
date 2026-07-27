@@ -8,6 +8,7 @@ export const notificationsRouter = router({
       role: user.peran,
       userId: user.id,
       assignedVillageId: user.assignedVillageId,
+      assignedKecamatan: user.assignedKecamatan,
     });
     return rows.map((n) => ({
       id: n.id,

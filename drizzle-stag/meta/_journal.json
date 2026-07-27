@@ -78,6 +78,13 @@
       "when": 1785200000000,
       "tag": "0010_fix_overlap_geom_type",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785300000000,
+      "tag": "0011_kecamatan_role",
+      "breakpoints": true
     }
   ]
 }

@@ -144,3 +144,49 @@
     --sidebar-ring: oklch(0.439 0 0);
   }
 }
+@layer base {
+  /*
+   * Thin scrollbars everywhere — page, tables, dialogs, map panels, any
+   * overflow container. Firefox uses the standard properties; Chromium/Safari
+   * need the -webkit pseudo-elements.
+   */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(203 213 225) transparent; /* slate-300 on transparent */
+  }
+
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: rgb(203 213 225); /* slate-300 */
+    border-radius: 9999px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(148 163 184); /* slate-400 */
+  }
+
+  /* Keep the corner where two scrollbars meet from showing a grey square */
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  .dark * {
+    scrollbar-color: rgb(71 85 105) transparent; /* slate-600 */
+  }
+
+  .dark *::-webkit-scrollbar-thumb {
+    background-color: rgb(71 85 105);
+  }
+
+  .dark *::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(100 116 139); /* slate-500 */
+  }
+}

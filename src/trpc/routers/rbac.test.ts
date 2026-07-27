@@ -67,7 +67,12 @@ const findOverlapsMock = vi.mocked(postgis.findOverlappingSubmissions);
 const VILLAGE_A = 10;
 const VILLAGE_B = 20;
 
-function ctx(peran: UserRole, userId: number, assignedVillageId: number | null = null) {
+function ctx(
+  peran: UserRole,
+  userId: number,
+  assignedVillageId: number | null = null,
+  assignedKecamatan: string | null = null
+) {
   const appUser: NonNullable<TRPCContext['appUser']> = {
     id: userId,
     nama: `${peran} User`,
@@ -76,6 +81,7 @@ function ctx(peran: UserRole, userId: number, assignedVillageId: number | null =
     nipNik: '12345',
     peran,
     assignedVillageId,
+    assignedKecamatan,
     status: 'Aktif',
     nomorHP: null,
     terakhirMasuk: null,
@@ -89,6 +95,7 @@ const SUPERADMIN = () => ctx('Superadmin', 1);
 const ADMIN = () => ctx('Admin', 2, VILLAGE_A);
 const VERIFIKATOR = () => ctx('Verifikator', 3, VILLAGE_A);
 const VIEWER = () => ctx('Viewer', 4);
+const KECAMATAN = () => ctx('Kecamatan', 5, null, 'Sukasari');
 
 /** Assert a call is rejected by the role guard (FORBIDDEN / UNAUTHORIZED). */
 async function expectForbidden(promise: Promise<unknown>) {
@@ -337,5 +344,70 @@ describe('CRUD Kawasan Non-SPPTG', () => {
 
     await prohibitedAreasRouter.createCaller(VIEWER()).checkOverlaps();
     expect(findOverlapsMock).toHaveBeenLastCalledWith({ ownerUserId: 4 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5. Kecamatan — read-only oversight of every desa in one kecamatan
+// ---------------------------------------------------------------------------
+describe('Kecamatan role', () => {
+  it('is scoped to its own kecamatan on the dashboard', async () => {
+    await submissionsRouter.createCaller(KECAMATAN()).list({ limit: 50, offset: 0 });
+    const args = listSubmissionsMock.mock.calls[0][0];
+    expect(args.scopeKecamatan).toBe('Sukasari');
+    expect(args.villageId).toBeUndefined();
+    expect(args.ownerUserId).toBeUndefined();
+  });
+
+  it('can open a submission inside its kecamatan', async () => {
+    getSubmissionByIdMock.mockResolvedValue({
+      id: 9, ownerUserId: 999, villageId: VILLAGE_A,
+      desaKecamatan: 'Sukasari', verifikator: 1, status: 'SPPTG terdata',
+    } as never);
+    await expect(
+      submissionsRouter.createCaller(KECAMATAN()).byId({ id: 9 })
+    ).resolves.toMatchObject({ id: 9 });
+  });
+
+  it('cannot open a submission from another kecamatan', async () => {
+    getSubmissionByIdMock.mockResolvedValue({
+      id: 9, ownerUserId: 999, villageId: VILLAGE_B,
+      desaKecamatan: 'Kejaksan', verifikator: 1, status: 'SPPTG terdata',
+    } as never);
+    await expect(
+      submissionsRouter.createCaller(KECAMATAN()).byId({ id: 9 })
+    ).rejects.toThrow(TRPCError);
+  });
+
+  it.each(['SPPTG terdaftar', 'SPPTG terdata'] as const)(
+    'cannot change status to %s',
+    async (status) => {
+      getSubmissionByIdMock.mockResolvedValue({
+        id: 9, ownerUserId: 999, villageId: VILLAGE_A,
+        desaKecamatan: 'Sukasari', verifikator: 1, status: 'SPPTG terdata',
+      } as never);
+      await expectForbidden(
+        submissionsRouter.createCaller(KECAMATAN()).updateStatus({ submissionId: 9, newStatus: status })
+      );
+      expect(updateStatusMock).not.toHaveBeenCalled();
+    }
+  );
+
+  it('cannot toggle validity', async () => {
+    await expectForbidden(
+      submissionsRouter.createCaller(KECAMATAN()).updateValidity({ submissionId: 9, isValid: false })
+    );
+  });
+
+  it('cannot create/update/delete a desa or kawasan', async () => {
+    await expectForbidden(villagesRouter.createCaller(KECAMATAN()).delete({ id: 1 }));
+    await expectForbidden(prohibitedAreasRouter.createCaller(KECAMATAN()).delete({ id: 1 }));
+    expect(deleteVillageMock).not.toHaveBeenCalled();
+    expect(deleteAreaMock).not.toHaveBeenCalled();
+  });
+
+  it('overlap report is scoped to its kecamatan', async () => {
+    await prohibitedAreasRouter.createCaller(KECAMATAN()).checkOverlaps();
+    expect(findOverlapsMock).toHaveBeenLastCalledWith({ scopeKecamatan: 'Sukasari' });
   });
 });

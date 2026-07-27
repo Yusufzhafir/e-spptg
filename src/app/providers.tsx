@@ -14,7 +14,8 @@ import { ServiceWorkerRegistrar } from '@/components/ServiceWorkerRegistrar';
  */
 export function Providers({ children }: { children: ReactNode }) {
   return (
-    <ClerkProvider>
+    // Point Clerk at our own branded routes instead of its hosted pages.
+    <ClerkProvider signInUrl="/sign-in" signUpUrl="/sign-up">
       <TRPCProvider>
         <AuthRoleProvider>
           <ServiceWorkerRegistrar />

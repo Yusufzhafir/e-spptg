@@ -36,7 +36,7 @@ export interface SubmissionOverlapRow {
  * plain ST_Area on SRID 4326 geometry returns square degrees.
  */
 export async function findOverlappingSubmissions(
-  scope: { ownerUserId?: number; villageId?: number } = {},
+  scope: { ownerUserId?: number; villageId?: number; scopeKecamatan?: string } = {},
   tx?: DBTransaction
 ): Promise<SubmissionOverlapRow[]> {
   const queryDb = tx || db;
@@ -50,6 +50,10 @@ export async function findOverlappingSubmissions(
   }
   if (scope.villageId !== undefined) {
     conditions.push(sql`s."villageId" = ${scope.villageId}`);
+  }
+  if (scope.scopeKecamatan !== undefined) {
+    // Use the desa's kecamatan (via villages), not the stale submissions.kecamatan.
+    conditions.push(sql`s."villageId" IN (SELECT id FROM villages WHERE LOWER(kecamatan) = LOWER(${scope.scopeKecamatan}))`);
   }
 
   const result = await queryDb.execute(sql`

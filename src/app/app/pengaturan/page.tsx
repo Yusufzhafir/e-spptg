@@ -133,6 +133,7 @@ export default function PengaturanPage() {
       email: u.email,
       peran: u.peran,
       assignedVillageId: u.assignedVillageId ?? null,
+      assignedKecamatan: u.assignedKecamatan ?? null,
       status: u.status,
       nomorHP: u.nomorHP || null,
       terakhirMasuk: u.terakhirMasuk ? new Date(u.terakhirMasuk) : null,
@@ -183,7 +184,7 @@ export default function PengaturanPage() {
   }, [prohibitedAreasData]);
 
   const handleCreateUser = (
-    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'nomorHP' | 'status'>
+    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'>
   ) => {
     createUserMutation.mutate({
       nama: data.nama,
@@ -191,6 +192,7 @@ export default function PengaturanPage() {
       email: data.email,
       peran: data.peran,
       assignedVillageId: data.assignedVillageId ?? undefined,
+      assignedKecamatan: data.assignedKecamatan ?? undefined,
       status: data.status,
       nomorHP: data.nomorHP || undefined,
     });
@@ -198,7 +200,7 @@ export default function PengaturanPage() {
 
   const handleUpdateUser = (
     id: number,
-    data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'nomorHP' | 'status'>>
+    data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'>>
   ) => {
     updateUserMutation.mutate({
       id,
@@ -208,6 +210,7 @@ export default function PengaturanPage() {
         email: data.email,
         peran: data.peran,
         assignedVillageId: data.assignedVillageId,
+        assignedKecamatan: data.assignedKecamatan,
         status: data.status,
         nomorHP: data.nomorHP || undefined,
       },

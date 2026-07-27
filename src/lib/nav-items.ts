@@ -12,7 +12,15 @@ export type NavItem = {
 
 export const NAV_ITEMS: NavItem[] = [
   { id: 'beranda', label: 'Beranda', icon: Home, href: '/app' },
-  { id: 'pengajuan', label: 'Pengajuan', icon: FileText, href: '/app/pengajuan' },
+  {
+    id: 'pengajuan',
+    label: 'Pengajuan',
+    icon: FileText,
+    href: '/app/pengajuan',
+    // 'Kecamatan' is dashboard-only oversight — it takes no part in the
+    // pengajuan workflow.
+    allowedRoles: ['Superadmin', 'Admin', 'Verifikator', 'Viewer'],
+  },
   {
     id: 'pengaturan',
     label: 'Pengaturan',

@@ -12,6 +12,12 @@ export type DraftAccessRecord = {
 export type SubmissionAccessRecord = {
   ownerUserId: number | null;
   villageId: number;
+  /**
+   * The *desa's* kecamatan (villages.kecamatan), used to scope the read-only
+   * 'Kecamatan' role. Do not pass submissions.kecamatan here — that column is
+   * free text captured at submission time and is often stale or empty.
+   */
+  desaKecamatan?: string | null;
 };
 
 export function isSuperadmin(user: AppUser): boolean {
@@ -24,6 +30,26 @@ export function isViewer(user: AppUser): boolean {
 
 export function isPrivilegedProcessor(user: AppUser): boolean {
   return user.peran === 'Admin' || user.peran === 'Verifikator';
+}
+
+/**
+ * Read-only oversight of every desa in one kecamatan. Sees submissions on the
+ * dashboard but processes nothing: no drafts, no status changes, no validity
+ * toggle, no settings.
+ */
+export function isKecamatanViewer(user: AppUser): boolean {
+  return user.peran === 'Kecamatan';
+}
+
+export function requireAssignedKecamatan(user: AppUser): string {
+  const kecamatan = user.assignedKecamatan?.trim();
+  if (!kecamatan) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'Peran Kecamatan harus ditetapkan ke satu kecamatan terlebih dahulu.',
+    });
+  }
+  return kecamatan;
 }
 
 export function requireAssignedVillageId(user: AppUser): number {
@@ -44,9 +70,15 @@ export function requireAssignedVillageId(user: AppUser): number {
   return user.assignedVillageId;
 }
 
+/**
+ * Mandatory row-level scope for the current user. Named `scopeKecamatan` (not
+ * `kecamatan`) so it can never be confused with — or overwritten by — the
+ * user-selectable kecamatan filter on the dashboard.
+ */
 export function getSubmissionScopeForUser(user: AppUser): {
   ownerUserId?: number;
   villageId?: number;
+  scopeKecamatan?: string;
 } {
   if (isSuperadmin(user)) {
     return {};
@@ -56,12 +88,18 @@ export function getSubmissionScopeForUser(user: AppUser): {
     return { ownerUserId: user.id };
   }
 
+  if (isKecamatanViewer(user)) {
+    return { scopeKecamatan: requireAssignedKecamatan(user) };
+  }
+
   return { villageId: requireAssignedVillageId(user) };
 }
 
 export function canAccessDraft(user: AppUser, draft: DraftAccessRecord): boolean {
   if (isSuperadmin(user)) return true;
   if (isViewer(user)) return draft.userId === user.id;
+  // Kecamatan is dashboard-only: it never touches the pengajuan workflow.
+  if (isKecamatanViewer(user)) return false;
 
   const assignedVillageId = requireAssignedVillageId(user);
 
@@ -76,6 +114,14 @@ export function canAccessSubmission(
 ): boolean {
   if (isSuperadmin(user)) return true;
   if (isViewer(user)) return submission.ownerUserId != null && submission.ownerUserId === user.id;
+
+  if (isKecamatanViewer(user)) {
+    const assignedKecamatan = requireAssignedKecamatan(user);
+    return (
+      (submission.desaKecamatan ?? '').trim().toLowerCase() ===
+      assignedKecamatan.toLowerCase()
+    );
+  }
 
   const assignedVillageId = requireAssignedVillageId(user);
   return submission.villageId === assignedVillageId;

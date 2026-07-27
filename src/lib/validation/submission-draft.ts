@@ -81,7 +81,7 @@ export const step1BerkasSchema = z.object({
   dokumenPermohonan: uploadedDocumentSchema,
   dokumenPernyataanJualBeli: uploadedDocumentSchema.optional(),
   dokumenAsalUsul: uploadedDocumentSchema.optional(),
-  dokumenTidakSengketa: uploadedDocumentSchema.optional(),
+  dokumenTidakSengketa: uploadedDocumentSchema,
 
   // Consent
   persetujuanData: z.literal(true, {

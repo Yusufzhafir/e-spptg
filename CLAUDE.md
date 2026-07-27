@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-E-SPPTG is a digital land-registration system for Indonesian local government (Kabupaten Cirebon): officials process citizen land claims (pengajuan) through a multi-step workflow, validate boundaries against prohibited areas with PostGIS, and issue official SPPTG certificates as PDFs. UI text and domain vocabulary are Indonesian — see the glossary in AGENTS.md, which also documents known bugs, incomplete features, and detailed endpoint/schema tables.
+E-SPPTG is a digital land-registration system for Indonesian local government: officials process citizen land claims (pengajuan) through a multi-step workflow, validate boundaries against prohibited areas with PostGIS, and issue official SPPTG certificates as PDFs. UI text and domain vocabulary are Indonesian — see the glossary in AGENTS.md, which also documents known bugs, incomplete features, and detailed endpoint/schema tables.
 
 ## Commands
 

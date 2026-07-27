@@ -228,6 +228,7 @@ export const documentsRouter = router({
       assertCanAccessSubmission(ctx.appUser!, {
         ownerUserId: submission.ownerUserId,
         villageId: submission.villageId,
+        desaKecamatan: submission.desaKecamatan,
       });
 
       const documents = await queries.listDocumentsBySubmission(input.submissionId);
@@ -271,6 +272,7 @@ export const documentsRouter = router({
         assertCanAccessSubmission(ctx.appUser!, {
           ownerUserId: submission.ownerUserId,
           villageId: submission.villageId,
+          desaKecamatan: submission.desaKecamatan,
         });
       } else if (document.draftId) {
         const draft = await draftQueries.getDraftById(document.draftId);
@@ -358,6 +360,7 @@ export const documentsRouter = router({
         assertCanAccessSubmission(ctx.appUser!, {
           ownerUserId: submission.ownerUserId,
           villageId: submission.villageId,
+          desaKecamatan: submission.desaKecamatan,
         });
       } else if (document.draftId) {
         const draft = await draftQueries.getDraftById(document.draftId);
@@ -405,6 +408,7 @@ export const documentsRouter = router({
         assertCanAccessSubmission(ctx.appUser!, {
           ownerUserId: submission.ownerUserId,
           villageId: submission.villageId,
+          desaKecamatan: submission.desaKecamatan,
         });
       } else if (document.draftId) {
         const draft = await draftQueries.getDraftById(document.draftId);

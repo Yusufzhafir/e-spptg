@@ -738,6 +738,21 @@ export function VillagesTab({
               <FieldError message={errors.namaKepalaDesa} />
             </div>
 
+            <WilayahSelect
+              idPrefix="edit-"
+              value={{
+                provinsi: formData.provinsi ?? undefined,
+                kabupaten: formData.kabupaten ?? undefined,
+                kecamatan: formData.kecamatan ?? undefined,
+              }}
+              onChange={handleWilayahChange}
+              errors={{
+                provinsi: errors.provinsi,
+                kabupaten: errors.kabupaten,
+                kecamatan: errors.kecamatan,
+              }}
+            />
+
             <div className="space-y-3 rounded-lg border border-gray-200 p-4">
               <h4 className="text-sm text-gray-900">Tim Peneliti (Juru Ukur)</h4>
               <div>
@@ -779,21 +794,6 @@ export function VillagesTab({
                 <FieldError message={errors.juruUkurNomorHP} />
               </div>
             </div>
-
-            <WilayahSelect
-              idPrefix="edit-"
-              value={{
-                provinsi: formData.provinsi ?? undefined,
-                kabupaten: formData.kabupaten ?? undefined,
-                kecamatan: formData.kecamatan ?? undefined,
-              }}
-              onChange={handleWilayahChange}
-              errors={{
-                provinsi: errors.provinsi,
-                kabupaten: errors.kabupaten,
-                kecamatan: errors.kecamatan,
-              }}
-            />
           </div>
 
           <DialogFooter>

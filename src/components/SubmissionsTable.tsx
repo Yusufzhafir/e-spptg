@@ -94,10 +94,13 @@ export function SubmissionsTable({
 }: SubmissionsTableProps) {
   const { user: currentUser } = useAuthRole();
   // Editing (drafts.createFromSubmission) and the validity toggle both reject
-  // Viewers on the server, so hide those actions rather than offer a click that
-  // can only fail. Null while the session loads, so nothing flashes in.
+  // Viewers and the read-only Kecamatan role on the server, so hide those
+  // actions rather than offer a click that can only fail. Null while the
+  // session loads, so nothing flashes in.
   const canProcess = Boolean(
-    currentUser && currentUser.peran !== 'Viewer'
+    currentUser &&
+      currentUser.peran !== 'Viewer' &&
+      currentUser.peran !== 'Kecamatan'
   );
   const [sortKey, setSortKey] = useState<SortKey>('updatedAt');
   const [sortDir, setSortDir] = useState<SortDirection>('desc');
@@ -226,7 +229,10 @@ export function SubmissionsTable({
                 </div>
               </TableCell>
               <TableCell>
-                {submission.desaNama || `Desa #${submission.villageId}`}, {submission.kecamatan}
+                {submission.desaNama || `Desa #${submission.villageId}`}
+                {submission.desaKecamatan || submission.kecamatan
+                  ? `, ${submission.desaKecamatan || submission.kecamatan}`
+                  : ''}
               </TableCell>
               <TableCell>{submission.luas.toLocaleString()}</TableCell>
               <TableCell>{formatDate(submission.tanggalPengajuan)}</TableCell>
