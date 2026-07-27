@@ -44,7 +44,12 @@ export function SearchableSelect({
   id,
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false);
-  const selected = options.find((o) => o.value === value);
+  // Fall back to a case-insensitive match: stored data often differs in casing
+  // from the option source (e.g. "Jawa Barat" saved vs "JAWA BARAT" from the
+  // wilayah API), and an exact-only match would blank the field.
+  const selected =
+    options.find((o) => o.value === value) ??
+    options.find((o) => o.value.toLowerCase() === (value ?? '').toLowerCase());
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -87,7 +92,7 @@ export function SearchableSelect({
                   <Check
                     className={cn(
                       'mr-2 h-4 w-4',
-                      value === o.value ? 'opacity-100' : 'opacity-0'
+                      selected?.value === o.value ? 'opacity-100' : 'opacity-0'
                     )}
                   />
                   {o.label}
