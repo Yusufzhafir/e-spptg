@@ -75,13 +75,30 @@ import {
 import {
   assertCanAccessDraft,
   assertCanAccessSubmission,
+  isKecamatanViewer,
   isPrivilegedProcessor,
   isViewer,
   requireAssignedVillageId,
+  type AppUser,
 } from '@/server/authz';
+
+/**
+ * Kecamatan is read-only oversight: it may never own a draft. Without this the
+ * role could create drafts it is then unable to open (canAccessDraft is false),
+ * leaving orphaned rows behind.
+ */
+function assertNotKecamatan(user: AppUser) {
+  if (isKecamatanViewer(user)) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'Peran Kecamatan tidak dapat memproses pengajuan.',
+    });
+  }
+}
 
 export const draftsRouter = router({
   getOrCreateCurrent: protectedProcedure.query(async ({ ctx }) => {
+    assertNotKecamatan(ctx.appUser!);
     if (isPrivilegedProcessor(ctx.appUser!)) {
       requireAssignedVillageId(ctx.appUser!);
     }
@@ -96,6 +113,7 @@ export const draftsRouter = router({
   }),
 
   create: protectedProcedure.mutation(async ({ ctx }) => {
+    assertNotKecamatan(ctx.appUser!);
     if (isPrivilegedProcessor(ctx.appUser!)) {
       requireAssignedVillageId(ctx.appUser!);
     }
@@ -122,6 +140,7 @@ export const draftsRouter = router({
           message: 'Peran Viewer tidak dapat mengedit pengajuan.',
         });
       }
+      assertNotKecamatan(ctx.appUser!);
 
       const submission = await submissionQueries.getSubmissionById(input.submissionId);
       if (!submission) {

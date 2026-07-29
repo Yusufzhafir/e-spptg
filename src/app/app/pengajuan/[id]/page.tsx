@@ -4,7 +4,13 @@ import { useParams, useRouter } from 'next/navigation';
 import { DetailPage } from '@/components/DetailPage';
 import { trpc } from '@/trpc/client';
 import { useMemo } from 'react';
-import { FeedbackData, GeoJSONPolygon, StatusHistory, Submission } from '@/types';
+import {
+  FeedbackData,
+  GeoJSONPolygon,
+  StatusHistory,
+  Submission,
+  SubmissionPayloadSnapshot,
+} from '@/types';
 
 
 export default function SubmissionDetailPage() {
@@ -31,9 +37,16 @@ export default function SubmissionDetailPage() {
         ? (parsedGeoJSON as GeoJSONPolygon)
         : null;
 
+    // The draft snapshot arrives as untyped jsonb; keep it only when it is an object.
+    const payload =
+      submission.payload && typeof submission.payload === 'object'
+        ? (submission.payload as SubmissionPayloadSnapshot)
+        : null;
+
     return {
      ...submission,
      geoJSON,
+     payload,
      tanggalPengajuan: new Date(submission?.tanggalPengajuan),
      riwayat: submission?.riwayat as StatusHistory[],
      feedback: submission?.feedback as FeedbackData | null,

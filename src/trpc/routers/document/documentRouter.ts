@@ -14,7 +14,12 @@ import {
 } from '@/server/s3/s3';
 import { TRPCError } from '@trpc/server';
 import { adminProcedure, protectedProcedure, router } from '@/trpc/init';
-import { assertCanAccessDraft, assertCanAccessSubmission } from '@/server/authz';
+import {
+  assertCanAccessDraft,
+  assertCanAccessSubmission,
+  isPrivilegedProcessor,
+  isSuperadmin,
+} from '@/server/authz';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ACCEPTED_MIME_TYPES = [
@@ -410,6 +415,16 @@ export const documentsRouter = router({
           villageId: submission.villageId,
           desaKecamatan: submission.desaKecamatan,
         });
+
+        // Read access is not enough to destroy a filed document: Kecamatan only
+        // oversees, and a Viewer owning the pengajuan must not be able to remove
+        // its KTP or the issued SPPTG certificate after submission.
+        if (!isPrivilegedProcessor(ctx.appUser!) && !isSuperadmin(ctx.appUser!)) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Hanya verifikator atau admin desa yang dapat menghapus dokumen pengajuan.',
+          });
+        }
       } else if (document.draftId) {
         const draft = await draftQueries.getDraftById(document.draftId);
         if (!draft) {

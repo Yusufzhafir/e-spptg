@@ -3,8 +3,9 @@
 import { ReactNode, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthRole } from '@/components/AuthRoleProvider';
-
-type UserRole = 'Superadmin' | 'Admin' | 'Verifikator' | 'Viewer';
+// Single source of truth — a local copy of this union silently dropped
+// 'Kecamatan' and would drift again on the next role added.
+import type { UserRole } from '@/types';
 
 type RequireRoleProps = {
   children: ReactNode;

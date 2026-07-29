@@ -80,7 +80,7 @@ export const usersRouter = router({
 
   byId: protectedProcedure
     .input(z.object({ id: z.number().int() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const user = await queries.getUserById(input.id);
       if (!user) {
         throw new TRPCError({
@@ -88,6 +88,24 @@ export const usersRouter = router({
           message: 'Pengguna tidak ditemukan',
         });
       }
+
+      // Same read scope as `list`: yourself always, Superadmin anyone,
+      // Admin/Verifikator only their own desa. Without this, any signed-in
+      // account could enumerate every user's email, NIK and phone number.
+      const actor = ctx.appUser!;
+      const isSelf = user.id === actor.id;
+      const isSameVillage =
+        (actor.peran === 'Admin' || actor.peran === 'Verifikator') &&
+        actor.assignedVillageId != null &&
+        user.assignedVillageId === actor.assignedVillageId;
+
+      if (!isSelf && actor.peran !== 'Superadmin' && !isSameVillage) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Pengguna tidak ditemukan',
+        });
+      }
+
       return user;
     }),
 

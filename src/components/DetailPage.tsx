@@ -19,9 +19,20 @@ interface DetailPageProps {
   onBack: () => void;
 }
 
+/** Blank strings are common in older rows — render them as a dash, not empty space. */
+const orEmpty = (value?: string | null) => (value && value.trim() ? value : '-');
+
 export function DetailPage({ submission, onBack }: DetailPageProps) {
   const [openingDocumentId, setOpeningDocumentId] = useState<number | null>(null);
   const [newComment, setNewComment] = useState('');
+
+  // Applicant details live only in the draft payload snapshot — the submissions
+  // table has no column for tempat/tanggal lahir, pekerjaan, or alamat KTP.
+  const pemilik = submission.payload ?? {};
+  const tempatTanggalLahir =
+    [pemilik.tempatLahir?.trim(), pemilik.tanggalLahir ? formatDate(pemilik.tanggalLahir) : '']
+      .filter(Boolean)
+      .join(', ') || '-';
 
   const { data: currentUser } = trpc.auth.me.useQuery();
   const {
@@ -46,6 +57,8 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
     },
     onError: (error) => toast.error(error.message || 'Gagal menghapus komentar'),
   });
+
+  const canWriteComment = currentUser ? currentUser.peran !== 'Kecamatan' : false;
 
   const canDeleteComment = (commentUserId: number) => {
     if (!currentUser) return false;
@@ -236,23 +249,35 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
                   <div className="space-y-3">
                     <div>
                       <p className="text-sm text-gray-600">Nama Pemilik</p>
-                      <p>{submission.namaPemilik}</p>
+                      <p>{orEmpty(submission.namaPemilik)}</p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">NIK</p>
-                      <p>{submission.nik}</p>
+                      <p>{orEmpty(submission.nik)}</p>
                     </div>
                     <div>
-                      <p className="text-sm text-gray-600">Alamat</p>
-                      <p>{submission.alamat}</p>
+                      <p className="text-sm text-gray-600">Tempat, Tanggal Lahir</p>
+                      <p>{tempatTanggalLahir}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Pekerjaan</p>
+                      <p>{orEmpty(pemilik.pekerjaan)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Alamat KTP</p>
+                      {/* Older submissions stored nothing in the `alamat` column
+                          (Step 1 fills `alamatKTP`), so fall back to the payload. */}
+                      <p className="whitespace-pre-line">
+                        {orEmpty(submission.alamat || pemilik.alamatKTP)}
+                      </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Nomor HP</p>
-                      <p>{submission.nomorHP}</p>
+                      <p>{orEmpty(submission.nomorHP)}</p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Email</p>
-                      <p>{submission.email}</p>
+                      <p>{orEmpty(submission.email)}</p>
                     </div>
                   </div>
                 </div>
@@ -397,21 +422,28 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
 
             <TabsContent value="komentar" className="mt-4">
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <Textarea
-                    placeholder="Tambahkan komentar..."
-                    rows={3}
-                    value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                  />
-                  <Button
-                    onClick={handleSubmitComment}
-                    disabled={createCommentMutation.isPending || !newComment.trim()}
-                  >
-                    <Send className="w-4 h-4 mr-2" />
-                    {createCommentMutation.isPending ? 'Mengirim...' : 'Kirim Komentar'}
-                  </Button>
-                </div>
+                {/* Kecamatan oversees read-only — don't offer a box the server refuses. */}
+                {canWriteComment ? (
+                  <div className="space-y-2">
+                    <Textarea
+                      placeholder="Tambahkan komentar..."
+                      rows={3}
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                    />
+                    <Button
+                      onClick={handleSubmitComment}
+                      disabled={createCommentMutation.isPending || !newComment.trim()}
+                    >
+                      <Send className="w-4 h-4 mr-2" />
+                      {createCommentMutation.isPending ? 'Mengirim...' : 'Kirim Komentar'}
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-600">
+                    Peran Anda hanya dapat membaca komentar.
+                  </p>
+                )}
 
                 <div className="space-y-3">
                   {isCommentsLoading ? (

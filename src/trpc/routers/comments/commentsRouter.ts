@@ -5,6 +5,7 @@ import * as commentQueries from '@/server/db/queries/comments';
 import * as submissionQueries from '@/server/db/queries/submissions';
 import {
   assertCanAccessSubmission,
+  isKecamatanViewer,
   isSuperadmin,
   type AppUser,
 } from '@/server/authz';
@@ -36,8 +37,21 @@ async function loadAccessibleSubmission(user: AppUser, submissionId: number) {
   assertCanAccessSubmission(user, {
     ownerUserId: submission.ownerUserId,
     villageId: submission.villageId,
+    // Required for the Kecamatan role — omitting it made every comment on a
+    // submission inside its own kecamatan read as "not found".
+    desaKecamatan: submission.desaKecamatan,
   });
   return submission;
+}
+
+/** Kecamatan oversees but never writes — reading the thread is as far as it goes. */
+function assertCanWriteComment(user: AppUser) {
+  if (isKecamatanViewer(user)) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'Peran Kecamatan hanya dapat membaca komentar.',
+    });
+  }
 }
 
 export const commentsRouter = router({
@@ -56,6 +70,7 @@ export const commentsRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      assertCanWriteComment(ctx.appUser!);
       await loadAccessibleSubmission(ctx.appUser!, input.submissionId);
       return commentQueries.createComment({
         submissionId: input.submissionId,
@@ -67,6 +82,7 @@ export const commentsRouter = router({
   delete: protectedProcedure
     .input(z.object({ commentId: z.number().int() }))
     .mutation(async ({ ctx, input }) => {
+      assertCanWriteComment(ctx.appUser!);
       const comment = await commentQueries.getCommentById(input.commentId);
       if (!comment) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Komentar tidak ditemukan' });

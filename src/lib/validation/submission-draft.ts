@@ -74,6 +74,17 @@ export const step1BerkasSchema = z.object({
 
   villageId: z.number().int('Desa harus dipilih'),
 
+  // Contact — optional, but validated once filled in.
+  nomorHP: z
+    .string()
+    .regex(/^(\+62|0)[0-9]{9,12}$/, 'Nomor HP tidak valid')
+    .optional()
+    .or(z.literal('')),
+  email: z
+    .email('Email tidak valid')
+    .optional()
+    .or(z.literal('')),
+
   // Documents
   dokumenKTP: uploadedDocumentSchema,
   dokumenKK: uploadedDocumentSchema,
@@ -219,6 +230,8 @@ export const submissionDraftPayloadSchema = z.object({
   tanggalLahir: z.string().optional(),
   pekerjaan: z.string().optional(),
   alamatKTP: z.string().optional(),
+  nomorHP: z.string().optional(),
+  email: z.string().optional(),
   dokumenKTP: uploadedDocumentSchema,
   dokumenKK: uploadedDocumentSchema,
   dokumenKwitansi: uploadedDocumentSchema.optional(),

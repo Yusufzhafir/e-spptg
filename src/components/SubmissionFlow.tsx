@@ -154,6 +154,8 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         tanggalLahir: payload.tanggalLahir,
         pekerjaan: payload.pekerjaan,
         alamatKTP: payload.alamatKTP,
+        nomorHP: payload.nomorHP,
+        email: payload.email,
         persetujuanData: payload.persetujuanData || false,
         // Step 2: Land Location & Details
         villageId: payload.villageId,

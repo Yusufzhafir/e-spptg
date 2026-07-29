@@ -170,6 +170,37 @@ export function Step1DocumentUpload({
           </div>
         </div>
 
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="nomorHP">Nomor HP</Label>
+            <Input
+              id="nomorHP"
+              type="tel"
+              inputMode="tel"
+              value={draft.nomorHP || ''}
+              onChange={(e) => onUpdateDraft({ nomorHP: e.target.value })}
+              placeholder="08xxxxxxxxxx"
+              aria-invalid={Boolean(errors.nomorHP)}
+              className={errors.nomorHP ? 'border-red-500' : undefined}
+            />
+            <FieldError message={errors.nomorHP} />
+          </div>
+
+          <div>
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              value={draft.email || ''}
+              onChange={(e) => onUpdateDraft({ email: e.target.value })}
+              placeholder="nama@email.com"
+              aria-invalid={Boolean(errors.email)}
+              className={errors.email ? 'border-red-500' : undefined}
+            />
+            <FieldError message={errors.email} />
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 gap-4">
           <div>
             <Label htmlFor="alamatKTP">Alamat KTP</Label>

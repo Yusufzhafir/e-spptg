@@ -9,7 +9,6 @@ import { toast } from 'sonner';
 import { usePathname, useRouter } from 'next/navigation';
 
 export type AppStateContextValue = {
-  handleSubmitForm: (data: Partial<Submission>) => void;
   handleStatusChange: (id: number, status: StatusSPPTG, alasan: string) => void;
   handleCompleteSubmission: (draft: SubmissionDraft) => void;
 };
@@ -46,41 +45,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         : 'Dashboard';
 
   // === Handlers that navigate between pages ===
-
-  const handleSubmitForm = (data: Partial<Submission>) => {
-    const newSubmission: Submission = {
-      id: 0, // Will be replaced by database
-      namaPemilik: data.namaPemilik || '',
-      nik: data.nik || '',
-      alamat: data.alamat || '',
-      nomorHP: data.nomorHP || '',
-      email: data.email || '',
-      villageId: data.villageId || 0,
-      kecamatan: data.kecamatan || '',
-      kabupaten: data.kabupaten || '',
-      luas: data.luas || 0,
-      penggunaanLahan: data.penggunaanLahan || '',
-      catatan: data.catatan || null,
-      status: 'SPPTG terdata',
-      isValid: true,
-      tanggalPengajuan: new Date(),
-      ownerUserId: null,
-      verifikator: null, // Should come from authenticated user
-      riwayat: [
-        {
-          tanggal: new Date().toISOString(),
-          status: 'SPPTG terdata',
-          petugas: 'Sistem',
-        },
-      ],
-      feedback: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    setSubmissions((prev) => [newSubmission, ...prev]);
-    router.push('/app');
-  };
 
   const handleStatusChange = (
     id: number,
@@ -147,7 +111,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   };
 
   const contextValue: AppStateContextValue = {
-    handleSubmitForm,
     handleStatusChange,
     handleCompleteSubmission,
   };

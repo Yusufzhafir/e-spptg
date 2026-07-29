@@ -60,7 +60,11 @@ export const submissionsRouter = router({
                     const payload = (draft.payload ?? {}) as {
                         namaPemohon?: string;
                         nik?: string;
+                        // Step 1 writes the applicant address as `alamatKTP`;
+                        // `alamat` only exists on legacy drafts.
+                        alamatKTP?: string;
                         alamat?: string;
+                        nomorHP?: string;
                         email?: string;
                         villageId?: number;
                         kecamatan?: string;
@@ -122,8 +126,10 @@ export const submissionsRouter = router({
                     const submissionData = {
                         namaPemilik: payload.namaPemohon,
                         nik: payload.nik,
-                        alamat: payload.alamat || '',
-                        nomorHP: payload.juruUkur?.nomorHP || '',
+                        alamat: payload.alamatKTP || payload.alamat || '',
+                        // Applicant's own number from Step 1 — juruUkur.nomorHP is
+                        // the surveyor's and must not stand in for the owner's.
+                        nomorHP: payload.nomorHP || '',
                         email: payload.email || '',
                         villageId: draftVillageId,
                         kecamatan: payload.kecamatan || '',
@@ -183,6 +189,7 @@ export const submissionsRouter = router({
                         assertCanAccessSubmission(ctx.appUser!, {
                             ownerUserId: existing.ownerUserId,
                             villageId: existing.villageId,
+                            desaKecamatan: existing.desaKecamatan,
                         });
                         notifOwnerUserId = existing.ownerUserId;
 
@@ -367,7 +374,10 @@ export const submissionsRouter = router({
             }));
         }),
 
-    checkOverlapsFromCoordinates: protectedProcedure
+    // Staff-only: the report names the owners of every intersecting submission,
+    // so an arbitrary polygon would otherwise let a Viewer or a Kecamatan
+    // account enumerate applicants far outside its own scope.
+    checkOverlapsFromCoordinates: verifikatorProcedure
         .input(z.object({
             coordinates: z.array(z.object({
                 latitude: z.number(),
