@@ -19,6 +19,7 @@ import { RequiredMark } from './RequiredMark';
 import { SearchableSelect } from './SearchableSelect';
 import { FieldError } from './FieldError';
 import { createUserSchema } from '@/lib/validation';
+import { isValidPhoneNumber, normalizePhoneNumber, PHONE_NUMBER_ERROR } from '@/lib/phone-number';
 import {
   Dialog,
   DialogContent,
@@ -93,6 +94,14 @@ export function UsersTab({
       delete next[field];
       return next;
     });
+
+  /** Tidy "+62 812…" into 08xxxxxxxxxx once the field loses focus. */
+  const normalizeNomorHP = (value: string) => {
+    const normalized = normalizePhoneNumber(value);
+    if (normalized !== value) {
+      setFormData((prev) => ({ ...prev, nomorHP: normalized }));
+    }
+  };
 
   // Filter users
   const filteredUsers = users.filter((user) => {
@@ -184,6 +193,11 @@ export function UsersTab({
     }
     if (formData.peran === 'Kecamatan' && !formData.assignedKecamatan?.trim()) {
       next.assignedKecamatan = 'Kecamatan penugasan wajib dipilih untuk peran Kecamatan';
+    }
+    // Optional field, but a filled-in number must be a usable Indonesian one.
+    const nomorHP = formData.nomorHP?.trim();
+    if (nomorHP && !isValidPhoneNumber(nomorHP)) {
+      next.nomorHP = PHONE_NUMBER_ERROR;
     }
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -632,9 +646,12 @@ export function UsersTab({
               <Input
                 id="nomorHP"
                 value={formData.nomorHP || ''}
-                onChange={(e) => setFormData({ ...formData, nomorHP: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, nomorHP: e.target.value }); clearError('nomorHP'); }}
+                onBlur={(e) => normalizeNomorHP(e.target.value)}
+                className={errorClass('nomorHP')}
                 placeholder="08xxxxxxxxxx"
               />
+              <FieldError message={errors.nomorHP} />
             </div>
           </div>
 
@@ -795,8 +812,12 @@ export function UsersTab({
               <Input
                 id="edit-nomorHP"
                 value={formData.nomorHP || ''}
-                onChange={(e) => setFormData({ ...formData, nomorHP: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, nomorHP: e.target.value }); clearError('nomorHP'); }}
+                onBlur={(e) => normalizeNomorHP(e.target.value)}
+                className={errorClass('nomorHP')}
+                placeholder="08xxxxxxxxxx"
               />
+              <FieldError message={errors.nomorHP} />
             </div>
           </div>
 

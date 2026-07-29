@@ -53,4 +53,37 @@ describe('validateStep1Fields', () => {
     const errors = validateStep1Fields(draft);
     expect(Object.keys(errors)).toContain(field);
   });
+
+  it('blocks a foreign phone number', () => {
+    const draft = completeStep1();
+    draft.nomorHP = '+1 (599) 869-8667';
+
+    expect(validateStep1Fields(draft).nomorHP).toBeDefined();
+  });
+
+  it.each(['081234567890', '+62 812 3456 7890', '0812-3456-7890'])(
+    'accepts %s',
+    (value) => {
+      const draft = completeStep1();
+      draft.nomorHP = value;
+
+      expect(validateStep1Fields(draft).nomorHP).toBeUndefined();
+    }
+  );
+
+  it('leaves the phone number optional', () => {
+    const draft = completeStep1();
+    draft.nomorHP = '';
+
+    expect(validateStep1Fields(draft)).toEqual({});
+  });
+
+  it('blocks a malformed email but allows an empty one', () => {
+    const draft = completeStep1();
+    draft.email = 'budi[at]email';
+    expect(validateStep1Fields(draft).email).toBeDefined();
+
+    draft.email = '';
+    expect(validateStep1Fields(draft).email).toBeUndefined();
+  });
 });

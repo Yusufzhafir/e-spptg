@@ -15,6 +15,7 @@ import { sql, eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { normalizeOverlapRows } from '@/lib/overlap-results';
 import { deriveSubmissionStatus } from '@/lib/submission-status';
+import { normalizePhoneNumber } from '@/lib/phone-number';
 import {
     assertCanAccessDraft,
     assertCanAccessSubmission,
@@ -129,7 +130,9 @@ export const submissionsRouter = router({
                         alamat: payload.alamatKTP || payload.alamat || '',
                         // Applicant's own number from Step 1 — juruUkur.nomorHP is
                         // the surveyor's and must not stand in for the owner's.
-                        nomorHP: payload.nomorHP || '',
+                        // Normalised so a legacy draft holding "+62 812 …" cannot
+                        // overflow the varchar(15) column.
+                        nomorHP: normalizePhoneNumber(payload.nomorHP || ''),
                         email: payload.email || '',
                         villageId: draftVillageId,
                         kecamatan: payload.kecamatan || '',

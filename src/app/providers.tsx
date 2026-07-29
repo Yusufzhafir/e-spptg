@@ -1,7 +1,7 @@
 'use client';
 
 import { ReactNode } from 'react';
-import { Toaster } from '@/components/ui/sonner';
+import { RoleAwareToaster } from '@/components/RoleAwareToaster';
 import { ClerkProvider } from '@clerk/nextjs';
 import { TRPCProvider } from '@/trpc/client';
 import { AuthRoleProvider } from '@/components/AuthRoleProvider';
@@ -19,7 +19,7 @@ export function Providers({ children }: { children: ReactNode }) {
       <TRPCProvider>
         <AuthRoleProvider>
           <ServiceWorkerRegistrar />
-          <Toaster position="top-right" />
+          <RoleAwareToaster />
           {children}
         </AuthRoleProvider>
       </TRPCProvider>

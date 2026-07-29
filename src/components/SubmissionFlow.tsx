@@ -26,7 +26,16 @@ import {
   TableHeader,
   TableRow,
 } from './ui/table';
-import { Check, FileText, MapPin, ClipboardCheck, Award, AlertTriangle } from 'lucide-react';
+import {
+  Check,
+  FileText,
+  MapPin,
+  ClipboardCheck,
+  Award,
+  AlertTriangle,
+  CheckCircle2,
+  HelpCircle,
+} from 'lucide-react';
 import { StatusSPPTG, SubmissionDraft } from '../types';
 import { Step1DocumentUpload } from './submission-steps/Step1DocumentUpload';
 import { Step2FieldValidation } from './submission-steps/Step2FieldValidation';
@@ -77,6 +86,15 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
   const [isStep2ConfirmOpen, setIsStep2ConfirmOpen] = useState(false);
   const [step2ConfirmChecked, setStep2ConfirmChecked] = useState(false);
   const [pendingStep2Action, setPendingStep2Action] = useState<'next' | 'save' | null>(null);
+
+  /**
+   * Saving Step 1 is the end of the road for a Viewer — there is no Step 2 to
+   * correct things in. A corner toast is too easy to miss for a once-only
+   * action, so the confirmation and its outcome are shown centre-screen.
+   */
+  const [viewerNotice, setViewerNotice] = useState<
+    { kind: 'confirm' } | { kind: 'success' } | { kind: 'error'; message: string } | null
+  >(null);
 
   // Clear the error of a field as soon as it gets updated
   const clearFieldErrorsFor = useCallback(
@@ -414,20 +432,43 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     }
   };
 
+  /**
+   * Viewer's Step 1 save, run only after the centre-screen confirmation.
+   * Persists directly rather than through saveDraftToBackend so a failure
+   * surfaces in this dialog alone, not also as a corner toast.
+   */
+  const handleViewerConfirmSave = async () => {
+    try {
+      await persistDraftSnapshot(draft, 1, { silent: true });
+      setViewerNotice({ kind: 'success' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      setViewerNotice({ kind: 'error', message });
+    }
+  };
+
   const handleNext = async () => {
     // Validate current step before proceeding
     if (currentStep === 1) {
       const errors = validateStep1Fields(draft);
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors);
-        toast.error('Harap lengkapi kolom wajib yang ditandai merah');
+        if (isViewer) {
+          setViewerNotice({
+            kind: 'error',
+            message:
+              'Masih ada kolom wajib yang belum terisi. Kolom tersebut ditandai merah pada formulir di atas.',
+          });
+        } else {
+          toast.error('Harap lengkapi kolom wajib yang ditandai merah');
+        }
         return;
       }
       setFieldErrors({});
 
       if (isViewer) {
-        await saveDraftToBackend(1, { silent: true });
-        toast.info('Step 1 tersimpan. Peran Viewer tidak dapat melanjutkan ke Step 2.');
+        // Ask first — this save is the Viewer's final action on the berkas.
+        setViewerNotice({ kind: 'confirm' });
         return;
       }
       // Non-viewer: saving happens once in the transition block below
@@ -731,6 +772,8 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         </Button>
 
         <div className="flex flex-wrap gap-3">
+          {/* Distinct from 'Simpan Berkas': this parks the work in progress and
+              leaves the page, with no confirmation and no finality. */}
           <Button
             variant="outline"
             onClick={handleSaveDraft}
@@ -772,7 +815,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                 {currentStep === 2 && checkOverlapsMutation.isPending
                   ? 'Mengecek...'
                   : isViewer && currentStep === 1
-                    ? 'Simpan Step 1'
+                    ? 'Simpan Berkas'
                     : currentStep === 3 && draft.status === 'SPPTG terdaftar'
                       ? 'Lanjut ke Penerbitan SPPTG'
                       : 'Berikutnya'}
@@ -816,6 +859,87 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
           )}
         </div>
       </div>
+
+      {/* Viewer: confirmation and outcome for the one action they have. */}
+      <Dialog
+        open={viewerNotice !== null}
+        onOpenChange={(open) => {
+          if (open) return;
+          // A saved berkas is final for the Viewer — send them back to the list
+          // instead of leaving them on a form they can no longer act on.
+          const wasSuccess = viewerNotice?.kind === 'success';
+          setViewerNotice(null);
+          if (wasSuccess) router.push('/app/pengajuan');
+        }}
+      >
+        <DialogContent className="sm:max-w-[460px]" showCloseButton={false}>
+          <div className="flex flex-col items-center px-2 py-4 text-center">
+            {viewerNotice?.kind === 'success' ? (
+              <span className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+                <CheckCircle2 className="h-9 w-9 text-green-600" />
+              </span>
+            ) : viewerNotice?.kind === 'error' ? (
+              <span className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
+                <AlertTriangle className="h-9 w-9 text-red-600" />
+              </span>
+            ) : (
+              <span className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100">
+                <HelpCircle className="h-9 w-9 text-blue-600" />
+              </span>
+            )}
+
+            <DialogHeader className="gap-2">
+              <DialogTitle className="text-center text-xl">
+                {viewerNotice?.kind === 'success'
+                  ? 'Berkas berhasil disimpan'
+                  : viewerNotice?.kind === 'error'
+                    ? 'Berkas belum tersimpan'
+                    : 'Simpan berkas sekarang?'}
+              </DialogTitle>
+              <DialogDescription className="text-center text-base leading-relaxed text-gray-600">
+                {viewerNotice?.kind === 'success'
+                  ? 'Berkas Anda sudah masuk ke sistem dan akan diperiksa oleh petugas desa. Anda dapat memantau perkembangannya di daftar pengajuan.'
+                  : viewerNotice?.kind === 'error'
+                    ? viewerNotice.message
+                    : 'Pastikan data pemohon dan seluruh dokumen sudah benar. Setelah disimpan, berkas diteruskan ke petugas desa dan tahap berikutnya bukan lagi wewenang Anda.'}
+              </DialogDescription>
+            </DialogHeader>
+
+            <DialogFooter className="mt-6 w-full flex-col-reverse gap-2 sm:flex-row sm:justify-center">
+              {viewerNotice?.kind === 'confirm' ? (
+                <>
+                  <Button
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                    onClick={() => setViewerNotice(null)}
+                    disabled={saveDraftMutation.isPending}
+                  >
+                    Periksa Lagi
+                  </Button>
+                  <Button
+                    className="w-full bg-blue-600 hover:bg-blue-700 sm:w-auto"
+                    onClick={handleViewerConfirmSave}
+                    disabled={saveDraftMutation.isPending}
+                  >
+                    {saveDraftMutation.isPending ? 'Menyimpan...' : 'Ya, Simpan Berkas'}
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  className="w-full sm:w-auto"
+                  onClick={() => {
+                    const wasSuccess = viewerNotice?.kind === 'success';
+                    setViewerNotice(null);
+                    if (wasSuccess) router.push('/app/pengajuan');
+                  }}
+                >
+                  {viewerNotice?.kind === 'success' ? 'Ke Daftar Pengajuan' : 'Mengerti'}
+                </Button>
+              )}
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Step 2: overlap-check result + confirmation before Simpan/Berikutnya */}
       <Dialog open={isStep2ConfirmOpen} onOpenChange={setIsStep2ConfirmOpen}>

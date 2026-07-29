@@ -6,6 +6,8 @@ import { FileUploadField } from '../FileUploadField';
 import { Textarea } from '../ui/textarea';
 import { trpc } from '@/trpc/client';
 import { SearchableSelect } from '../SearchableSelect';
+import { normalizePhoneNumber } from '@/lib/phone-number';
+import { normalizeEmail } from '@/lib/email-address';
 
 interface Step1Props {
   draft: SubmissionDraft;
@@ -179,6 +181,14 @@ export function Step1DocumentUpload({
               inputMode="tel"
               value={draft.nomorHP || ''}
               onChange={(e) => onUpdateDraft({ nomorHP: e.target.value })}
+              // Tidy "+62 812…" / "0812-3456" into 08xxxxxxxxxx once the user
+              // moves on, rather than fighting their keystrokes as they type.
+              onBlur={(e) => {
+                const normalized = normalizePhoneNumber(e.target.value);
+                if (normalized !== e.target.value) {
+                  onUpdateDraft({ nomorHP: normalized });
+                }
+              }}
               placeholder="08xxxxxxxxxx"
               aria-invalid={Boolean(errors.nomorHP)}
               className={errors.nomorHP ? 'border-red-500' : undefined}
@@ -193,6 +203,12 @@ export function Step1DocumentUpload({
               type="email"
               value={draft.email || ''}
               onChange={(e) => onUpdateDraft({ email: e.target.value })}
+              onBlur={(e) => {
+                const normalized = normalizeEmail(e.target.value);
+                if (normalized !== e.target.value) {
+                  onUpdateDraft({ email: normalized });
+                }
+              }}
               placeholder="nama@email.com"
               aria-invalid={Boolean(errors.email)}
               className={errors.email ? 'border-red-500' : undefined}

@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { isValidPhoneNumber, PHONE_NUMBER_ERROR } from '@/lib/phone-number';
+import { EMAIL_ERROR, isValidEmail } from '@/lib/email-address';
 
 // ============================================================================
 // SHARED TYPES & SCHEMAS
@@ -21,9 +23,8 @@ export const researchTeamMemberSchema = z.object({
   nama: z.string().min(2, 'Nama minimal 2 karakter'),
   jabatan: z.string().min(2, 'Jabatan minimal 2 karakter'),
   instansi: z.string().optional(),
-  nomorHP: z
-    .string()
-    .regex(/^(\+62|0)[0-9]{9,12}$/, 'Nomor HP tidak valid'),
+  // Tim Peneliti (juru ukur, BPD, kadus, RT) — same rule as the applicant's.
+  nomorHP: z.string().refine(isValidPhoneNumber, PHONE_NUMBER_ERROR),
 });
 
 export type ResearchTeamMember = z.infer<typeof researchTeamMemberSchema>;
@@ -77,11 +78,12 @@ export const step1BerkasSchema = z.object({
   // Contact — optional, but validated once filled in.
   nomorHP: z
     .string()
-    .regex(/^(\+62|0)[0-9]{9,12}$/, 'Nomor HP tidak valid')
+    .refine(isValidPhoneNumber, PHONE_NUMBER_ERROR)
     .optional()
     .or(z.literal('')),
   email: z
-    .email('Email tidak valid')
+    .string()
+    .refine(isValidEmail, EMAIL_ERROR)
     .optional()
     .or(z.literal('')),
 
