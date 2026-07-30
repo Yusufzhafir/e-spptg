@@ -35,6 +35,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   HelpCircle,
+  Eye,
 } from 'lucide-react';
 import { StatusSPPTG, SubmissionDraft } from '../types';
 import { Step1DocumentUpload } from './submission-steps/Step1DocumentUpload';
@@ -48,6 +49,7 @@ import { useRouter } from 'next/navigation';
 import { buildDraftSavePayload } from '@/lib/draft-save-payload';
 import { normalizeCoordinateIds } from '@/lib/coordinate-ids';
 import { overlapJenisBadgeClassName } from '@/lib/overlap-results';
+import { viewerMaxVisibleStep } from '@/lib/viewer-step-access';
 import {
   validateStep1Fields,
   validateStep2Fields,
@@ -78,6 +80,9 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
   const { hasRole } = useAuthRole();
   const isViewer = hasRole('Viewer');
   const [currentStep, setCurrentStep] = useState(1);
+  // How far the berkas itself has actually progressed, as opposed to the step
+  // being displayed. A Viewer always lands on Step 1, so the two diverge.
+  const [draftProgressStep, setDraftProgressStep] = useState(1);
   const [lastSaved, setLastSaved] = useState<string>('');
   const [fieldErrors, setFieldErrors] = useState<StepFieldErrors>({});
   const isSubmittingFromStep3 = useRef(false);
@@ -153,6 +158,11 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     overlapResults: [],
   });
 
+  // Viewer tracking: the furthest step they may open, and whether the step on
+  // screen is one of the read-only ones (anything past their editable Step 1).
+  const viewerMaxStep = viewerMaxVisibleStep(draftProgressStep, draft.status);
+  const isReadOnlyStep = isViewer && currentStep > 1;
+
   // Sync draft from backend (initial hydration only)
   useEffect(() => {
     if (draftData) {
@@ -223,6 +233,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         tanggalTerbit: payload.tanggalTerbit,
       });
       setCurrentStep(allowedStep);
+      setDraftProgressStep(draftData.currentStep);
       if (draftData.lastSaved) {
         const time = new Date(draftData.lastSaved).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
         setLastSaved(time);
@@ -324,7 +335,10 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
 
   // Auto-save functionality
   useEffect(() => {
-    if (!draft.id || isLoadingDraft) return;
+    // Never write back from a read-only view: the Viewer is only looking at a
+    // step someone else owns, and saving would push their stale local copy of
+    // the payload over the verifikator's newer work.
+    if (!draft.id || isLoadingDraft || isReadOnlyStep) return;
 
     const autoSave = setInterval(() => {
       if (draft.namaPemohon || draft.nik) {
@@ -333,7 +347,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     }, 60000); // Auto-save every minute
 
     return () => clearInterval(autoSave);
-  }, [draft, isLoadingDraft, saveDraftToBackend]);
+  }, [draft, isLoadingDraft, isReadOnlyStep, saveDraftToBackend]);
 
   // Save current step data, advance the step pointer, and persist it.
   const advanceToNextStep = async () => {
@@ -605,6 +619,18 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
 
   const canAccessStep4 = draft.status === 'SPPTG terdaftar';
 
+  /**
+   * Viewer navigation between the steps they may look at. Purely local: it must
+   * not touch `draft.currentStep`, which is the berkas's real progress pointer
+   * and belongs to the officers processing it.
+   */
+  const goToViewerStep = (nextStep: number) => {
+    if (nextStep < 1 || nextStep > viewerMaxStep) return;
+    setFieldErrors({});
+    setCurrentStep(nextStep);
+    window.scrollTo(0, 0);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -649,9 +675,9 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
             const Icon = step.icon;
             const isCompleted = currentStep > step.id;
             const isActive = currentStep === step.id;
-            const isLocked =
-              (isViewer && step.id > 1) ||
-              (step.id === 4 && !canAccessStep4);
+            const isLocked = isViewer
+              ? step.id > viewerMaxStep
+              : step.id === 4 && !canAccessStep4;
 
             return (
               <div key={step.id} className="flex items-center flex-1">
@@ -697,7 +723,11 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                   </p>
                   {isLocked && (
                     <p className="text-xs text-gray-500 mt-1 text-center max-w-[100px]">
-                      Hanya tersedia jika status &quot;SPPTG terdaftar&quot;
+                      {!isViewer
+                        ? 'Hanya tersedia jika status "SPPTG terdaftar"'
+                        : step.id === 4
+                          ? 'Tahap penerbitan diproses oleh petugas'
+                          : 'Terbuka setelah petugas menyelesaikan tahap ini'}
                     </p>
                   )}
                 </div>
@@ -725,6 +755,19 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
           </div>
         ) : (
           <>
+            {isReadOnlyStep && (
+              <div className="mb-6 flex gap-2.5 rounded-lg border border-blue-200 bg-blue-50 p-3">
+                <Eye className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-600" />
+                <div className="text-sm text-blue-900">
+                  <p className="font-semibold">Mode lihat saja</p>
+                  <p className="mt-1 leading-relaxed">
+                    Tahap ini dikerjakan oleh petugas desa. Anda dapat memantau
+                    isian dan peta di bawah, tetapi tidak dapat mengubahnya.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {currentStep === 1 && (
               <Step1DocumentUpload
                 draft={draft}
@@ -744,11 +787,19 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                   persistDraftPatch(updates, 2, options)
                 }
                 errors={fieldErrors}
+                readOnly={isReadOnlyStep}
               />
             )}
 
             {currentStep === 3 && (
-              <Step3Results draft={draft} onUpdateDraft={handleUpdateDraft} />
+              <Step3Results
+                draft={draft}
+                onUpdateDraft={handleUpdateDraft}
+                onPersistDraftPatch={(updates, options) =>
+                  persistDraftPatch(updates, 3, options)
+                }
+                readOnly={isReadOnlyStep}
+              />
             )}
 
             {currentStep === 4 && (
@@ -771,6 +822,42 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
           Batal
         </Button>
 
+        {isViewer ? (
+          /* The Viewer only ever acts on Step 1; on the tracking steps the bar
+             is pure navigation, with no save of any kind. */
+          <div className="flex flex-wrap gap-3">
+            {currentStep > 1 && (
+              <Button variant="outline" onClick={() => goToViewerStep(currentStep - 1)}>
+                Sebelumnya
+              </Button>
+            )}
+
+            {currentStep === 1 && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={handleSaveDraft}
+                  disabled={!draft.id || saveDraftMutation.isPending || isLoadingDraft}
+                >
+                  {saveDraftMutation.isPending ? 'Menyimpan...' : 'Simpan Draf'}
+                </Button>
+                <Button
+                  onClick={handleNext}
+                  className="bg-blue-600 hover:bg-blue-700"
+                  disabled={isLoadingDraft || saveDraftMutation.isPending}
+                >
+                  Simpan Berkas
+                </Button>
+              </>
+            )}
+
+            {currentStep < viewerMaxStep && (
+              <Button variant="outline" onClick={() => goToViewerStep(currentStep + 1)}>
+                Lihat Tahap {steps[currentStep].label}
+              </Button>
+            )}
+          </div>
+        ) : (
         <div className="flex flex-wrap gap-3">
           {/* Distinct from 'Simpan Berkas': this parks the work in progress and
               leaves the page, with no confirmation and no finality. */}
@@ -814,11 +901,9 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
               >
                 {currentStep === 2 && checkOverlapsMutation.isPending
                   ? 'Mengecek...'
-                  : isViewer && currentStep === 1
-                    ? 'Simpan Berkas'
-                    : currentStep === 3 && draft.status === 'SPPTG terdaftar'
-                      ? 'Lanjut ke Penerbitan SPPTG'
-                      : 'Berikutnya'}
+                  : currentStep === 3 && draft.status === 'SPPTG terdaftar'
+                    ? 'Lanjut ke Penerbitan SPPTG'
+                    : 'Berikutnya'}
               </Button>
             )
           ) : (
@@ -858,6 +943,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
             </Button>
           )}
         </div>
+        )}
       </div>
 
       {/* Viewer: confirmation and outcome for the one action they have. */}

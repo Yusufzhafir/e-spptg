@@ -88,6 +88,12 @@ interface Step2Props {
     options?: { silent?: boolean }
   ) => Promise<void>;
   errors?: Record<string, string>;
+  /**
+   * Look, don't touch. Used for the Viewer tracking a berkas that has already
+   * moved past this stage: every control is disabled at the DOM level, and the
+   * map drops into display-only mode so the polygon cannot be redrawn.
+   */
+  readOnly?: boolean;
 }
 
 type NewWitnessWithUsage = {
@@ -125,6 +131,7 @@ export function Step2FieldValidation({
   onUpdateDraft,
   onPersistDraftPatch,
   errors = {},
+  readOnly = false,
 }: Step2Props) {
   const [isOverlapDialogOpen, setIsOverlapDialogOpen] = useState(false);
   const [isParsingKml, setIsParsingKml] = useState(false);
@@ -588,11 +595,18 @@ export function Step2FieldValidation({
   }, [draft.coordinatesGeografis, calculateArea, onUpdateDraft, draft.luasLahan]);
 
   return (
+    // `disabled` on the fieldset cascades to every input, select and button
+    // inside — a single, unbypassable switch instead of threading a flag through
+    // dozens of controls. The map is not a form control, so it gets `readOnly`
+    // passed explicitly below. `min-w-0` keeps the browser's default fieldset
+    // sizing from breaking the grids inside.
     <div className="space-y-6">
       <div>
         <h2 className="text-gray-900 mb-2">Validasi Lapangan</h2>
         <p className="text-gray-600">
-          Isi data tim peneliti, saksi batas, dan koordinat lahan hasil survey lapangan.
+          {readOnly
+            ? 'Data tim peneliti, saksi batas, dan koordinat lahan hasil survey lapangan.'
+            : 'Isi data tim peneliti, saksi batas, dan koordinat lahan hasil survey lapangan.'}
         </p>
       </div>
 
@@ -628,14 +642,16 @@ export function Step2FieldValidation({
       </div>
 
       {/* Boundary Witnesses */}
-      <div className="space-y-4 pt-4 border-t border-gray-200">
+      <fieldset disabled={readOnly} className="space-y-4 pt-4 border-t border-gray-200 min-w-0">
         <h3 className="text-gray-900">
-          Saksi Batas Lahan <span className="text-red-600">*</span>
+          Saksi Batas Lahan {!readOnly && <span className="text-red-600">*</span>}
         </h3>
         {errors.saksiList && (
           <p className="text-xs text-red-600">{errors.saksiList}</p>
         )}
 
+        {/* The "add a witness" row is pure input — nothing to read here. */}
+        {!readOnly && (
         <div className="grid grid-cols-1 md:grid-cols-[1fr_200px_1fr_auto] gap-2">
           <Input
             placeholder="Nama saksi"
@@ -674,6 +690,7 @@ export function Step2FieldValidation({
             Tambah
           </Button>
         </div>
+        )}
 
         {draft.saksiList.length > 0 && (
           <div className="border border-gray-200 rounded-lg overflow-hidden">
@@ -683,7 +700,7 @@ export function Step2FieldValidation({
                   <TableHead>Nama Saksi</TableHead>
                   <TableHead>Sisi Batas</TableHead>
                   <TableHead>Penggunaan Batas</TableHead>
-                  <TableHead className="text-right">Aksi</TableHead>
+                  {!readOnly && <TableHead className="text-right">Aksi</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -695,16 +712,18 @@ export function Step2FieldValidation({
                       <Badge variant="outline">{witness.sisi}</Badge>
                     </TableCell>
                     <TableCell>{witness.penggunaanLahanBatas || '-'}</TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRemoveWitness(witness.id)}
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </TableCell>
+                    {!readOnly && (
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveWitness(witness.id)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 )
                 })}
@@ -712,10 +731,10 @@ export function Step2FieldValidation({
             </Table>
           </div>
         )}
-      </div>
+      </fieldset>
 
       {/* Land Location & Details */}
-      <div className="space-y-4 pt-4 border-t border-gray-200">
+      <fieldset disabled={readOnly} className="space-y-4 pt-4 border-t border-gray-200 min-w-0">
         <h3 className="text-gray-900">Lokasi dan Detail Lahan</h3>
 
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
@@ -809,23 +828,27 @@ export function Step2FieldValidation({
             />
           </div>
         </div>
-      </div>
+      </fieldset>
 
       {/* Coordinates */}
       <div className="space-y-4 pt-4 border-t border-gray-200">
         <div className="flex items-center justify-between">
           <h3 className="text-gray-900">
-            Titik Koordinat Patok/Pal Batas <span className="text-red-600">*</span>
+            Titik Koordinat Patok/Pal Batas{' '}
+            {!readOnly && <span className="text-red-600">*</span>}
           </h3>
-          <Button onClick={handleAddCoordinate} variant="outline" size="sm">
-            <Plus className="w-4 h-4 mr-2" />
-            Tambah Titik
-          </Button>
+          {!readOnly && (
+            <Button onClick={handleAddCoordinate} variant="outline" size="sm">
+              <Plus className="w-4 h-4 mr-2" />
+              Tambah Titik
+            </Button>
+          )}
         </div>
         {errors.coordinatesGeografis && (
           <p className="text-xs text-red-600">{errors.coordinatesGeografis}</p>
         )}
 
+        {!readOnly && (
         <div className="space-y-1">
           <Label htmlFor="kml-coordinate-file">Impor KML (Opsional)</Label>
           <Input
@@ -840,15 +863,20 @@ export function Step2FieldValidation({
           </p>
           {isParsingKml && <p className="text-xs text-blue-600">Memproses file...</p>}
         </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Coordinate Table */}
-          <div className="space-y-3">
+          <fieldset disabled={readOnly} className="space-y-3 min-w-0">
              <div className="flex items-center space-x-4 mb-4">
                 <Label>Sistem Koordinat:</Label>
-                <RadioGroup 
-                    value={coordinateSystem} 
+                <RadioGroup
+                    value={coordinateSystem}
                     onValueChange={(val) => handleSystemChange(val as CoordinateSystem)}
+                    // Explicit rather than relying on the fieldset: Radix drives
+                    // its own roving-focus/keyboard selection, so the group has
+                    // to be told it is disabled.
+                    disabled={readOnly}
                     className="flex space-x-4"
                 >
                     <div className="flex items-center space-x-2">
@@ -891,7 +919,7 @@ export function Step2FieldValidation({
                             <TableHead>Northing (Y)</TableHead>
                           </>
                       )}
-                      <TableHead className="w-16"></TableHead>
+                      {!readOnly && <TableHead className="w-16"></TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -935,16 +963,18 @@ export function Step2FieldValidation({
                                 placeholder="107.6"
                               />
                             </TableCell>
-                            <TableCell>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleRemoveCoordinate(coord.id, index)}
-                                className="text-red-600 hover:text-red-700"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </TableCell>
+                            {!readOnly && (
+                              <TableCell>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRemoveCoordinate(coord.id, index)}
+                                  className="text-red-600 hover:text-red-700"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </TableCell>
+                            )}
                           </TableRow>
                         ))
                     ) : (
@@ -1058,7 +1088,7 @@ export function Step2FieldValidation({
                     Opsional: Masukkan luas hasil pengukuran manual jika berbeda dengan perhitungan otomatis.
                  </p>
             </div>
-          </div>
+          </fieldset>
 
           {/* Map Preview */}
           <div className="space-y-3">
@@ -1067,6 +1097,7 @@ export function Step2FieldValidation({
               coordinates={draft.coordinatesGeografis}
               recenterSignal={recenterSignal}
               referencePolygons={referencePolygons}
+              readOnly={readOnly}
               onCoordinatesChange={(coords) => {
                 // This callback is triggered when user draws/edits on the map
                 // The coordinates are already synced, just update the draft
@@ -1104,15 +1135,22 @@ export function Step2FieldValidation({
               </p>
             </div>
 
-            <Button
-              onClick={handleCheckOverlap}
-              variant="outline"
-              className="w-full"
-              disabled={draft.coordinatesGeografis.length < 3 || checkOverlapsMutation.isPending}
-            >
-              <AlertTriangle className="w-4 h-4 mr-2" />
-              {checkOverlapsMutation.isPending ? 'Mengecek...' : 'Cek Tumpang Tindih'}
-            </Button>
+            {/* Staff-only: checkOverlapsFromCoordinates is a verifikatorProcedure,
+                so for a Viewer this button could only ever produce a FORBIDDEN
+                error. It also sits outside the read-only fieldset (that fieldset
+                stops at the coordinate table so Google's map controls keep
+                working), which is why it needs its own guard. */}
+            {!readOnly && (
+              <Button
+                onClick={handleCheckOverlap}
+                variant="outline"
+                className="w-full"
+                disabled={draft.coordinatesGeografis.length < 3 || checkOverlapsMutation.isPending}
+              >
+                <AlertTriangle className="w-4 h-4 mr-2" />
+                {checkOverlapsMutation.isPending ? 'Mengecek...' : 'Cek Tumpang Tindih'}
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -1121,7 +1159,9 @@ export function Step2FieldValidation({
       <div className="space-y-4 pt-4 border-t border-gray-200">
         <h3 className="text-gray-900">Dokumen Lapangan</h3>
         <p className="text-sm text-gray-600">
-          Unggah dokumen hasil validasi lapangan (format PDF, maks. 10 MB)
+          {readOnly
+            ? 'Dokumen hasil validasi lapangan.'
+            : 'Unggah dokumen hasil validasi lapangan (format PDF, maks. 10 MB)'}
         </p>
 
         <div>
@@ -1135,6 +1175,7 @@ export function Step2FieldValidation({
             accept=".pdf"
             maxSize={10}
             error={Boolean(errors.dokumenBeritaAcara)}
+            readOnly={readOnly}
           />
           {errors.dokumenBeritaAcara && (
             <p className="text-xs text-red-600 mt-1">{errors.dokumenBeritaAcara}</p>

@@ -3,7 +3,17 @@ import { SubmissionDraft } from '../../types';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
-import { Upload, File, X, CheckCircle2, Download, FileText, Eye, FileDown } from 'lucide-react';
+import {
+  Upload,
+  File,
+  X,
+  CheckCircle2,
+  Download,
+  FileText,
+  Eye,
+  FileDown,
+  AlertTriangle,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/trpc/client';
 import { usePDFGenerator } from '@/hooks/usePDFGenerator';
@@ -24,11 +34,30 @@ type GeneratedDocs = {
   pdfUrl: string;
   docxUrl: string;
   baseName: string;
+  /**
+   * The Nomor SPPTG and Tanggal Diterbitkan actually baked into these files.
+   * Kept so a later edit of either field can be detected: the downloads are
+   * static blobs and do not follow the form, so without this the user would
+   * hand over a certificate printed with the old values.
+   */
+  nomorSPPTG: string;
+  tanggalTerbit: string;
 };
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
   return <p className="text-xs text-red-600 mt-1">{message}</p>;
+}
+
+/** "2025-07-30" → "30 Juli 2025"; keeps the raw text when it cannot be parsed. */
+function formatIssueDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value || '-';
+  return date.toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
 }
 
 export function Step4Issuance({
@@ -283,7 +312,13 @@ export function Step4Issuance({
       }
 
       const baseName = `SPPTG_${(draft.nomorSPPTG || 'dokumen').replace(/[\\/]/g, '_')}`;
-      setGeneratedDocs({ pdfUrl: pdfResult.url, docxUrl, baseName });
+      setGeneratedDocs({
+        pdfUrl: pdfResult.url,
+        docxUrl,
+        baseName,
+        nomorSPPTG: draft.nomorSPPTG.trim(),
+        tanggalTerbit: draft.tanggalTerbit,
+      });
 
       toast.success('Dokumen SPPTG berhasil dibuat. Silakan unduh dalam format PDF atau DOCX.');
     } catch (error: unknown) {
@@ -343,6 +378,14 @@ export function Step4Issuance({
   };
 
   const isFormComplete = draft.dokumenSPPTG && draft.nomorSPPTG && draft.tanggalTerbit;
+
+  // The generated PDF/DOCX are fixed blobs: editing the number or the issue date
+  // afterwards leaves the download links pointing at a certificate that no
+  // longer matches the form. Flag it instead of letting it pass silently.
+  const generatedDocsAreStale =
+    generatedDocs !== null &&
+    ((draft.nomorSPPTG ?? '').trim() !== generatedDocs.nomorSPPTG ||
+      (draft.tanggalTerbit ?? '') !== generatedDocs.tanggalTerbit);
 
   return (
     <div className="space-y-6">
@@ -420,7 +463,11 @@ export function Step4Issuance({
               <Button
                 onClick={handleGenerateDocuments}
                 disabled={isGeneratingDocs || isGeneratingPDF || isUploading || isDeleting}
-                className="bg-blue-600 hover:bg-blue-700 flex-shrink-0"
+                className={
+                  generatedDocsAreStale
+                    ? 'bg-amber-600 hover:bg-amber-700 flex-shrink-0'
+                    : 'bg-blue-600 hover:bg-blue-700 flex-shrink-0'
+                }
               >
                 {isGeneratingDocs || isGeneratingPDF ? (
                   <>
@@ -430,7 +477,7 @@ export function Step4Issuance({
                 ) : (
                   <>
                     <FileText className="w-4 h-4 mr-2" />
-                    Generate Dokumen
+                    {generatedDocsAreStale ? 'Generate Ulang' : 'Generate Dokumen'}
                   </>
                 )}
               </Button>
@@ -447,6 +494,22 @@ export function Step4Issuance({
                 Unduh, tanda tangani/stempel bila perlu, lalu unggah kembali sebagai
                 softcopy SPPTG di bawah.
               </p>
+
+              {generatedDocsAreStale && (
+                <div className="mb-3 flex gap-2.5 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
+                  <div className="text-xs text-amber-900">
+                    <p className="font-semibold">Ada perubahan setelah dokumen dibuat</p>
+                    <p className="mt-1 leading-relaxed">
+                      Dokumen di bawah masih memakai{' '}
+                      <strong>Nomor SPPTG {generatedDocs.nomorSPPTG}</strong> dan{' '}
+                      <strong>tanggal {formatIssueDate(generatedDocs.tanggalTerbit)}</strong>.
+                      Klik <strong>Generate Ulang</strong> agar isinya sesuai dengan data
+                      terbaru sebelum diunduh dan diunggah.
+                    </p>
+                  </div>
+                </div>
+              )}
               <div className="flex flex-wrap gap-2">
                 <Button
                   variant="outline"
@@ -601,12 +664,7 @@ export function Step4Issuance({
                     <p>• Dokumen SPPTG: {draft.dokumenSPPTG?.name}</p>
                     <p>• Nomor SPPTG: {draft.nomorSPPTG}</p>
                     <p>
-                      • Tanggal Terbit:{' '}
-                      {new Date(draft.tanggalTerbit || '').toLocaleDateString('id-ID', {
-                        day: 'numeric',
-                        month: 'long',
-                        year: 'numeric',
-                      })}
+                      • Tanggal Terbit: {formatIssueDate(draft.tanggalTerbit || '')}
                     </p>
                   </div>
                 </div>

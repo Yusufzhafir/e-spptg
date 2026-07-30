@@ -680,7 +680,7 @@ export function VillagesTab({
                   onChange={(e) => { setFormData({ ...formData, juruUkurNomorHP: e.target.value }); clearError('juruUkurNomorHP'); }}
                   onBlur={(e) => normalizeJuruUkurNomorHP(e.target.value)}
                 className={errorClass('juruUkurNomorHP')}
-                  placeholder="08xxxxxxxxxx"
+                  placeholder="08xxxxxxxxxx, 021xxxxxxx, atau 05xxxxxxxx"
                 />
                 <FieldError message={errors.juruUkurNomorHP} />
               </div>
@@ -801,7 +801,7 @@ export function VillagesTab({
                   onChange={(e) => { setFormData({ ...formData, juruUkurNomorHP: e.target.value }); clearError('juruUkurNomorHP'); }}
                   onBlur={(e) => normalizeJuruUkurNomorHP(e.target.value)}
                 className={errorClass('juruUkurNomorHP')}
-                  placeholder="08xxxxxxxxxx"
+                  placeholder="08xxxxxxxxxx, 021xxxxxxx, atau 05xxxxxxxx"
                 />
                 <FieldError message={errors.juruUkurNomorHP} />
               </div>

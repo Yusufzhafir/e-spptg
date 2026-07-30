@@ -50,6 +50,17 @@ export async function createTRPCContext() {
       } catch (error) {
         console.error('Error provisioning user from Clerk:', error);
       }
+
+      // A first page load fires several tRPC queries at once, and each builds its
+      // own context, so they all try to provision the same brand-new user in
+      // parallel. `users.clerk_user_id` is unique, so exactly one insert wins and
+      // the rest throw — leaving those requests with appUser = null and a 401.
+      // When `auth.me` happened to be one of the losers the session looked
+      // unauthenticated and the sidebar rendered empty until a manual refresh.
+      // Re-read before giving up: if someone else created the row, use it.
+      if (!appUser) {
+        appUser = await getUserByClerkId(clerkUserId);
+      }
     }
 
     // Update last-login (throttled) so the "Terakhir Masuk" column is populated

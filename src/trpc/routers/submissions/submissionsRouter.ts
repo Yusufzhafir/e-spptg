@@ -16,6 +16,7 @@ import { TRPCError } from '@trpc/server';
 import { normalizeOverlapRows } from '@/lib/overlap-results';
 import { deriveSubmissionStatus } from '@/lib/submission-status';
 import { normalizePhoneNumber } from '@/lib/phone-number';
+import type { FeedbackData } from '@/types';
 import {
     assertCanAccessDraft,
     assertCanAccessSubmission,
@@ -75,6 +76,8 @@ export const submissionsRouter = router({
                         penggunaanLahan?: string;
                         catatan?: string | null;
                         status?: string;
+                        // Step 3 feedback for a rejected / returned pengajuan.
+                        feedback?: FeedbackData | null;
                         juruUkur?: { nomorHP?: string };
                         coordinatesGeografis?: Array<{ latitude: number; longitude: number }>;
                         // Step 4 (Terbitkan SPPTG) results
@@ -142,6 +145,10 @@ export const submissionsRouter = router({
                         penggunaanLahan: payload.penggunaanLahan || '',
                         catatan: payload.catatan ?? null,
                         status: submissionStatus,
+                        // Persist into its own column, not just the payload
+                        // snapshot: this is what the applicant is shown on the
+                        // detail page when their berkas is returned or rejected.
+                        feedback: payload.feedback ?? null,
                         tanggalPengajuan: new Date(),
                         ownerUserId: draft.userId,
                         verifikator: ctx.appUser!.id,
@@ -213,6 +220,7 @@ export const submissionsRouter = router({
                                 penggunaanLahan: submissionData.penggunaanLahan,
                                 catatan: submissionData.catatan,
                                 status: submissionData.status,
+                                feedback: submissionData.feedback,
                                 verifikator: ctx.appUser!.id,
                                 geoJSON: submissionData.geoJSON,
                                 payload: submissionData.payload,

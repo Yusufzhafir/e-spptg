@@ -74,6 +74,11 @@ export interface SubmissionPayloadSnapshot {
   tanggalLahir?: string;
   pekerjaan?: string;
   alamatKTP?: string;
+  /**
+   * Step 3 feedback. Newer submissions also have it in the `feedback` column;
+   * this is the only place older rows carry it, so the detail page reads both.
+   */
+  feedback?: FeedbackData;
   [key: string]: unknown;
 }
 

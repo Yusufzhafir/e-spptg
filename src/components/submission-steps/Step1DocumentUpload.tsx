@@ -189,7 +189,7 @@ export function Step1DocumentUpload({
                   onUpdateDraft({ nomorHP: normalized });
                 }
               }}
-              placeholder="08xxxxxxxxxx"
+              placeholder="08xxxxxxxxxx, 021xxxxxxx, atau 05xxxxxxxx"
               aria-invalid={Boolean(errors.nomorHP)}
               className={errors.nomorHP ? 'border-red-500' : undefined}
             />

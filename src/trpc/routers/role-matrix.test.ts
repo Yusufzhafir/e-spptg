@@ -60,6 +60,7 @@ vi.mock('@clerk/nextjs/server', () => ({
   clerkClient: vi.fn(async () => ({ users: { updateUserMetadata: vi.fn() } })),
 }));
 
+import { authRouter } from './auth/authrouter';
 import { usersRouter } from './users/usersRouter';
 import { draftsRouter } from './drafts/draftsRouter';
 import { commentsRouter } from './comments/commentsRouter';
@@ -73,8 +74,12 @@ import * as documentQueries from '@/server/db/queries/documents';
 import * as commentQueries from '@/server/db/queries/comments';
 import * as notificationQueries from '@/server/db/queries/notifications';
 import * as s3 from '@/server/s3/s3';
+import { ACCOUNT_DEACTIVATED_MESSAGE } from '@/lib/account-status';
 
 const getUserByIdMock = vi.mocked(userQueries.getUserById);
+const updateUserMock = vi.mocked(userQueries.updateUser);
+const createUserMock = vi.mocked(userQueries.createUser);
+const getUserByEmailMock = vi.mocked(userQueries.getUserByEmail);
 const listUsersMock = vi.mocked(userQueries.listUsers);
 const listUsersByVillageMock = vi.mocked(userQueries.listUsersByVillage);
 const getOrCreateDraftMock = vi.mocked(draftQueries.getOrCreateDraft);
@@ -106,7 +111,8 @@ function ctx(
   peran: UserRole,
   userId: number,
   assignedVillageId: number | null = null,
-  assignedKecamatan: string | null = null
+  assignedKecamatan: string | null = null,
+  status: 'Aktif' | 'Nonaktif' = 'Aktif'
 ) {
   const appUser: NonNullable<TRPCContext['appUser']> = {
     id: userId,
@@ -117,7 +123,7 @@ function ctx(
     peran,
     assignedVillageId,
     assignedKecamatan,
-    status: 'Aktif',
+    status,
     nomorHP: null,
     terakhirMasuk: null,
     createdAt: new Date(),
@@ -266,10 +272,73 @@ describe('users mutations — role guard', () => {
     }
   });
 
-  it('Admin cannot create a privileged role', async () => {
-    await expectDenied(
-      usersRouter.createCaller(ADMIN()).create({ ...payload, peran: 'Verifikator' })
+  it.each(['Superadmin', 'Admin', 'Kecamatan', 'Viewer'] as const)(
+    'Admin cannot create a %s account',
+    async (peran) => {
+      await expectDenied(
+        usersRouter.createCaller(ADMIN()).create({ ...payload, peran })
+      );
+    }
+  );
+
+  it('Admin can staff its own desa with a Verifikator', async () => {
+    getUserByEmailMock.mockResolvedValue(undefined as never);
+    createUserMock.mockImplementation(
+      async (data: Record<string, unknown>) => ({ id: 99, ...data }) as never
     );
+
+    await usersRouter
+      .createCaller(ADMIN())
+      .create({ ...payload, peran: 'Verifikator' });
+
+    expect(createUserMock).toHaveBeenCalledWith(
+      expect.objectContaining({ peran: 'Verifikator', assignedVillageId: VILLAGE_A })
+    );
+  });
+
+  it('the desa is forced to the Admin own, not the one they asked for', async () => {
+    getUserByEmailMock.mockResolvedValue(undefined as never);
+    createUserMock.mockResolvedValue({ id: 99 } as never);
+
+    await expectDenied(
+      usersRouter.createCaller(ADMIN()).create({
+        ...payload,
+        peran: 'Verifikator',
+        assignedVillageId: VILLAGE_B,
+      })
+    );
+    expect(createUserMock).not.toHaveBeenCalled();
+  });
+
+  it('an Admin with no desa cannot create anyone', async () => {
+    await expectDenied(
+      usersRouter
+        .createCaller(ctx('Admin', 2, null))
+        .create({ ...payload, peran: 'Verifikator' })
+    );
+  });
+
+  it('Admin may edit a Verifikator in its desa but not change its role', async () => {
+    const target = {
+      id: 99,
+      peran: 'Verifikator',
+      assignedVillageId: VILLAGE_A,
+      status: 'Aktif',
+      clerkUserId: null,
+    } as UserRecord;
+    getUserByIdMock.mockResolvedValue(target);
+    updateUserMock.mockResolvedValue({ id: 99 } as never);
+
+    await usersRouter
+      .createCaller(ADMIN())
+      .update({ id: 99, data: { nama: 'Nama Baru' } });
+    expect(updateUserMock).toHaveBeenCalled();
+
+    updateUserMock.mockClear();
+    await expectDenied(
+      usersRouter.createCaller(ADMIN()).update({ id: 99, data: { peran: 'Viewer' } })
+    );
+    expect(updateUserMock).not.toHaveBeenCalled();
   });
 });
 
@@ -487,5 +556,101 @@ describe('submissions.checkOverlapsFromCoordinates — probing is staff-only', (
     await expectDenied(
       submissionsRouter.createCaller(KECAMATAN()).checkOverlapsFromCoordinates({ coordinates })
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Deactivated accounts — the 'Nonaktif' flag must actually revoke access.
+// Clerk keeps their session alive across the toggle, so the block lives in the
+// tRPC auth middleware and has to hold for every role and every procedure.
+// ---------------------------------------------------------------------------
+describe('status Nonaktif — access is revoked for every role', () => {
+  const DEACTIVATED: Array<[string, TRPCContext]> = [
+    ['Superadmin', ctx('Superadmin', 1, null, null, 'Nonaktif')],
+    ['Admin', ctx('Admin', 2, VILLAGE_A, null, 'Nonaktif')],
+    ['Verifikator', ctx('Verifikator', 3, VILLAGE_A, null, 'Nonaktif')],
+    ['Kecamatan', ctx('Kecamatan', 5, null, KEC_A, 'Nonaktif')],
+    ['Viewer', ctx('Viewer', 4, null, null, 'Nonaktif')],
+  ];
+
+  it.each(DEACTIVATED)('%s cannot read its own profile', async (_role, caller) => {
+    await expect(authRouter.createCaller(caller).me()).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      message: ACCOUNT_DEACTIVATED_MESSAGE,
+    });
+  });
+
+  it.each(DEACTIVATED)('%s cannot list submissions', async (_role, caller) => {
+    await expect(
+      submissionsRouter.createCaller(caller).list({ limit: 50, offset: 0 })
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it.each(DEACTIVATED)('%s cannot list users', async (_role, caller) => {
+    await expect(
+      usersRouter.createCaller(caller).list({ limit: 100, offset: 0 })
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(listUsersMock).not.toHaveBeenCalled();
+  });
+
+  it('a deactivated Superadmin loses its privileged mutations too', async () => {
+    const caller = ctx('Superadmin', 1, null, null, 'Nonaktif');
+    await expect(
+      usersRouter.createCaller(caller).toggleStatus({ id: 9 })
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(getUserByIdMock).not.toHaveBeenCalled();
+  });
+
+  it('an active account is unaffected', async () => {
+    listUsersMock.mockResolvedValue([] as never);
+    await expect(
+      usersRouter.createCaller(SUPERADMIN()).list({ limit: 100, offset: 0 })
+    ).resolves.toEqual([]);
+  });
+});
+
+describe('self-deactivation is refused', () => {
+  it('Superadmin cannot toggle its own account off', async () => {
+    getUserByIdMock.mockResolvedValue({
+      id: 1,
+      peran: 'Superadmin',
+      assignedVillageId: null,
+      status: 'Aktif',
+      clerkUserId: 'clerk-1',
+    } as UserRecord);
+
+    await expect(
+      usersRouter.createCaller(SUPERADMIN()).toggleStatus({ id: 1 })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    expect(updateUserMock).not.toHaveBeenCalled();
+  });
+
+  it('nor set its own status to Nonaktif through update', async () => {
+    getUserByIdMock.mockResolvedValue({
+      id: 1,
+      peran: 'Superadmin',
+      assignedVillageId: null,
+      status: 'Aktif',
+      clerkUserId: 'clerk-1',
+    } as UserRecord);
+
+    await expect(
+      usersRouter.createCaller(SUPERADMIN()).update({ id: 1, data: { status: 'Nonaktif' } })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    expect(updateUserMock).not.toHaveBeenCalled();
+  });
+
+  it('deactivating somebody else still works', async () => {
+    getUserByIdMock.mockResolvedValue({
+      id: 9,
+      peran: 'Admin',
+      assignedVillageId: VILLAGE_A,
+      status: 'Aktif',
+      clerkUserId: 'clerk-9',
+    } as UserRecord);
+    updateUserMock.mockResolvedValue({ id: 9 } as never);
+
+    await usersRouter.createCaller(SUPERADMIN()).toggleStatus({ id: 9 });
+    expect(updateUserMock).toHaveBeenCalledWith(9, { status: 'Nonaktif' });
   });
 });

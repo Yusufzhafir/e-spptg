@@ -5,7 +5,7 @@ import {
   updateUserSchema,
 } from '@/lib/validation';
 import * as queries from '@/server/db/queries/user';
-import { assertCanManageUser } from '@/server/authz';
+import { assertCanManageUser, requireAssignedVillageId } from '@/server/authz';
 import { TRPCError } from '@trpc/server';
 import { clerkClient } from '@clerk/nextjs/server';
 
@@ -47,6 +47,24 @@ function normalizeAssignedKecamatanByRole(
     });
   }
   return kecamatan;
+}
+
+/**
+ * A 'Nonaktif' account is refused by the tRPC auth middleware, so deactivating
+ * yourself is an instant, self-inflicted lockout — you would not even be able to
+ * undo it. Superadmins can still deactivate each other.
+ */
+function assertNotSelfDeactivation(
+  actorId: number,
+  targetId: number,
+  nextStatus: 'Aktif' | 'Nonaktif'
+) {
+  if (actorId === targetId && nextStatus === 'Nonaktif') {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Anda tidak dapat menonaktifkan akun Anda sendiri.',
+    });
+  }
 }
 
 export const usersRouter = router({
@@ -117,19 +135,36 @@ export const usersRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const isSuperadmin = ctx.appUser!.peran === 'Superadmin';
+      const actor = ctx.appUser!;
+      const isSuperadmin = actor.peran === 'Superadmin';
+      // Default stays 'Viewer' so an Admin that omits `peran` is rejected below
+      // rather than silently getting the one role they are allowed to create.
       const role = input.peran ?? 'Viewer';
-      if (!isSuperadmin && role !== 'Viewer') {
+
+      // An Admin staffs their own desa: Verifikator accounts, nothing else.
+      // Superadmin remains the only role that can mint Admins, Kecamatan
+      // oversight accounts, or Viewers.
+      if (!isSuperadmin && role !== 'Verifikator') {
         throw new TRPCError({
           code: 'FORBIDDEN',
-          message: 'Hanya superadmin yang dapat membuat Admin/Verifikator.',
+          message: 'Admin hanya dapat menambahkan akun Verifikator.',
         });
       }
-      if (!isSuperadmin && input.assignedVillageId !== undefined) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Hanya superadmin yang dapat mengatur desa penugasan.',
-        });
+
+      let assignedVillageIdInput = input.assignedVillageId;
+      if (!isSuperadmin) {
+        // The desa is not the Admin's to choose — it is always their own.
+        const actorVillageId = requireAssignedVillageId(actor);
+        if (
+          input.assignedVillageId != null &&
+          input.assignedVillageId !== actorVillageId
+        ) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Anda hanya dapat menambahkan Verifikator pada desa yang ditetapkan.',
+          });
+        }
+        assignedVillageIdInput = actorVillageId;
       }
 
       // Prevent duplicates: the email is what links this pre-registered row to a
@@ -144,7 +179,7 @@ export const usersRouter = router({
 
       const assignedVillageId = normalizeAssignedVillageByRole(
         role,
-        input.assignedVillageId
+        assignedVillageIdInput
       );
       const assignedKecamatan = normalizeAssignedKecamatanByRole(
         role,
@@ -189,6 +224,10 @@ export const usersRouter = router({
       // Hierarchy + desa scope: Admin may only manage same-desa accounts strictly
       // below Admin (Verifikator/Viewer); Verifikator may manage no one.
       assertCanManageUser(ctx.appUser!, targetUser);
+
+      if (input.data.status) {
+        assertNotSelfDeactivation(ctx.appUser!.id, input.id, input.data.status);
+      }
 
       const nextRole = input.data.peran ?? targetUser.peran;
       // Non-superadmins may not change a user's role or reassign their desa; they
@@ -258,6 +297,7 @@ export const usersRouter = router({
       }
       assertCanManageUser(ctx.appUser!, user);
       const newStatus = user.status === 'Aktif' ? 'Nonaktif' : 'Aktif';
+      assertNotSelfDeactivation(ctx.appUser!.id, input.id, newStatus);
       return queries.updateUser(input.id, { status: newStatus });
     }),
 });

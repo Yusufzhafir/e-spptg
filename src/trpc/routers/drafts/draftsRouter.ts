@@ -72,6 +72,7 @@ import {
   saveDraftStepSchema,
   validateStepCompletion,
 } from '@/lib/validation/submission-draft';
+import { stampFeedbackAttribution } from '@/lib/feedback-attribution';
 import {
   assertCanAccessDraft,
   assertCanAccessSubmission,
@@ -290,10 +291,17 @@ export const draftsRouter = router({
           }
         }
 
+        // The audit trail is the server's to write: never trust a client-supplied
+        // pemberi / verifikator on a Step 3 decision.
+        const attributedPayload = stampFeedbackAttribution(input.payload, {
+          id: ctx.appUser!.id,
+          nama: ctx.appUser!.nama,
+        });
+
         const draft = await queries.saveDraftStep(
           input.draftId,
           input.currentStep,
-          input.payload
+          attributedPayload
         );
 
         return {
