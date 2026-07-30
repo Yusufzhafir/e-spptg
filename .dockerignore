@@ -1,0 +1,41 @@
+# Rahasia — jangan pernah masuk ke image
+.env
+.env.*
+*.pem
+
+# Dependency & hasil build lokal
+node_modules
+.next
+out
+build
+coverage
+*.tsbuildinfo
+next-env.d.ts
+
+# VCS & tooling
+.git
+.gitignore
+.github
+.vscode
+.idea
+.claude
+.cursor
+
+# Dokumen / aset yang tidak dibutuhkan runtime
+docs
+test
+README.md
+AGENTS.md
+CLAUDE.md
+deploy
+
+# Log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Docker sendiri
+Dockerfile
+.dockerignore
+docker-compose*.yml

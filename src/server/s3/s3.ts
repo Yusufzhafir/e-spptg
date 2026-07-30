@@ -14,6 +14,10 @@ const s3Client = new S3Client({
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
   },
   endpoint: process.env.S3_ENDPOINT,
+  // MinIO on-prem tidak punya wildcard DNS per-bucket, jadi URL harus
+  // path-style (endpoint/bucket/key) bukan virtual-hosted (bucket.endpoint/key).
+  // Default false = perilaku lama (Biznet NEO / AWS).
+  forcePathStyle: process.env.S3_FORCE_PATH_STYLE === 'true',
 });
 
 /**
