@@ -1,0 +1,83 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1764947915351,
+      "tag": "0000_swift_captain_marvel",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1765002059852,
+      "tag": "0001_sour_union_jack",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1765112544261,
+      "tag": "0002_supreme_matthew_murdock",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1767534781267,
+      "tag": "0003_ambiguous_ultimo",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784944687958,
+      "tag": "0006_submission_is_valid",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784951224877,
+      "tag": "0007_comments",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784961154411,
+      "tag": "0008_edit_flow",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785007430128,
+      "tag": "0009_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785100000000,
+      "tag": "0010_nullable_clerk_user_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785200000000,
+      "tag": "0011_fix_overlap_geom_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785300000000,
+      "tag": "0012_kecamatan_role",
+      "breakpoints": true
+    }
+  ]
+}

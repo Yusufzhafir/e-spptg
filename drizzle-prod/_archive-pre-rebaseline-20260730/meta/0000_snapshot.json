@@ -1,198 +1,9 @@
 {
-  "id": "82c54a52-898f-4e25-85ac-1659b67f54a0",
+  "id": "2c27e431-31ff-4275-b986-b3f886a667cb",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.comments": {
-      "name": "comments",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "bigint",
-          "primaryKey": true,
-          "notNull": true,
-          "identity": {
-            "type": "byDefault",
-            "name": "comments_id_seq",
-            "schema": "public",
-            "increment": "1",
-            "startWith": "1",
-            "minValue": "1",
-            "maxValue": "9223372036854775807",
-            "cache": "1",
-            "cycle": false
-          }
-        },
-        "submission_id": {
-          "name": "submission_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content": {
-          "name": "content",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "comments_submission_idx": {
-          "name": "comments_submission_idx",
-          "columns": [
-            {
-              "expression": "submission_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.notifications": {
-      "name": "notifications",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "bigint",
-          "primaryKey": true,
-          "notNull": true,
-          "identity": {
-            "type": "byDefault",
-            "name": "notifications_id_seq",
-            "schema": "public",
-            "increment": "1",
-            "startWith": "1",
-            "minValue": "1",
-            "maxValue": "9223372036854775807",
-            "cache": "1",
-            "cycle": false
-          }
-        },
-        "submission_id": {
-          "name": "submission_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "type": {
-          "name": "type",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "status_spptg",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "nama_pemilik": {
-          "name": "nama_pemilik",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "village_id": {
-          "name": "village_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "actor_user_id": {
-          "name": "actor_user_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "notifications_created_idx": {
-          "name": "notifications_created_idx",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "notifications_village_idx": {
-          "name": "notifications_village_idx",
-          "columns": [
-            {
-              "expression": "village_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.overlap_results": {
       "name": "overlap_results",
       "schema": "",
@@ -253,7 +64,7 @@
         },
         "intersection_geom": {
           "name": "intersection_geom",
-          "type": "geometry(polygon,4326)",
+          "type": "geometry(point)",
           "primaryKey": false,
           "notNull": false
         },
@@ -374,7 +185,7 @@
         },
         "geom": {
           "name": "geom",
-          "type": "geometry(polygon,4326)",
+          "type": "geometry(point)",
           "primaryKey": false,
           "notNull": true
         },
@@ -526,18 +337,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "village_id": {
-          "name": "village_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "editing_submission_id": {
-          "name": "editing_submission_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
         "current_step": {
           "name": "current_step",
           "type": "integer",
@@ -573,23 +372,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "submission_drafts_village_idx": {
-          "name": "submission_drafts_village_idx",
-          "columns": [
-            {
-              "expression": "village_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -672,12 +455,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "luas_manual": {
-          "name": "luas_manual",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
         "penggunaan_lahan": {
           "name": "penggunaan_lahan",
           "type": "varchar(255)",
@@ -692,18 +469,12 @@
         },
         "geom": {
           "name": "geom",
-          "type": "geometry(polygon,4326)",
+          "type": "geometry(point)",
           "primaryKey": false,
           "notNull": false
         },
         "geo_json": {
           "name": "geo_json",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "payload": {
-          "name": "payload",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
@@ -715,24 +486,11 @@
           "primaryKey": false,
           "notNull": true
         },
-        "is_valid": {
-          "name": "is_valid",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
         "tanggal_pengajuan": {
           "name": "tanggal_pengajuan",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true
-        },
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
         },
         "verifikator": {
           "name": "verifikator",
@@ -782,36 +540,6 @@
           "isUnique": false,
           "concurrently": false,
           "method": "gist",
-          "with": {}
-        },
-        "submissions_owner_user_idx": {
-          "name": "submissions_owner_user_idx",
-          "columns": [
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "submissions_village_idx": {
-          "name": "submissions_village_idx",
-          "columns": [
-            {
-              "expression": "villageId",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
           "with": {}
         }
       },
@@ -956,12 +684,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "clerk_user_id": {
-          "name": "clerk_user_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "nip_nik": {
           "name": "nip_nik",
           "type": "varchar(20)",
@@ -980,18 +702,6 @@
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true
-        },
-        "assigned_village_id": {
-          "name": "assigned_village_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "assigned_kecamatan": {
-          "name": "assigned_kecamatan",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
         },
         "status": {
           "name": "status",
@@ -1028,34 +738,10 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "users_assigned_village_idx": {
-          "name": "users_assigned_village_idx",
-          "columns": [
-            {
-              "expression": "assigned_village_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "users_clerk_user_id_unique": {
-          "name": "users_clerk_user_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "clerk_user_id"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -1092,36 +778,6 @@
           "type": "varchar(255)",
           "primaryKey": false,
           "notNull": true
-        },
-        "nama_kepala_desa": {
-          "name": "nama_kepala_desa",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "juru_ukur_nama": {
-          "name": "juru_ukur_nama",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "juru_ukur_jabatan": {
-          "name": "juru_ukur_jabatan",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "juru_ukur_instansi": {
-          "name": "juru_ukur_instansi",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "juru_ukur_nomor_hp": {
-          "name": "juru_ukur_nomor_hp",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
         },
         "kecamatan": {
           "name": "kecamatan",
@@ -1180,11 +836,7 @@
         "Utara",
         "Timur",
         "Selatan",
-        "Barat",
-        "Timur Laut",
-        "Tenggara",
-        "Barat Daya",
-        "Barat Laut"
+        "Barat"
       ]
     },
     "public.coordinate_system": {
@@ -1236,8 +888,8 @@
       "values": [
         "SPPTG terdata",
         "SPPTG terdaftar",
-        "SPPTG ditolak",
-        "SPPTG ditinjau ulang",
+        "Ditolak",
+        "Ditinjau Ulang",
         "Terbit SPPTG"
       ]
     },
@@ -1248,7 +900,6 @@
         "Superadmin",
         "Admin",
         "Verifikator",
-        "Kecamatan",
         "Viewer"
       ]
     },
