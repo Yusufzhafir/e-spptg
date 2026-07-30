@@ -1,0 +1,70 @@
+# E-SPPTG — deployment on-prem satu host (AlmaLinux 10).
+#
+# Yang di dalam Docker : HANYA aplikasi Next.js.
+# Yang di host          : nginx (TLS, port 80/443), PostgreSQL 16 + PostGIS, MinIO.
+#
+# Container tidak diekspos ke publik: port 3000 hanya di-bind ke 127.0.0.1 dan
+# diakses nginx di host. Firewall publik tetap hanya 80/443.
+#
+# Konfigurasi dibaca dari file `.env` di folder ini (lihat .env.docker.example).
+# File `.env` yang sama dipakai untuk interpolasi build arg dan env runtime.
+
+services:
+  app:
+    build:
+      context: .
+      target: runner
+      args:
+        # NEXT_PUBLIC_* di-inline saat build -> harus benar di tahap build.
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+        S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+        S3_DOMAIN: ${S3_DOMAIN}
+    image: e-spptg:latest
+    container_name: e-spptg-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      # Hanya loopback host. nginx yang meneruskan dari 443.
+      - "127.0.0.1:3000:3000"
+    extra_hosts:
+      # PostgreSQL & MinIO jalan di host, bukan di container.
+      - "host.docker.internal:host-gateway"
+      # Supaya upload/presign server-side ke domain sendiri tidak keluar ke
+      # internet dan balik lagi (hairpin NAT) — cukup ke nginx di host.
+      - "siaptah.kutaitimurkab.go.id:host-gateway"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # Migrasi Drizzle. Sekali jalan, tidak ikut `docker compose up`.
+  #   docker compose --profile tools run --rm migrate
+  # Prasyarat: extension postgis sudah dibuat di database (lihat deploy/postgres/init-db.sql).
+  migrate:
+    build:
+      context: .
+      target: migrator
+      args:
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+    image: e-spptg-migrator:latest
+    container_name: e-spptg-migrate
+    profiles: ["tools"]
+    restart: "no"
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

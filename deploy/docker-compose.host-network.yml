@@ -1,0 +1,28 @@
+# Override opsional: jalankan container di network host.
+#
+# Pakai ini KALAU tidak mau mengubah listen_addresses/pg_hba PostgreSQL dan
+# binding MinIO untuk menerima koneksi dari bridge Docker — dengan host network
+# container memakai 127.0.0.1 yang sama dengan host.
+#
+# Konsekuensi: isolasi jaringan container hilang. Aplikasi hanya bind ke
+# 127.0.0.1:3000 sehingga tetap tidak terekspos ke publik.
+#
+# Cara pakai (dari root project):
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.host-network.yml up -d --build
+#
+# Lalu di `.env` ganti host database & storage:
+#   DATABASE_URL=postgresql://espptg:PASSWORD@127.0.0.1:5432/espptg
+#   DATABASE_URL_DDL=postgresql://espptg:PASSWORD@127.0.0.1:5432/espptg
+
+services:
+  app:
+    network_mode: host
+    ports: !override []
+    extra_hosts: !override []
+    environment:
+      HOSTNAME: 127.0.0.1
+      PORT: "3000"
+
+  migrate:
+    network_mode: host
+    extra_hosts: !override []

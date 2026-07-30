@@ -1,0 +1,12 @@
+# E-SPPTG — jadwal backup harian.
+# Pasang di /etc/cron.d/espptg-backup (owner root, mode 644).
+# Zona waktu server diasumsikan Asia/Makassar (WITA).
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+MAILTO=root
+# Target kedua di LUAR server ini — wajib diisi.
+BACKUP_REMOTE=user@nas.internal:/backup/e-spptg
+
+# 02:15 setiap hari
+15 2 * * * root /usr/local/bin/espptg-backup.sh >> /var/log/espptg-backup.log 2>&1
