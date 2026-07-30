@@ -19,6 +19,7 @@ import { RequiredMark } from './RequiredMark';
 import { SearchableSelect } from './SearchableSelect';
 import { FieldError } from './FieldError';
 import { createUserSchema } from '@/lib/validation';
+import { isValidPhoneNumber, normalizePhoneNumber, PHONE_NUMBER_ERROR } from '@/lib/phone-number';
 import {
   Dialog,
   DialogContent,
@@ -74,6 +75,11 @@ export function UsersTab({
 }: UsersTabProps) {
   const { user: currentUser } = useAuthRole();
   const canAddUser = currentUser?.peran === 'Superadmin' || currentUser?.peran === 'Admin';
+  // An Admin staffs their own desa with Verifikator accounts and nothing else;
+  // only Superadmin can pick a role freely. Mirrors users.create on the server.
+  const isAdminActor = currentUser?.peran === 'Admin';
+  const canAssignRole = (role: UserRole) =>
+    canManageVillageAssignment || (isAdminActor && role === 'Verifikator');
   // Kecamatan options come from the villages reference data.
   const kecamatanOptions = Array.from(new Set(villages.map((v) => v.kecamatan))).sort();
   const [searchQuery, setSearchQuery] = useState('');
@@ -93,6 +99,14 @@ export function UsersTab({
       delete next[field];
       return next;
     });
+
+  /** Tidy "+62 812…" into 08xxxxxxxxxx once the field loses focus. */
+  const normalizeNomorHP = (value: string) => {
+    const normalized = normalizePhoneNumber(value);
+    if (normalized !== value) {
+      setFormData((prev) => ({ ...prev, nomorHP: normalized }));
+    }
+  };
 
   // Filter users
   const filteredUsers = users.filter((user) => {
@@ -140,11 +154,16 @@ export function UsersTab({
 
   const handleAddUser = () => {
     setErrors({});
-    setFormData({
-      peran: 'Viewer',
-      assignedVillageId: null,
-      status: 'Aktif',
-    });
+    // Start on the only role an Admin may create, pre-scoped to their desa.
+    setFormData(
+      isAdminActor
+        ? {
+            peran: 'Verifikator',
+            assignedVillageId: currentUser?.assignedVillageId ?? null,
+            status: 'Aktif',
+          }
+        : { peran: 'Viewer', assignedVillageId: null, status: 'Aktif' }
+    );
     setIsAddDialogOpen(true);
   };
 
@@ -184,6 +203,11 @@ export function UsersTab({
     }
     if (formData.peran === 'Kecamatan' && !formData.assignedKecamatan?.trim()) {
       next.assignedKecamatan = 'Kecamatan penugasan wajib dipilih untuk peran Kecamatan';
+    }
+    // Optional field, but a filled-in number must be a usable Indonesian one.
+    const nomorHP = formData.nomorHP?.trim();
+    if (nomorHP && !isValidPhoneNumber(nomorHP)) {
+      next.nomorHP = PHONE_NUMBER_ERROR;
     }
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -548,7 +572,10 @@ export function UsersTab({
                     peran: value as UserRole,
                     assignedVillageId:
                       value === 'Admin' || value === 'Verifikator'
-                        ? formData.assignedVillageId ?? null
+                        ? // An Admin cannot choose: it is always their own desa.
+                          canManageVillageAssignment
+                          ? formData.assignedVillageId ?? null
+                          : currentUser?.assignedVillageId ?? null
                         : null,
                   });
                 }}
@@ -557,19 +584,21 @@ export function UsersTab({
                   <SelectValue placeholder="Pilih peran" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Superadmin" disabled={!canManageVillageAssignment}>
+                  <SelectItem value="Superadmin" disabled={!canAssignRole('Superadmin')}>
                     Superadmin
                   </SelectItem>
-                  <SelectItem value="Admin" disabled={!canManageVillageAssignment}>
+                  <SelectItem value="Admin" disabled={!canAssignRole('Admin')}>
                     Admin
                   </SelectItem>
-                  <SelectItem value="Verifikator" disabled={!canManageVillageAssignment}>
+                  <SelectItem value="Verifikator" disabled={!canAssignRole('Verifikator')}>
                     Verifikator
                   </SelectItem>
-                  <SelectItem value="Kecamatan" disabled={!canManageVillageAssignment}>
+                  <SelectItem value="Kecamatan" disabled={!canAssignRole('Kecamatan')}>
                     Kecamatan
                   </SelectItem>
-                  <SelectItem value="Viewer">Viewer</SelectItem>
+                  <SelectItem value="Viewer" disabled={!canAssignRole('Viewer')}>
+                    Viewer
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <FieldError message={errors.peran} />
@@ -601,7 +630,7 @@ export function UsersTab({
                 <FieldError message={errors.assignedVillageId} />
                 {!canManageVillageAssignment && (
                   <p className="mt-1 text-xs text-gray-500">
-                    Hanya superadmin yang dapat mengubah penugasan desa.
+                    Otomatis mengikuti desa penugasan Anda.
                   </p>
                 )}
               </div>
@@ -632,9 +661,12 @@ export function UsersTab({
               <Input
                 id="nomorHP"
                 value={formData.nomorHP || ''}
-                onChange={(e) => setFormData({ ...formData, nomorHP: e.target.value })}
-                placeholder="08xxxxxxxxxx"
+                onChange={(e) => { setFormData({ ...formData, nomorHP: e.target.value }); clearError('nomorHP'); }}
+                onBlur={(e) => normalizeNomorHP(e.target.value)}
+                className={errorClass('nomorHP')}
+                placeholder="08xxxxxxxxxx, 021xxxxxxx, atau 05xxxxxxxx"
               />
+              <FieldError message={errors.nomorHP} />
             </div>
           </div>
 
@@ -716,26 +748,29 @@ export function UsersTab({
                   });
                 }}
               >
-                <SelectTrigger className={errorClass('peran')}>
+                <SelectTrigger
+                  className={errorClass('peran')}
+                  // Changing an existing account's role is Superadmin-only, so the
+                  // whole control is inert for an Admin rather than offering
+                  // options the server would reject.
+                  disabled={!canManageVillageAssignment}
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Superadmin" disabled={!canManageVillageAssignment}>
-                    Superadmin
-                  </SelectItem>
-                  <SelectItem value="Admin" disabled={!canManageVillageAssignment}>
-                    Admin
-                  </SelectItem>
-                  <SelectItem value="Verifikator" disabled={!canManageVillageAssignment}>
-                    Verifikator
-                  </SelectItem>
-                  <SelectItem value="Kecamatan" disabled={!canManageVillageAssignment}>
-                    Kecamatan
-                  </SelectItem>
+                  <SelectItem value="Superadmin">Superadmin</SelectItem>
+                  <SelectItem value="Admin">Admin</SelectItem>
+                  <SelectItem value="Verifikator">Verifikator</SelectItem>
+                  <SelectItem value="Kecamatan">Kecamatan</SelectItem>
                   <SelectItem value="Viewer">Viewer</SelectItem>
                 </SelectContent>
               </Select>
               <FieldError message={errors.peran} />
+              {!canManageVillageAssignment && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Hanya superadmin yang dapat mengubah peran pengguna.
+                </p>
+              )}
             </div>
 
             {(formData.peran === 'Admin' || formData.peran === 'Verifikator') && (
@@ -795,8 +830,12 @@ export function UsersTab({
               <Input
                 id="edit-nomorHP"
                 value={formData.nomorHP || ''}
-                onChange={(e) => setFormData({ ...formData, nomorHP: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, nomorHP: e.target.value }); clearError('nomorHP'); }}
+                onBlur={(e) => normalizeNomorHP(e.target.value)}
+                className={errorClass('nomorHP')}
+                placeholder="08xxxxxxxxxx, 021xxxxxxx, atau 05xxxxxxxx"
               />
+              <FieldError message={errors.nomorHP} />
             </div>
           </div>
 

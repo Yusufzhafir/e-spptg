@@ -35,7 +35,13 @@ export interface Submission {
   
   // Peta & Dokumen
   geoJSON?: GeoJSONPolygon | null;
-  
+  /**
+   * Snapshot of the draft payload at submit time. Holds the applicant fields
+   * the submissions table has no column for (tempat/tanggal lahir, pekerjaan,
+   * alamat KTP), so the detail page can show the full owner record.
+   */
+  payload?: SubmissionPayloadSnapshot | null;
+
   // Status
   status: StatusSPPTG;
   // Validasi visual: true = data & polygon ditampilkan di peta, false = disembunyikan
@@ -55,6 +61,25 @@ export interface Submission {
   // Metadata
   createdAt: Date;
   updatedAt: Date;
+}
+
+/**
+ * The subset of the stored draft payload the UI reads back. It is a snapshot,
+ * so every field is optional — older submissions predate some of them.
+ */
+export interface SubmissionPayloadSnapshot {
+  namaPemohon?: string;
+  nik?: string;
+  tempatLahir?: string;
+  tanggalLahir?: string;
+  pekerjaan?: string;
+  alamatKTP?: string;
+  /**
+   * Step 3 feedback. Newer submissions also have it in the `feedback` column;
+   * this is the only place older rows carry it, so the detail page reads both.
+   */
+  feedback?: FeedbackData;
+  [key: string]: unknown;
 }
 
 export interface StatusHistory {
@@ -216,6 +241,8 @@ export interface SubmissionDraft {
   tanggalLahir?: string; // Date of birth (ISO date string)
   pekerjaan?: string; // Occupation
   alamatKTP?: string; // KTP address
+  nomorHP?: string; // Applicant phone number
+  email?: string; // Applicant email
   dokumenKTP?: UploadedDocument;
   dokumenKK?: UploadedDocument;
   dokumenKwitansi?: UploadedDocument;

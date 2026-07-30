@@ -41,6 +41,7 @@ import {
 } from './ui/alert-dialog';
 import { Search, Plus, Edit, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
+import { normalizePhoneNumber } from '@/lib/phone-number';
 
 type CreateVillageInput = {
   kodeDesa: string;
@@ -114,6 +115,14 @@ export function VillagesTab({
       delete next[field];
       return next;
     });
+
+  /** Tidy "+62 812…" into 08xxxxxxxxxx once the field loses focus. */
+  const normalizeJuruUkurNomorHP = (value: string) => {
+    const normalized = normalizePhoneNumber(value);
+    if (normalized !== value) {
+      setFormData((prev) => ({ ...prev, juruUkurNomorHP: normalized }));
+    }
+  };
 
   const validateVillage = () => {
     const result = createVillageSchema.safeParse({
@@ -669,8 +678,9 @@ export function VillagesTab({
                   id="juruUkurNomorHP"
                   value={formData.juruUkurNomorHP || ''}
                   onChange={(e) => { setFormData({ ...formData, juruUkurNomorHP: e.target.value }); clearError('juruUkurNomorHP'); }}
+                  onBlur={(e) => normalizeJuruUkurNomorHP(e.target.value)}
                 className={errorClass('juruUkurNomorHP')}
-                  placeholder="08xxxxxxxxxx"
+                  placeholder="08xxxxxxxxxx, 021xxxxxxx, atau 05xxxxxxxx"
                 />
                 <FieldError message={errors.juruUkurNomorHP} />
               </div>
@@ -789,7 +799,9 @@ export function VillagesTab({
                   id="edit-juruUkurNomorHP"
                   value={formData.juruUkurNomorHP || ''}
                   onChange={(e) => { setFormData({ ...formData, juruUkurNomorHP: e.target.value }); clearError('juruUkurNomorHP'); }}
+                  onBlur={(e) => normalizeJuruUkurNomorHP(e.target.value)}
                 className={errorClass('juruUkurNomorHP')}
+                  placeholder="08xxxxxxxxxx, 021xxxxxxx, atau 05xxxxxxxx"
                 />
                 <FieldError message={errors.juruUkurNomorHP} />
               </div>

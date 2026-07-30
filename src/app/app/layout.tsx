@@ -7,9 +7,10 @@ import { Header } from '@/components/Header';
 import { Submission, StatusSPPTG, SubmissionDraft } from '@/types';
 import { toast } from 'sonner';
 import { usePathname, useRouter } from 'next/navigation';
+import { useAuthRole } from '@/components/AuthRoleProvider';
+import { AccountDeactivatedNotice } from '@/components/AccountDeactivatedNotice';
 
 export type AppStateContextValue = {
-  handleSubmitForm: (data: Partial<Submission>) => void;
   handleStatusChange: (id: number, status: StatusSPPTG, alasan: string) => void;
   handleCompleteSubmission: (draft: SubmissionDraft) => void;
 };
@@ -29,6 +30,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   const pathname = usePathname();
   const router = useRouter();
+  const { isDeactivated } = useAuthRole();
 
   // infer "currentPage" from the route (under /app)
   const currentPage =
@@ -46,41 +48,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         : 'Dashboard';
 
   // === Handlers that navigate between pages ===
-
-  const handleSubmitForm = (data: Partial<Submission>) => {
-    const newSubmission: Submission = {
-      id: 0, // Will be replaced by database
-      namaPemilik: data.namaPemilik || '',
-      nik: data.nik || '',
-      alamat: data.alamat || '',
-      nomorHP: data.nomorHP || '',
-      email: data.email || '',
-      villageId: data.villageId || 0,
-      kecamatan: data.kecamatan || '',
-      kabupaten: data.kabupaten || '',
-      luas: data.luas || 0,
-      penggunaanLahan: data.penggunaanLahan || '',
-      catatan: data.catatan || null,
-      status: 'SPPTG terdata',
-      isValid: true,
-      tanggalPengajuan: new Date(),
-      ownerUserId: null,
-      verifikator: null, // Should come from authenticated user
-      riwayat: [
-        {
-          tanggal: new Date().toISOString(),
-          status: 'SPPTG terdata',
-          petugas: 'Sistem',
-        },
-      ],
-      feedback: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    setSubmissions((prev) => [newSubmission, ...prev]);
-    router.push('/app');
-  };
 
   const handleStatusChange = (
     id: number,
@@ -147,7 +114,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   };
 
   const contextValue: AppStateContextValue = {
-    handleSubmitForm,
     handleStatusChange,
     handleCompleteSubmission,
   };
@@ -157,6 +123,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     else if (page === 'pengajuan') router.push('/app/pengajuan');
     else router.push('/app');
   };
+
+  // Replace the shell entirely: with the account switched off every query in it
+  // would fail, so the nav, header and page would render only errors.
+  if (isDeactivated) {
+    return <AccountDeactivatedNotice />;
+  }
 
   return (
     <AppStateContext.Provider value={contextValue}>

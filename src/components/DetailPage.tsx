@@ -1,27 +1,63 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import { MapView } from './MapView';
 import { StatusBadge } from './StatusBadge';
-import { ChevronLeft, FileText, Clock, MessageSquare, File, Download, Loader2, Trash2, Send } from 'lucide-react';
+import {
+  ChevronLeft,
+  FileText,
+  Clock,
+  MessageSquare,
+  MessageSquareWarning,
+  File,
+  Download,
+  Loader2,
+  Trash2,
+  Send,
+} from 'lucide-react';
 import { Badge } from './ui/badge';
-import { Submission } from '@/types';
+import { FeedbackData, Submission, UploadedDocument } from '@/types';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { geomGeoJSONPolygonSchema } from '@/lib/validation';
 import { findCenter } from '@/lib/utils';
 import { trpc } from '@/trpc/client';
 import { formatDate } from '@/lib/format-date';
+import { keepLatestPerCategory } from '@/lib/document-list';
 
 interface DetailPageProps {
   submission: Submission;
   onBack: () => void;
 }
 
+/** Blank strings are common in older rows — render them as a dash, not empty space. */
+const orEmpty = (value?: string | null) => (value && value.trim() ? value : '-');
+
 export function DetailPage({ submission, onBack }: DetailPageProps) {
   const [openingDocumentId, setOpeningDocumentId] = useState<number | null>(null);
   const [newComment, setNewComment] = useState('');
+
+  // Applicant details live only in the draft payload snapshot — the submissions
+  // table has no column for tempat/tanggal lahir, pekerjaan, or alamat KTP.
+  const pemilik = submission.payload ?? {};
+  const tempatTanggalLahir =
+    [pemilik.tempatLahir?.trim(), pemilik.tanggalLahir ? formatDate(pemilik.tanggalLahir) : '']
+      .filter(Boolean)
+      .join(', ') || '-';
+
+  // Feedback only concerns the applicant while the berkas is actually returned
+  // or rejected — an approved submission may still carry the note from an
+  // earlier round, and showing that would read as a fresh objection.
+  const needsFeedback =
+    submission.status === 'SPPTG ditinjau ulang' || submission.status === 'SPPTG ditolak';
+  // `submissions.feedback` is the proper home, but rows submitted before that
+  // column was populated only have it inside the payload snapshot. Read the
+  // payload directly rather than through `pemilik`, whose `?? {}` fallback
+  // widens the type away from the snapshot shape.
+  const feedback: FeedbackData | null = needsFeedback
+    ? submission.feedback ?? submission.payload?.feedback ?? null
+    : null;
 
   const { data: currentUser } = trpc.auth.me.useQuery();
   const {
@@ -46,6 +82,8 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
     },
     onError: (error) => toast.error(error.message || 'Gagal menghapus komentar'),
   });
+
+  const canWriteComment = currentUser ? currentUser.peran !== 'Kecamatan' : false;
 
   const canDeleteComment = (commentUserId: number) => {
     if (!currentUser) return false;
@@ -87,6 +125,13 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
   } = trpc.documents.listBySubmission.useQuery({ submissionId: submission.id });
   const openDocumentMutation = trpc.documents.getSignedDownloadUrl.useMutation();
 
+  // A replaced file leaves its predecessor in the table, so show only the newest
+  // of each single-file category — one KTP, one feedback attachment, and so on.
+  const visibleDocuments = useMemo(
+    () => keepLatestPerCategory(documents ?? []),
+    [documents]
+  );
+
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -126,6 +171,22 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
     } finally {
       setOpeningDocumentId(null);
     }
+  };
+
+  /**
+   * The feedback attachment may predate document records — older drafts stored
+   * only a blob/public URL. Prefer the signed download when we have an id.
+   */
+  const handleOpenLampiran = async (lampiran: UploadedDocument) => {
+    if (lampiran.documentId) {
+      await handleOpenDocument(lampiran.documentId);
+      return;
+    }
+    if (lampiran.url) {
+      window.open(lampiran.url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    toast.error('Lampiran feedback tidak tersedia.');
   };
 
   return (
@@ -205,6 +266,124 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
         </Card>
       </div>
 
+      {/* Feedback for the applicant — only while the berkas is returned or rejected */}
+      {feedback && (
+        <Card
+          className={
+            submission.status === 'SPPTG ditolak'
+              ? 'border-red-200 bg-red-50/50'
+              : 'border-amber-200 bg-amber-50/50'
+          }
+        >
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2">
+                <MessageSquareWarning
+                  className={
+                    submission.status === 'SPPTG ditolak'
+                      ? 'h-5 w-5 text-red-600'
+                      : 'h-5 w-5 text-amber-600'
+                  }
+                />
+                Feedback untuk Pemohon
+              </CardTitle>
+              <StatusBadge status={submission.status} />
+            </div>
+            <p className="text-sm text-gray-600">
+              {submission.status === 'SPPTG ditolak'
+                ? 'Pengajuan ini ditolak dengan catatan berikut.'
+                : 'Pengajuan ini dikembalikan untuk diperbaiki. Harap tindak lanjuti catatan berikut.'}
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {feedback.alasanTerpilih && feedback.alasanTerpilih.length > 0 && (
+              <div>
+                <p className="mb-2 text-sm text-gray-600">Alasan</p>
+                <div className="flex flex-wrap gap-2">
+                  {feedback.alasanTerpilih.map((alasan) => (
+                    <Badge key={alasan} variant="outline" className="bg-white">
+                      {alasan}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {feedback.dokumenTidakLengkap && feedback.dokumenTidakLengkap.length > 0 && (
+              <div>
+                <p className="mb-2 text-sm text-gray-600">Dokumen yang perlu dilengkapi</p>
+                <ul className="list-inside list-disc space-y-1 text-sm text-gray-900">
+                  {feedback.dokumenTidakLengkap.map((dokumen) => (
+                    <li key={dokumen}>{dokumen}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {feedback.detailFeedback?.trim() && (
+              <div>
+                <p className="mb-2 text-sm text-gray-600">Detail Feedback</p>
+                {/* Verifiers type multi-line notes; keep their line breaks. */}
+                <p className="whitespace-pre-line rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-900">
+                  {feedback.detailFeedback}
+                </p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
+              {feedback.tanggalTenggat && (
+                <div>
+                  <p className="text-gray-600">Tenggat Perbaikan</p>
+                  <p>{formatDate(feedback.tanggalTenggat)}</p>
+                </div>
+              )}
+              <div>
+                <p className="text-gray-600">Diberikan Oleh</p>
+                <p>{orEmpty(feedback.pemberi)}</p>
+              </div>
+              {feedback.timestamp && (
+                <div>
+                  <p className="text-gray-600">Tanggal Feedback</p>
+                  <p>{formatDate(feedback.timestamp)}</p>
+                </div>
+              )}
+            </div>
+
+            {feedback.lampiranFeedback && (
+              <div>
+                <p className="mb-2 text-sm text-gray-600">Lampiran Feedback</p>
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <File className="h-5 w-5 flex-shrink-0 text-blue-600" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm text-gray-900">
+                        {feedback.lampiranFeedback.name}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {formatFileSize(feedback.lampiranFeedback.size)}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={openingDocumentId === feedback.lampiranFeedback.documentId}
+                    onClick={() => void handleOpenLampiran(feedback.lampiranFeedback!)}
+                  >
+                    {openingDocumentId === feedback.lampiranFeedback.documentId ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="mr-2 h-4 w-4" />
+                    )}
+                    Buka
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Tabs */}
       <Card>
         <CardContent className="pt-6">
@@ -236,23 +415,35 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
                   <div className="space-y-3">
                     <div>
                       <p className="text-sm text-gray-600">Nama Pemilik</p>
-                      <p>{submission.namaPemilik}</p>
+                      <p>{orEmpty(submission.namaPemilik)}</p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">NIK</p>
-                      <p>{submission.nik}</p>
+                      <p>{orEmpty(submission.nik)}</p>
                     </div>
                     <div>
-                      <p className="text-sm text-gray-600">Alamat</p>
-                      <p>{submission.alamat}</p>
+                      <p className="text-sm text-gray-600">Tempat, Tanggal Lahir</p>
+                      <p>{tempatTanggalLahir}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Pekerjaan</p>
+                      <p>{orEmpty(pemilik.pekerjaan)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Alamat KTP</p>
+                      {/* Older submissions stored nothing in the `alamat` column
+                          (Step 1 fills `alamatKTP`), so fall back to the payload. */}
+                      <p className="whitespace-pre-line">
+                        {orEmpty(submission.alamat || pemilik.alamatKTP)}
+                      </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Nomor HP</p>
-                      <p>{submission.nomorHP}</p>
+                      <p>{orEmpty(submission.nomorHP)}</p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Email</p>
-                      <p>{submission.email}</p>
+                      <p>{orEmpty(submission.email)}</p>
                     </div>
                   </div>
                 </div>
@@ -323,7 +514,7 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
                   </div>
                 )}
 
-                {!isDocumentsLoading && !isDocumentsError && documents?.length === 0 && (
+                {!isDocumentsLoading && !isDocumentsError && visibleDocuments.length === 0 && (
                   <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center">
                     <FileText className="mx-auto mb-2 h-10 w-10 text-gray-400" />
                     <p className="text-sm text-gray-600">
@@ -332,9 +523,9 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
                   </div>
                 )}
 
-                {!isDocumentsLoading && !isDocumentsError && documents && documents.length > 0 && (
+                {!isDocumentsLoading && !isDocumentsError && visibleDocuments.length > 0 && (
                   <div className="space-y-3">
-                    {documents.map((doc) => (
+                    {visibleDocuments.map((doc) => (
                       <div
                         key={doc.id}
                         className="flex items-center justify-between gap-3 rounded-lg border bg-white p-4"
@@ -397,21 +588,28 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
 
             <TabsContent value="komentar" className="mt-4">
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <Textarea
-                    placeholder="Tambahkan komentar..."
-                    rows={3}
-                    value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                  />
-                  <Button
-                    onClick={handleSubmitComment}
-                    disabled={createCommentMutation.isPending || !newComment.trim()}
-                  >
-                    <Send className="w-4 h-4 mr-2" />
-                    {createCommentMutation.isPending ? 'Mengirim...' : 'Kirim Komentar'}
-                  </Button>
-                </div>
+                {/* Kecamatan oversees read-only — don't offer a box the server refuses. */}
+                {canWriteComment ? (
+                  <div className="space-y-2">
+                    <Textarea
+                      placeholder="Tambahkan komentar..."
+                      rows={3}
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                    />
+                    <Button
+                      onClick={handleSubmitComment}
+                      disabled={createCommentMutation.isPending || !newComment.trim()}
+                    >
+                      <Send className="w-4 h-4 mr-2" />
+                      {createCommentMutation.isPending ? 'Mengirim...' : 'Kirim Komentar'}
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-600">
+                    Peran Anda hanya dapat membaca komentar.
+                  </p>
+                )}
 
                 <div className="space-y-3">
                   {isCommentsLoading ? (

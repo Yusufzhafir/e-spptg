@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { isValidPhoneNumber, PHONE_NUMBER_ERROR } from '@/lib/phone-number';
+import { EMAIL_ERROR, isValidEmail } from '@/lib/email-address';
 export * from './submission-draft';
 
 
@@ -11,7 +13,7 @@ export const geomGeoJSONPolygonSchema = z.object({
 // ============================================================================
 
 export const createUserSchema = z.object({
-  email: z.string().email('Email tidak valid'),
+  email: z.string().refine(isValidEmail, EMAIL_ERROR),
   nama: z.string().min(2, 'Nama minimal 2 karakter'),
   nipNik: z
     .string()
@@ -37,7 +39,7 @@ export const createVillageSchema = z.object({
   juruUkurInstansi: z.string().optional(),
   juruUkurNomorHP: z
     .string()
-    .regex(/^(\+62|0)[0-9]{9,12}$/, 'Nomor HP juru ukur tidak valid'),
+    .refine(isValidPhoneNumber, `Nomor HP juru ukur tidak valid — ${PHONE_NUMBER_ERROR}`),
   kecamatan: z.string().min(2, 'Kecamatan minimal 2 karakter'),
   kabupaten: z.string().min(2, 'Kabupaten minimal 2 karakter'),
   provinsi: z.string().min(2, 'Provinsi minimal 2 karakter'),

@@ -18,7 +18,9 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
   const visibleMenuItems = getVisibleNavItems(user?.peran ?? null);
 
   return (
-    <aside className="hidden w-64 shrink-0 overflow-y-auto border-r border-gray-200 bg-white lg:block lg:min-h-screen">
+    // Sticky within the app-shell flex row: the nav stays put while the page
+    // scrolls, and scrolls on its own only if it ever outgrows the viewport.
+    <aside className="hidden w-64 shrink-0 border-r border-gray-200 bg-white lg:sticky lg:top-0 lg:block lg:h-screen lg:overflow-y-auto">
       <div className="p-6">
         <div className="mb-8 flex items-center gap-2">
           <Image src={'/SIPETA_LOGO.png'} alt="SIAPTAH logo" width={40} height={40} />

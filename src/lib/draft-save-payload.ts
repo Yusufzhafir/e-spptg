@@ -19,6 +19,8 @@ export function buildDraftSavePayload(draft: SubmissionDraft): Record<string, un
     tanggalLahir: draft.tanggalLahir,
     pekerjaan: draft.pekerjaan,
     alamatKTP: draft.alamatKTP,
+    nomorHP: draft.nomorHP,
+    email: draft.email,
     persetujuanData: draft.persetujuanData,
 
     // Step 2: Land Location & Details

@@ -1,4 +1,6 @@
 import { SubmissionDraft } from '@/types';
+import { isValidPhoneNumber, PHONE_NUMBER_ERROR } from '@/lib/phone-number';
+import { EMAIL_ERROR, isValidEmail } from '@/lib/email-address';
 
 export type StepFieldErrors = Record<string, string>;
 
@@ -24,6 +26,18 @@ export function validateStep1Fields(draft: SubmissionDraft): StepFieldErrors {
 
   if (!draft.villageId) {
     errors.villageId = 'Desa wajib dipilih';
+  }
+
+  // Contact details are optional, but a filled-in value must be usable —
+  // an unchecked field silently stored a foreign number before this.
+  const nomorHP = draft.nomorHP?.trim();
+  if (nomorHP && !isValidPhoneNumber(nomorHP)) {
+    errors.nomorHP = PHONE_NUMBER_ERROR;
+  }
+
+  const email = draft.email?.trim();
+  if (email && !isValidEmail(email)) {
+    errors.email = EMAIL_ERROR;
   }
 
   if (!draft.dokumenKTP) {

@@ -21,6 +21,12 @@ export interface FileUploadFieldProps {
   templateType?: TemplateType;
   notes?: string | React.ReactNode;
   error?: boolean;
+  /**
+   * Show the document without any way to change it: no dropzone, no Ganti, no
+   * remove. Needed because the "Ganti" control is a <span> inside a <label>, not
+   * a form control, so a surrounding disabled fieldset does not reach it.
+   */
+  readOnly?: boolean;
 }
 
 export function FileUploadField({
@@ -36,6 +42,7 @@ export function FileUploadField({
   templateType,
   notes,
   error = false,
+  readOnly = false,
 }: FileUploadFieldProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -248,10 +255,14 @@ export function FileUploadField({
   return (
     <div className="space-y-2">
       <Label>
-        {label} {required && <span className="text-red-600">*</span>}
+        {label} {required && !readOnly && <span className="text-red-600">*</span>}
       </Label>
 
-      {!value ? (
+      {readOnly && !value ? (
+        <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+          <p className="text-sm text-gray-500">Belum diunggah</p>
+        </div>
+      ) : !value ? (
         <div>
           <label
             htmlFor={`file-${label}`}
@@ -329,30 +340,32 @@ export function FileUploadField({
               </div>
               <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <label htmlFor={`replace-${label}`}>
-                <Button variant="ghost" size="sm" type="button" asChild>
-                  <span className="cursor-pointer text-xs">Ganti</span>
-                </Button>
-                <input
-                  id={`replace-${label}`}
-                  type="file"
-                  className="hidden"
-                  accept={accept}
-                  onChange={handleFileChange}
+            {!readOnly && (
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <label htmlFor={`replace-${label}`}>
+                  <Button variant="ghost" size="sm" type="button" asChild>
+                    <span className="cursor-pointer text-xs">Ganti</span>
+                  </Button>
+                  <input
+                    id={`replace-${label}`}
+                    type="file"
+                    className="hidden"
+                    accept={accept}
+                    onChange={handleFileChange}
+                    disabled={isUploading || isDeleting}
+                  />
+                </label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void handleRemove()}
                   disabled={isUploading || isDeleting}
-                />
-              </label>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => void handleRemove()}
-                disabled={isUploading || isDeleting}
-                className="text-red-600 hover:text-red-700 hover:bg-red-50"
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       )}

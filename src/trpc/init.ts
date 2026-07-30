@@ -1,5 +1,6 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { TRPCContext } from './context';
+import { ACCOUNT_DEACTIVATED_MESSAGE } from '@/lib/account-status';
 
 const t = initTRPC.context<TRPCContext>().create();
 
@@ -10,6 +11,18 @@ const isAuthed = t.middleware(({ ctx, next }) => {
   if (!ctx.userId || !ctx.appUser) {
     throw new TRPCError({ code: 'UNAUTHORIZED' });
   }
+
+  // Deactivating a user must actually revoke access, not just grey out a row in
+  // Pengaturan: their Clerk session survives the toggle, so without this check
+  // they keep every permission their peran grants. Enforced here rather than in
+  // each router so it covers every procedure, present and future.
+  if (ctx.appUser.status !== 'Aktif') {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: ACCOUNT_DEACTIVATED_MESSAGE,
+    });
+  }
+
   return next({
     ctx: {
       ...ctx,

@@ -3,6 +3,7 @@
 import { createContext, useContext, ReactNode } from 'react';
 import { useAuth as useClerkAuth } from '@clerk/nextjs';
 import { trpc } from '@/trpc/client';
+import { ACCOUNT_DEACTIVATED_MESSAGE } from '@/lib/account-status';
 
 type UserRole = 'Superadmin' | 'Admin' | 'Verifikator' | 'Kecamatan' | 'Viewer';
 
@@ -20,6 +21,12 @@ type AuthRoleContextType = {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  /**
+   * Signed in with Clerk, but the app account has been switched off. Distinct
+   * from "not authenticated" so the shell can say why instead of showing a
+   * generic error or an empty dashboard.
+   */
+  isDeactivated: boolean;
   hasRole: (role: UserRole) => boolean;
   hasAnyRole: (roles: UserRole[]) => boolean;
 };
@@ -39,6 +46,7 @@ export function AuthRoleProvider({ children }: { children: ReactNode }) {
   const isLoading = !clerkLoaded || (isSignedIn && userLoading);
   const isAuthenticated = !!(isSignedIn && !!userData && !error);
   const user = userData && !error ? userData : null;
+  const isDeactivated = error?.message === ACCOUNT_DEACTIVATED_MESSAGE;
 
   const hasRole = (role: UserRole): boolean => {
     if (!user) return false;
@@ -54,6 +62,7 @@ export function AuthRoleProvider({ children }: { children: ReactNode }) {
     user,
     isAuthenticated,
     isLoading,
+    isDeactivated,
     hasRole,
     hasAnyRole,
   };

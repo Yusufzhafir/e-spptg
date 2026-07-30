@@ -15,6 +15,8 @@ import { sql, eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { normalizeOverlapRows } from '@/lib/overlap-results';
 import { deriveSubmissionStatus } from '@/lib/submission-status';
+import { normalizePhoneNumber } from '@/lib/phone-number';
+import type { FeedbackData } from '@/types';
 import {
     assertCanAccessDraft,
     assertCanAccessSubmission,
@@ -60,7 +62,11 @@ export const submissionsRouter = router({
                     const payload = (draft.payload ?? {}) as {
                         namaPemohon?: string;
                         nik?: string;
+                        // Step 1 writes the applicant address as `alamatKTP`;
+                        // `alamat` only exists on legacy drafts.
+                        alamatKTP?: string;
                         alamat?: string;
+                        nomorHP?: string;
                         email?: string;
                         villageId?: number;
                         kecamatan?: string;
@@ -70,6 +76,8 @@ export const submissionsRouter = router({
                         penggunaanLahan?: string;
                         catatan?: string | null;
                         status?: string;
+                        // Step 3 feedback for a rejected / returned pengajuan.
+                        feedback?: FeedbackData | null;
                         juruUkur?: { nomorHP?: string };
                         coordinatesGeografis?: Array<{ latitude: number; longitude: number }>;
                         // Step 4 (Terbitkan SPPTG) results
@@ -122,8 +130,12 @@ export const submissionsRouter = router({
                     const submissionData = {
                         namaPemilik: payload.namaPemohon,
                         nik: payload.nik,
-                        alamat: payload.alamat || '',
-                        nomorHP: payload.juruUkur?.nomorHP || '',
+                        alamat: payload.alamatKTP || payload.alamat || '',
+                        // Applicant's own number from Step 1 — juruUkur.nomorHP is
+                        // the surveyor's and must not stand in for the owner's.
+                        // Normalised so a legacy draft holding "+62 812 …" cannot
+                        // overflow the varchar(15) column.
+                        nomorHP: normalizePhoneNumber(payload.nomorHP || ''),
                         email: payload.email || '',
                         villageId: draftVillageId,
                         kecamatan: payload.kecamatan || '',
@@ -133,6 +145,10 @@ export const submissionsRouter = router({
                         penggunaanLahan: payload.penggunaanLahan || '',
                         catatan: payload.catatan ?? null,
                         status: submissionStatus,
+                        // Persist into its own column, not just the payload
+                        // snapshot: this is what the applicant is shown on the
+                        // detail page when their berkas is returned or rejected.
+                        feedback: payload.feedback ?? null,
                         tanggalPengajuan: new Date(),
                         ownerUserId: draft.userId,
                         verifikator: ctx.appUser!.id,
@@ -183,6 +199,7 @@ export const submissionsRouter = router({
                         assertCanAccessSubmission(ctx.appUser!, {
                             ownerUserId: existing.ownerUserId,
                             villageId: existing.villageId,
+                            desaKecamatan: existing.desaKecamatan,
                         });
                         notifOwnerUserId = existing.ownerUserId;
 
@@ -203,6 +220,7 @@ export const submissionsRouter = router({
                                 penggunaanLahan: submissionData.penggunaanLahan,
                                 catatan: submissionData.catatan,
                                 status: submissionData.status,
+                                feedback: submissionData.feedback,
                                 verifikator: ctx.appUser!.id,
                                 geoJSON: submissionData.geoJSON,
                                 payload: submissionData.payload,
@@ -367,7 +385,10 @@ export const submissionsRouter = router({
             }));
         }),
 
-    checkOverlapsFromCoordinates: protectedProcedure
+    // Staff-only: the report names the owners of every intersecting submission,
+    // so an arbitrary polygon would otherwise let a Viewer or a Kecamatan
+    // account enumerate applicants far outside its own scope.
+    checkOverlapsFromCoordinates: verifikatorProcedure
         .input(z.object({
             coordinates: z.array(z.object({
                 latitude: z.number(),

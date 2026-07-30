@@ -433,7 +433,30 @@ describe('documentsRouter.delete', () => {
     });
   });
 
-  it('deletes submission-linked document for owner viewer', async () => {
+  // Owning the pengajuan is not a licence to destroy its filed documents — the
+  // issued SPPTG certificate included. Only staff of that desa may remove one.
+  it('refuses a submission-linked document delete by the owning viewer', async () => {
+    getDocumentByIdMock.mockResolvedValue({
+      id: 33,
+      draftId: 88,
+      submissionId: 71,
+      url: 'https://example.com/bucket/submissions/SPPG/spptg.pdf',
+    } as DocumentRecord);
+    getSubmissionByIdMock.mockResolvedValue({
+      id: 71,
+      ownerUserId: 300,
+      villageId: 12,
+      verifikator: 777,
+    } as SubmissionRecord);
+
+    const caller = documentsRouter.createCaller(createCtx('Viewer', 300));
+
+    await expect(caller.delete({ documentId: 33 })).rejects.toBeInstanceOf(TRPCError);
+    expect(deleteFileFromS3Mock).not.toHaveBeenCalled();
+    expect(deleteDocumentMock).not.toHaveBeenCalled();
+  });
+
+  it('deletes a submission-linked document for the admin of that desa', async () => {
     getDocumentByIdMock.mockResolvedValue({
       id: 33,
       draftId: 88,
@@ -450,7 +473,7 @@ describe('documentsRouter.delete', () => {
     deleteFileFromS3Mock.mockResolvedValue();
     deleteDocumentMock.mockResolvedValue({ id: 33 } as DocumentRecord);
 
-    const caller = documentsRouter.createCaller(createCtx('Viewer', 300));
+    const caller = documentsRouter.createCaller(createCtx('Admin', 301, 12));
     const result = await caller.delete({ documentId: 33 });
 
     expect(deleteFileFromS3Mock).toHaveBeenCalledWith('submissions/SPPG/spptg.pdf');

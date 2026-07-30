@@ -44,6 +44,13 @@ interface DrawingMapProps {
    * feature can throw "Unsupported geometry type" during heavy re-syncs.
    */
   enableCoordinateEditing?: boolean;
+  /**
+   * Display the polygon without any way to alter it: no toolbar, and Terra Draw
+   * parked in its 'static' mode so map clicks and drags are ignored. Panning and
+   * zooming still work — the point is to let someone inspect the plot, not edit
+   * it.
+   */
+  readOnly?: boolean;
   center?: {
     lat: number;
     lng: number;
@@ -57,6 +64,7 @@ interface DrawingMapInternalProps {
   recenterSignal?: number;
   referencePolygons?: ReferencePolygon[];
   enableCoordinateEditing: boolean;
+  readOnly: boolean;
   /** Element above the map where the drawing toolbar is portaled, so it never covers Google Maps controls */
   toolbarHost: HTMLElement | null;
 }
@@ -121,6 +129,7 @@ function DrawingMapInternal({
   recenterSignal,
   referencePolygons,
   enableCoordinateEditing,
+  readOnly,
   toolbarHost,
 }: DrawingMapInternalProps) {
   const map = useMap();
@@ -413,7 +422,9 @@ function DrawingMapInternal({
       });
 
       draw.start();
-      draw.setMode('polygon');
+      // 'static' is Terra Draw's built-in display-only mode: features still
+      // render, but no pointer event ever creates or moves one.
+      draw.setMode(readOnly ? 'static' : 'polygon');
       const store = modeStoreRef.current;
       store.mode = 'polygon';
       store.listeners.forEach((listener) => listener());
@@ -444,7 +455,7 @@ function DrawingMapInternal({
       lastSyncedRef.current = [];
       setDrawReady(false);
     };
-  }, [map, propagateFromMap, switchMode, enableCoordinateEditing]);
+  }, [map, propagateFromMap, switchMode, enableCoordinateEditing, readOnly]);
 
   // Sync Terra Draw features when the coordinates prop changes (table edits, KML import)
   useEffect(() => {
@@ -458,7 +469,7 @@ function DrawingMapInternal({
     // "Unsupported geometry type for coordinate points".
     try {
       if (draw.getMode() === 'select') {
-        draw.setMode('polygon');
+        draw.setMode(readOnly ? 'static' : 'polygon');
         const store = modeStoreRef.current;
         store.mode = 'polygon';
         store.listeners.forEach((listener) => listener());
@@ -489,12 +500,16 @@ function DrawingMapInternal({
         } as GeoJSONStoreFeatures,
       ]);
       if (result[0]?.valid) {
-        switchMode('select');
-        try {
-          draw.selectFeature(featureId);
-        } catch (error) {
-          // Selection is a nicety — never let a Terra Draw quirk crash the map
-          console.warn('Gagal memilih poligon setelah sinkronisasi:', error);
+        // Read-only must stay in 'static': selecting the freshly synced polygon
+        // would drop the map back into 'select', handing back vertex dragging.
+        if (!readOnly) {
+          switchMode('select');
+          try {
+            draw.selectFeature(featureId);
+          } catch (error) {
+            // Selection is a nicety — never let a Terra Draw quirk crash the map
+            console.warn('Gagal memilih poligon setelah sinkronisasi:', error);
+          }
         }
         // This effect only runs for prop-originated coordinate changes
         // (table edits, KML import, hydration) — map-drawn changes are guarded
@@ -525,13 +540,19 @@ function DrawingMapInternal({
             }) as GeoJSONStoreFeatures
         )
       );
-    } else {
+    } else if (!readOnly) {
       switchMode('polygon');
+    }
+
+    // Belt and braces: whatever the branch above did, a read-only map ends the
+    // sync back in the mode that ignores every pointer event.
+    if (readOnly && draw.getMode() !== 'static') {
+      draw.setMode('static');
     }
 
     lastSyncedRef.current = coordinates;
     isUpdatingFromPropsRef.current = false;
-  }, [coordinates, drawReady, switchMode, fitMapToCoordinates]);
+  }, [coordinates, drawReady, switchMode, fitMapToCoordinates, readOnly]);
 
   // Draw read-only reference polygons (existing kawasan / SPPTG) behind the
   // editable polygon. They are non-interactive so they never intercept the
@@ -622,7 +643,8 @@ function DrawingMapInternal({
     };
   }, [coordinates, map, recenterSignal]);
 
-  if (!toolbarHost) return null;
+  // No toolbar in read-only mode — there is nothing it could do.
+  if (!toolbarHost || readOnly) return null;
 
   return createPortal(
     <div className="inline-flex gap-1 bg-white rounded-lg shadow-sm border border-gray-200 p-1">
@@ -683,6 +705,7 @@ export function DrawingMap({
   recenterSignal,
   referencePolygons,
   enableCoordinateEditing = true,
+  readOnly = false,
   center = {
     lat: 0.6164979547396072,
     lng: 117.32086147991855,
@@ -705,7 +728,7 @@ export function DrawingMap({
   return (
     <div className="space-y-2">
       {/* Toolbar row above the map, so it never covers Google Maps controls */}
-      <div ref={setToolbarHost} className="flex min-h-[34px]" />
+      {!readOnly && <div ref={setToolbarHost} className="flex min-h-[34px]" />}
       <div className="bg-gray-100 rounded-lg border border-gray-300 h-96 relative">
         <APIProvider apiKey={apiKey}>
           <Map
@@ -722,25 +745,35 @@ export function DrawingMap({
               recenterSignal={recenterSignal}
               referencePolygons={referencePolygons}
               enableCoordinateEditing={enableCoordinateEditing}
+              readOnly={readOnly}
               toolbarHost={toolbarHost}
             />
           </Map>
         </APIProvider>
       </div>
-      <div className="bg-gray-50 rounded-lg border border-gray-200 p-3">
-        <p className="text-xs mb-1 font-semibold text-gray-900">Instruksi:</p>
-        <p className="text-xs text-gray-600">
-          Mode <strong>Gambar</strong>: klik peta untuk menambah titik, klik
-          titik awal untuk menutup poligon
-        </p>
-        <p className="text-xs text-gray-600">
-          Mode <strong>Edit</strong>: klik poligon, lalu drag titik untuk
-          mengubah bentuk
-        </p>
-        <p className="text-xs text-gray-500 mt-1">
-          Minimal 3 titik koordinat diperlukan untuk membentuk poligon.
-        </p>
-      </div>
+      {readOnly ? (
+        <div className="bg-gray-50 rounded-lg border border-gray-200 p-3">
+          <p className="text-xs text-gray-600">
+            Peta hanya dapat dilihat. Anda tetap dapat menggeser dan memperbesar
+            peta, tetapi poligon tidak dapat diubah.
+          </p>
+        </div>
+      ) : (
+        <div className="bg-gray-50 rounded-lg border border-gray-200 p-3">
+          <p className="text-xs mb-1 font-semibold text-gray-900">Instruksi:</p>
+          <p className="text-xs text-gray-600">
+            Mode <strong>Gambar</strong>: klik peta untuk menambah titik, klik
+            titik awal untuk menutup poligon
+          </p>
+          <p className="text-xs text-gray-600">
+            Mode <strong>Edit</strong>: klik poligon, lalu drag titik untuk
+            mengubah bentuk
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            Minimal 3 titik koordinat diperlukan untuk membentuk poligon.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

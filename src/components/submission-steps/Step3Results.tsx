@@ -45,6 +45,21 @@ import { trpc } from '@/trpc/client';
 interface Step3Props {
   draft: SubmissionDraft;
   onUpdateDraft: (updates: Partial<SubmissionDraft>) => void;
+  /**
+   * Write straight to the draft. The feedback attachment needs this: it is a real
+   * uploaded file, so the draft must reference it the moment the upload lands,
+   * not whenever the verifier eventually presses "Simpan Keputusan".
+   */
+  onPersistDraftPatch: (
+    updates: Partial<SubmissionDraft>,
+    options?: { silent?: boolean }
+  ) => Promise<void>;
+  /**
+   * Look, don't touch. Used for the Viewer tracking a berkas that has already
+   * moved past this stage: every control is disabled at the DOM level, so no
+   * handler can fire even if a stray element is not individually guarded.
+   */
+  readOnly?: boolean;
 }
 
 const alasanOptions = [
@@ -83,7 +98,12 @@ const templateFeedback = [
   },
 ];
 
-export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
+export function Step3Results({
+  draft,
+  onUpdateDraft,
+  onPersistDraftPatch,
+  readOnly = false,
+}: Step3Props) {
   const [selectedStatus, setSelectedStatus] = useState<StatusSPPTG | ''>(draft.status || '');
   const [alasanTerpilih, setAlasanTerpilih] = useState<string[]>(draft.feedback?.alasanTerpilih || []);
   const [dokumenTidakLengkap, setDokumenTidakLengkap] = useState<string[]>(
@@ -98,7 +118,16 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
   const [isOverlapDetailOpen, setIsOverlapDetailOpen] = useState(false);
   const [isHistoryDialogOpen, setIsHistoryDialogOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isRemovingLampiran, setIsRemovingLampiran] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+
+  // Who is making this decision. The server stamps the authoritative values on
+  // save; this is what the panel shows straight away, before any round-trip.
+  const { data: currentUser } = trpc.auth.me.useQuery();
+  const utils = trpc.useUtils();
+  const createUploadUrlMutation = trpc.documents.createUploadUrl.useMutation();
+  const uploadFileMutation = trpc.documents.uploadFile.useMutation();
+  const deleteDocumentMutation = trpc.documents.delete.useMutation();
 
   const hasOverlap = draft.overlapResults && draft.overlapResults.length > 0;
   const requiresFeedback = selectedStatus === 'SPPTG ditolak' || selectedStatus === 'SPPTG ditinjau ulang';
@@ -119,9 +148,58 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
     setDetailFeedback(template);
   };
 
+  /**
+   * The feedback object as the form currently stands. `pemberi` is a placeholder
+   * here — the server overwrites it from the session (stampFeedbackAttribution).
+   */
+  const buildFeedbackPayload = (
+    lampiran: UploadedDocument | undefined
+  ): FeedbackData => ({
+    alasanTerpilih,
+    dokumenTidakLengkap: alasanTerpilih.includes('Dokumen tidak lengkap')
+      ? dokumenTidakLengkap
+      : undefined,
+    detailFeedback,
+    tanggalTenggat: tanggalTenggat || undefined,
+    lampiranFeedback: lampiran,
+    timestamp: new Date().toISOString().split('T')[0],
+    pemberi: currentUser?.nama ?? '',
+  });
+
+  /**
+   * A draft carries at most one feedback attachment. Deleting just the reference
+   * we happen to hold is not enough — an upload whose cleanup failed earlier can
+   * leave extra 'Lampiran Feedback' rows, and those would pile up in the Dokumen
+   * tab. Sweep every one except `keepDocumentId` (null = keep none).
+   *
+   * Must run only after the draft has been persisted without them: deleting a
+   * still-referenced document is what left the draft pointing at a missing file.
+   * Best-effort — the draft is already correct, so a leftover file in storage is
+   * a tidiness problem, not a data one.
+   */
+  const pruneLampiranDocuments = async (keepDocumentId: number | null) => {
+    if (!draft.id) return;
+
+    try {
+      const documents = await utils.documents.listByDraft.fetch({ draftId: draft.id });
+      for (const document of documents) {
+        if (document.category !== 'Lampiran Feedback') continue;
+        if (keepDocumentId !== null && document.id === keepDocumentId) continue;
+
+        try {
+          await deleteDocumentMutation.mutateAsync({ documentId: document.id });
+        } catch (deleteError) {
+          console.error('Lampiran cleanup error:', deleteError);
+        }
+      }
+    } catch (lookupError) {
+      console.error('Lampiran lookup error:', lookupError);
+    }
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) processLampiran(file);
+    if (file) void processLampiran(file);
   };
 
   const handleLampiranDrop = (e: React.DragEvent<HTMLLabelElement>) => {
@@ -129,40 +207,127 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
     setIsDragging(false);
     if (isUploading) return;
     const file = e.dataTransfer.files?.[0];
-    if (file) processLampiran(file);
+    if (file) void processLampiran(file);
   };
 
-  const processLampiran = (file: File) => {
-    // Validate file type
+  /**
+   * Upload the attachment to S3 through the same two-step flow the other file
+   * fields use (createUploadUrl -> uploadFile). This used to fake it with a
+   * setTimeout and an in-memory `URL.createObjectURL`, so the file never left
+   * the browser and the stored blob: URL was dead as soon as the tab closed.
+   */
+  const processLampiran = async (file: File) => {
     const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
     if (!allowedTypes.includes(file.type)) {
       toast.error('Format file harus PDF, JPG, atau PNG');
       return;
     }
 
-    // Validate file size (10 MB)
     const fileSizeMB = file.size / (1024 * 1024);
     if (fileSizeMB > 10) {
       toast.error('Ukuran file maksimal 10 MB');
       return;
     }
 
+    if (!draft.id) {
+      toast.error('Draf belum dimuat. Silakan tunggu sebentar.');
+      return;
+    }
+
     setIsUploading(true);
-    setTimeout(() => {
-      setLampiranFeedback({
+
+    try {
+      const { documentId, s3Key } = await createUploadUrlMutation.mutateAsync({
+        draftId: draft.id,
+        category: 'Lampiran Feedback',
+        filename: file.name,
+        size: file.size,
+        mimeType: file.type,
+      });
+
+      const fileBuffer = await file.arrayBuffer();
+      const base64String = btoa(
+        new Uint8Array(fileBuffer).reduce(
+          (data, byte) => data + String.fromCharCode(byte),
+          ''
+        )
+      );
+
+      const { publicUrl } = await uploadFileMutation.mutateAsync({
+        draftId: draft.id,
+        documentId,
+        s3Key,
+        fileData: base64String,
+        filename: file.name,
+        mimeType: file.type,
+        size: file.size,
+      });
+
+      const uploaded: UploadedDocument = {
         name: file.name,
         size: file.size,
-        url: URL.createObjectURL(file),
-        uploadedAt: new Date().toLocaleString('id-ID'),
-      });
-      setIsUploading(false);
+        url: publicUrl,
+        uploadedAt: new Date().toISOString(),
+        documentId,
+      };
+
+      // Persist before touching the old file. The attachment used to live only in
+      // local state until "Simpan Keputusan", so replacing it looked fine and
+      // then reverted on refresh — and once the old file was deleted, the draft
+      // still pointed at a document that no longer existed.
+      try {
+        await onPersistDraftPatch({ feedback: buildFeedbackPayload(uploaded) });
+      } catch (saveError) {
+        // Roll back the orphan we just created.
+        try {
+          await deleteDocumentMutation.mutateAsync({ documentId });
+        } catch (rollbackError) {
+          console.error('Lampiran rollback error:', rollbackError);
+        }
+        throw new Error(
+          saveError instanceof Error
+            ? saveError.message
+            : 'Gagal menyimpan draf setelah upload'
+        );
+      }
+
+      setLampiranFeedback(uploaded);
+
+      // Only now is every older file unreferenced and safe to remove.
+      await pruneLampiranDocuments(documentId);
+
       toast.success('Lampiran feedback berhasil diunggah.');
-    }, 1000);
+    } catch (error: unknown) {
+      console.error('Lampiran upload error:', error);
+      toast.error(
+        error instanceof Error ? error.message : 'Gagal mengunggah lampiran feedback.'
+      );
+    } finally {
+      setIsUploading(false);
+    }
   };
 
-  const handleRemoveLampiran = () => {
-    setLampiranFeedback(undefined);
-    toast.info('Lampiran dihapus.');
+  const handleRemoveLampiran = async () => {
+    if (!lampiranFeedback) return;
+
+    setIsRemovingLampiran(true);
+    try {
+      // Drop the reference from the draft first; if this fails nothing was lost.
+      await onPersistDraftPatch({ feedback: buildFeedbackPayload(undefined) });
+      setLampiranFeedback(undefined);
+
+      // Nothing references any of them now.
+      await pruneLampiranDocuments(null);
+
+      toast.info('Lampiran dihapus.');
+    } catch (error: unknown) {
+      console.error('Lampiran remove error:', error);
+      toast.error(
+        error instanceof Error ? error.message : 'Gagal menghapus lampiran feedback.'
+      );
+    } finally {
+      setIsRemovingLampiran(false);
+    }
   };
 
   const formatFileSize = (bytes: number) => {
@@ -199,24 +364,21 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
   };
 
   const confirmSaveDecision = () => {
+    if (!currentUser) {
+      // Guarded by the disabled button too — the draft schema requires a real
+      // pemberi/verifikator, so saving without a session would just fail.
+      toast.error('Data pengguna belum dimuat. Coba lagi sesaat lagi.');
+      return;
+    }
+
     const feedbackData: FeedbackData | undefined = requiresFeedback
-      ? {
-        alasanTerpilih,
-        dokumenTidakLengkap: alasanTerpilih.includes('Dokumen tidak lengkap')
-          ? dokumenTidakLengkap
-          : undefined,
-        detailFeedback,
-        tanggalTenggat: tanggalTenggat || undefined,
-        lampiranFeedback,
-        timestamp: new Date().toISOString().split('T')[0],
-        pemberi: 'Bambang Supriyanto', // Mock current user
-      }
+      ? buildFeedbackPayload(lampiranFeedback)
       : undefined;
 
     onUpdateDraft({
       status: selectedStatus as StatusSPPTG,
       feedback: feedbackData,
-      verifikator: 12312,
+      verifikator: currentUser.id,
       tanggalKeputusan: new Date().toLocaleDateString('id-ID'),
     });
 
@@ -324,11 +486,17 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
   }, [draft.overlapResults, prohibitedAreasData, existingSubmissionsData]);
 
   return (
+    // `disabled` on the fieldset cascades to every input, select and button
+    // inside — a single, unbypassable switch instead of threading a flag through
+    // dozens of controls. `min-w-0` keeps the browser's default fieldset sizing
+    // from breaking the grid below.
     <div className="space-y-6">
       <div>
         <h2 className="text-gray-900 mb-2">Hasil Pengajuan</h2>
         <p className="text-gray-600">
-          Tinjau ringkasan pengajuan dan tentukan status keputusan.
+          {readOnly
+            ? 'Ringkasan pengajuan dan keputusan verifikator.'
+            : 'Tinjau ringkasan pengajuan dan tentukan status keputusan.'}
         </p>
       </div>
 
@@ -498,7 +666,10 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
           </div>
 
           {/* Status Decision */}
-          <div className="bg-white border border-gray-200 rounded-lg p-6">
+          <fieldset
+            disabled={readOnly}
+            className="bg-white border border-gray-200 rounded-lg p-6 min-w-0"
+          >
             <h3 className="text-gray-900 mb-4">Keputusan Status</h3>
             <p className="text-sm text-gray-600 mb-4">
               Pilih status berdasarkan hasil verifikasi dokumen dan lapangan.
@@ -719,7 +890,8 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={handleRemoveLampiran}
+                            onClick={() => void handleRemoveLampiran()}
+                            disabled={isUploading || isRemovingLampiran}
                             className="text-red-600 hover:text-red-700 hover:bg-red-50"
                           >
                             <X className="w-4 h-4" />
@@ -731,11 +903,19 @@ export function Step3Results({ draft, onUpdateDraft }: Step3Props) {
                 </div>
               )}
 
-              <Button onClick={handleSaveDecision} className="w-full bg-blue-600 hover:bg-blue-700">
-                {requiresFeedback ? 'Simpan Keputusan & Kirim Feedback' : 'Simpan Keputusan'}
-              </Button>
+              {!readOnly && (
+                <Button
+                  onClick={handleSaveDecision}
+                  // No session, no attribution: the decision would be saved
+                  // without a real pemberi/verifikator and fail validation.
+                  disabled={!currentUser}
+                  className="w-full bg-blue-600 hover:bg-blue-700"
+                >
+                  {requiresFeedback ? 'Simpan Keputusan & Kirim Feedback' : 'Simpan Keputusan'}
+                </Button>
+              )}
             </div>
-          </div>
+          </fieldset>
 
           {/* Riwayat Feedback */}
           {draft.feedback && (
