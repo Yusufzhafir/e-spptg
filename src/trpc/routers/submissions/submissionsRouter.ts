@@ -514,6 +514,21 @@ export const submissionsRouter = router({
                 // every cached aggregate is dropped rather than waiting out the
                 // TTL — a verifikator must see their own decision immediately.
                 await invalidateDashboard();
+
+                ctx.audit.set({
+                    entitasId: input.submissionId,
+                    ringkasan:
+                        `Mengubah status pengajuan #${input.submissionId} ` +
+                        `(${submission.namaPemilik}) dari "${submission.status}" ` +
+                        `menjadi "${input.newStatus}"` +
+                        (input.alasan ? ` — alasan: ${input.alasan}` : ''),
+                    sebelum: { status: submission.status, verifikator: submission.verifikator },
+                    sesudah: {
+                        status: input.newStatus,
+                        verifikator: ctx.appUser!.id,
+                        alasan: input.alasan ?? null,
+                    },
+                });
                 return {
                     success: true,
                     submission: result,
@@ -556,6 +571,15 @@ export const submissionsRouter = router({
             // The aggregates count only valid submissions, so flipping this flag
             // changes every KPI and trend number.
             await invalidateDashboard();
+
+            ctx.audit.set({
+                entitasId: input.submissionId,
+                ringkasan:
+                    `Menandai pengajuan #${input.submissionId} (${submission.namaPemilik}) ` +
+                    `sebagai ${input.isValid ? 'valid' : 'tidak valid'}`,
+                sebelum: { isValid: submission.isValid },
+                sesudah: { isValid: input.isValid },
+            });
             return {
                 success: true,
                 submission: result,

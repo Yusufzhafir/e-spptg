@@ -38,6 +38,20 @@ import {
   ACCOUNT_DEACTIVATED_MESSAGE,
   EMAIL_NOT_VERIFIED_MESSAGE,
 } from '@/lib/account-status';
+import { recordAudit } from '@/server/audit/record';
+
+/**
+ * Sign-in and sign-up run on `publicProcedure`, which the audit middleware does
+ * not cover — there is no `ctx.appUser` yet when they start. They record their
+ * own entries instead. Failed logins matter most: they are the only trace of
+ * someone probing an account, and they exist nowhere else in the system.
+ */
+const ANON_ACTOR = (email: string) => ({
+  id: null,
+  nama: '(belum masuk)',
+  email,
+  peran: '-',
+});
 
 /**
  * Login and reset both refuse to say whether an email exists — that is the whole
@@ -45,12 +59,16 @@ import {
  * client IP. Keying on IP alone would let one attacker's noise lock out a shared
  * office NAT; keying on email alone would let them cycle addresses freely.
  */
-const LOGIN_LIMIT = 8;
+const LOGIN_LIMIT = 10;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
-const RESET_REQUEST_LIMIT = 4;
+const RESET_REQUEST_LIMIT = 5;
 const RESET_REQUEST_WINDOW_MS = 60 * 60 * 1000;
-const REGISTER_LIMIT = 5;
-const REGISTER_WINDOW_MS = 60 * 60 * 1000;
+// Registration is keyed on IP alone (there is no account yet to key on), so a
+// shared office NAT puts everyone in one bucket. The window is deliberately
+// short — 5 minutes rather than an hour — because a wrongly-throttled desa
+// office should be able to try again over a coffee break, not the next morning.
+const REGISTER_LIMIT = 10;
+const REGISTER_WINDOW_MS = 5 * 60 * 1000;
 
 /** Same text whether the email is unknown or the password is wrong. */
 const INVALID_CREDENTIALS_MESSAGE = 'Email atau kata sandi salah.';
@@ -295,6 +313,15 @@ export const authRouter = router({
       // response time does not reveal which case it was.
       if (!user?.passwordHash) {
         await fakeVerifyPassword(input.password);
+        await recordAudit({
+          actor: ANON_ACTOR(email),
+          aksi: 'auth.login',
+          ringkasan: `Percobaan masuk gagal untuk ${email} (akun tidak dikenal atau belum bersandi)`,
+          hasil: 'gagal',
+          galat: INVALID_CREDENTIALS_MESSAGE,
+          ipAddress: ctx.requestMeta.ipAddress,
+          userAgent: ctx.requestMeta.userAgent,
+        });
         throw new TRPCError({
           code: 'UNAUTHORIZED',
           message: INVALID_CREDENTIALS_MESSAGE,
@@ -303,6 +330,16 @@ export const authRouter = router({
 
       const ok = await verifyPassword(input.password, user.passwordHash);
       if (!ok) {
+        await recordAudit({
+          actor: { id: user.id, nama: user.nama, email: user.email, peran: user.peran },
+          aksi: 'auth.login',
+          entitasId: user.id,
+          ringkasan: `Percobaan masuk gagal untuk ${email} (kata sandi salah)`,
+          hasil: 'gagal',
+          galat: INVALID_CREDENTIALS_MESSAGE,
+          ipAddress: ctx.requestMeta.ipAddress,
+          userAgent: ctx.requestMeta.userAgent,
+        });
         throw new TRPCError({
           code: 'UNAUTHORIZED',
           message: INVALID_CREDENTIALS_MESSAGE,
@@ -332,6 +369,15 @@ export const authRouter = router({
       const { token, expiresAt } = await createSession(user.id, ctx.requestMeta);
       ctx.resHeaders?.append('set-cookie', sessionCookie(token, expiresAt));
       await queries.touchUserLastLogin(user.id);
+
+      await recordAudit({
+        actor: { id: user.id, nama: user.nama, email: user.email, peran: user.peran },
+        aksi: 'auth.login',
+        entitasId: user.id,
+        ringkasan: `${user.nama} masuk ke sistem`,
+        ipAddress: ctx.requestMeta.ipAddress,
+        userAgent: ctx.requestMeta.userAgent,
+      });
 
       return { user: publicUser(user) };
     }),

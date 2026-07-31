@@ -235,6 +235,72 @@ export const emailVerificationTokens = pgTable(
 
 
 // ============================================================================
+// AUDIT LOGS TABLE
+// ============================================================================
+
+/**
+ * Every mutation any signed-in user performs, with the row's state before and
+ * after it. Readable only by Superadmin.
+ *
+ * The actor is denormalised on purpose: `actor_id` has no foreign key and the
+ * name/email/role are snapshotted at the time of the action. An audit trail
+ * whose entries vanish or become anonymous when the account is deleted, or that
+ * shows someone's *current* role next to an action they took under a previous
+ * one, is not an audit trail. `actor_id` is kept only so the list can be
+ * filtered by person.
+ */
+export const auditLogs = pgTable(
+  'audit_logs',
+  {
+    id: bigint({ mode: 'number' }).primaryKey().generatedByDefaultAsIdentity({
+      name: 'audit_logs_id_seq',
+      startWith: 1,
+      increment: 1,
+      minValue: 1,
+      maxValue: (9223372036854775807n) as unknown as number,
+      cache: 1,
+    }),
+    actorId: bigint('actor_id', { mode: 'number' }),
+    actorNama: varchar('actor_nama', { length: 255 }).notNull(),
+    actorEmail: varchar('actor_email', { length: 255 }).notNull(),
+    actorPeran: varchar('actor_peran', { length: 32 }).notNull(),
+
+    /** Dotted action id, e.g. `users.update`. Matches the tRPC procedure path
+     *  for mutations, so new procedures are covered without a code change. */
+    aksi: varchar('aksi', { length: 128 }).notNull(),
+    /** Coarse grouping for the filter dropdown: pengguna, desa, kawasan, … */
+    entitas: varchar('entitas', { length: 64 }).notNull(),
+    /** Primary key of the affected row, when the action targets exactly one. */
+    entitasId: bigint('entitas_id', { mode: 'number' }),
+    /** One line of Indonesian describing what happened, for the table. */
+    ringkasan: text('ringkasan').notNull(),
+
+    /** Row state before and after. Null when the action creates or deletes,
+     *  or when the procedure did not capture a snapshot. Secrets are stripped
+     *  by `redact()` before anything is written here. */
+    sebelum: jsonb('sebelum'),
+    sesudah: jsonb('sesudah'),
+
+    /** 'sukses' or 'gagal' — failed attempts are the interesting ones. */
+    hasil: varchar('hasil', { length: 16 }).notNull().default('sukses'),
+    /** Error message when `hasil = 'gagal'`. */
+    galat: text('galat'),
+
+    ipAddress: varchar('ip_address', { length: 64 }),
+    userAgent: varchar('user_agent', { length: 512 }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    // The default view is "newest first", and every filter narrows that.
+    index('audit_logs_created_at_idx').on(t.createdAt),
+    index('audit_logs_actor_idx').on(t.actorId),
+    index('audit_logs_aksi_idx').on(t.aksi),
+    index('audit_logs_entitas_idx').on(t.entitas, t.entitasId),
+  ]
+);
+
+
+// ============================================================================
 // VILLAGES TABLE
 // ============================================================================
 

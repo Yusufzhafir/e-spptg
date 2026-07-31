@@ -9,7 +9,7 @@ import {
   BreadcrumbSeparator,
 } from './ui/breadcrumb';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Users as UsersIcon, MapPin, ShieldAlert } from 'lucide-react';
+import { Users as UsersIcon, MapPin, ShieldAlert, ScrollText } from 'lucide-react';
 
 /** Segmented-control tab button: raised white "pill" when active. */
 const tabTriggerClass =
@@ -20,6 +20,7 @@ const tabCountClass =
   'rounded-full bg-gray-200/80 px-1.5 py-0.5 text-xs leading-none tabular-nums text-gray-600 transition-colors group-data-[state=active]:bg-blue-100 group-data-[state=active]:text-blue-700';
 import { UsersTab } from './UsersTab';
 import { VillagesTab } from './VillagesTab';
+import { AuditLogTab } from './AuditLogTab';
 import { ProhibitedAreasTab } from './ProhibitedAreasTab';
 import { User, Village, ProhibitedArea } from '../types';
 import { CreateProhibitedAreaInput, UpdateProhibitedAreaInput } from '@/types/prohibitedAreas';
@@ -106,7 +107,9 @@ export function Settings({
   const pathname = usePathname();
   const [activeTab, setActiveTab] = useState(() => {
     const tab = searchParams.get('tab');
-    return tab === 'prohibited' || tab === 'villages' || tab === 'users' ? tab : 'users';
+    return tab === 'prohibited' || tab === 'villages' || tab === 'users' || tab === 'audit'
+      ? tab
+      : 'users';
   });
   const { hasRole } = useAuthRole();
   const isSuperadmin = hasRole('Superadmin');
@@ -121,7 +124,10 @@ export function Settings({
 
   // Handle tab state when user role changes or unauthorized tab access
   // Sync state during render to avoid cascading updates from useEffect
-  if (activeTab === 'villages' && !isSuperadmin) {
+  // Both Desa and Audit Log are Superadmin-only. Sending a non-Superadmin who
+  // lands on ?tab=audit back to Pengguna is a UI courtesy, not the control —
+  // every `audit.*` procedure is `superadminProcedure` on the server.
+  if ((activeTab === 'villages' || activeTab === 'audit') && !isSuperadmin) {
     setActiveTab('users');
   }
 
@@ -172,6 +178,12 @@ export function Settings({
             <span className="whitespace-nowrap">Kawasan Non‑SPPTG</span>
             <span className={tabCountClass}>{prohibitedAreas.length}</span>
           </TabsTrigger>
+          {isSuperadmin && (
+            <TabsTrigger value="audit" className={tabTriggerClass}>
+              <ScrollText className="h-4 w-4" />
+              <span className="whitespace-nowrap">Audit Log</span>
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="users" className="mt-6">
@@ -213,6 +225,15 @@ export function Settings({
             currentUserId={currentUserId}
           />
         </TabsContent>
+
+        {isSuperadmin && (
+          <TabsContent value="audit" className="mt-6">
+            {/* Fetches its own data — the trail is paginated and filtered
+                server-side, so threading it through Settings' props would mean
+                loading every entry just to render one page. */}
+            <AuditLogTab />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
