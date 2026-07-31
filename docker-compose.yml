@@ -16,7 +16,6 @@ services:
       target: runner
       args:
         # NEXT_PUBLIC_* di-inline saat build -> harus benar di tahap build.
-        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
         S3_BUCKET_NAME: ${S3_BUCKET_NAME}
         S3_DOMAIN: ${S3_DOMAIN}
@@ -58,7 +57,6 @@ services:
       context: .
       target: migrator
       args:
-        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
     image: e-spptg-migrator:latest
     container_name: e-spptg-migrate

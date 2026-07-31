@@ -80,7 +80,16 @@ function buildSubmissionConditions(filters: SubmissionDashboardFilters) {
     if (typeof desaId === 'number') {
         conditions.push(eq(submissions.villageId, desaId));
     } else if (kecamatan) {
-        conditions.push(sql`LOWER(${submissions.kecamatan}) = LOWER(${kecamatan})`);
+        // Resolved through `villages` for the same reason `buildScopeConditions`
+        // does it: `submissions.kecamatan` is free text captured when the
+        // submission was created and is frequently stale or empty, so matching
+        // on it returned zero rows for kecamatan that demonstrably have
+        // submissions — the filter looked like "no data" rather than "broken".
+        conditions.push(
+            sql`${submissions.villageId} IN (
+                SELECT id FROM villages WHERE LOWER(kecamatan) = LOWER(${kecamatan})
+            )`
+        );
     }
 
     if (dateFrom) {
@@ -305,6 +314,46 @@ export async function getKPIDataScoped(filters: SubmissionDashboardFilters, tx?:
         .groupBy(submissions.status);
 
     return result;
+}
+
+/**
+ * Per-desa breakdown for the external statistics API — counts only, no
+ * applicant data. The join to `villages` is an INNER join, so submissions that
+ * were never assigned a desa are left out; the totals here can therefore be
+ * lower than the overall KPI total, which is the honest reading of "per desa".
+ *
+ * The status columns use `count(*) FILTER (...)` so the whole breakdown is one
+ * pass over the table instead of five queries. `status` is cast to text because
+ * comparing a pgEnum column against a bound parameter otherwise depends on
+ * Postgres inferring the enum type for that parameter.
+ */
+export async function getStatsByVillage(
+    filters: SubmissionDashboardFilters = {},
+    tx?: DBTransaction
+) {
+    const queryDb = tx || db;
+    const conditions = buildSubmissionConditions(filters);
+
+    const countWhereStatus = (status: StatusSPPTG) =>
+        sql<number>`count(*) FILTER (WHERE ${submissions.status}::text = ${status})::int`;
+
+    return queryDb
+        .select({
+            desaId: villages.id,
+            desa: villages.namaDesa,
+            kecamatan: villages.kecamatan,
+            total: sql<number>`count(*)::int`,
+            terdata: countWhereStatus('SPPTG terdata'),
+            terdaftar: countWhereStatus('SPPTG terdaftar'),
+            ditolak: countWhereStatus('SPPTG ditolak'),
+            ditinjauUlang: countWhereStatus('SPPTG ditinjau ulang'),
+            terbit: countWhereStatus('Terbit SPPTG'),
+        })
+        .from(submissions)
+        .innerJoin(villages, eq(villages.id, submissions.villageId))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .groupBy(villages.id, villages.namaDesa, villages.kecamatan)
+        .orderBy(sql`count(*) DESC`, villages.namaDesa);
 }
 
 export async function getMonthlyStats(

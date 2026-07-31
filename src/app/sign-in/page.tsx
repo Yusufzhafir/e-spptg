@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
-import { SignIn } from '@clerk/nextjs';
+import { Suspense } from 'react';
 import { AuthShell } from '@/components/AuthShell';
-import { clerkAppearance } from '@/components/clerk-appearance';
+import { SignInForm } from '@/components/auth/SignInForm';
+import { AuthFormSkeleton } from '@/components/auth/AuthFormSkeleton';
 
 export const metadata: Metadata = { title: 'Masuk' };
 
@@ -16,7 +17,11 @@ export default function SignInPage() {
         'Akses peta sebaran lahan dan pengecekan tumpang tindih',
       ]}
     >
-      <SignIn appearance={clerkAppearance} signUpUrl="/sign-up" forceRedirectUrl="/app" />
+      {/* The form reads `?next=` via useSearchParams, which needs a Suspense
+          boundary for the page to keep prerendering. */}
+      <Suspense fallback={<AuthFormSkeleton />}>
+        <SignInForm />
+      </Suspense>
     </AuthShell>
   );
 }

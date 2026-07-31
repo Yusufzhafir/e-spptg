@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
-import { SignUp } from '@clerk/nextjs';
 import { AuthShell } from '@/components/AuthShell';
-import { clerkAppearance } from '@/components/clerk-appearance';
+import { SignUpForm } from '@/components/auth/SignUpForm';
 
 export const metadata: Metadata = { title: 'Daftar' };
 
@@ -16,7 +15,7 @@ export default function SignUpPage() {
         'Terima notifikasi setiap perubahan status pengajuan',
       ]}
     >
-      <SignUp appearance={clerkAppearance} signInUrl="/sign-in" forceRedirectUrl="/app" />
+      <SignUpForm />
     </AuthShell>
   );
 }

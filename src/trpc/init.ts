@@ -13,9 +13,10 @@ const isAuthed = t.middleware(({ ctx, next }) => {
   }
 
   // Deactivating a user must actually revoke access, not just grey out a row in
-  // Pengaturan: their Clerk session survives the toggle, so without this check
-  // they keep every permission their peran grants. Enforced here rather than in
-  // each router so it covers every procedure, present and future.
+  // Pengaturan. `users.toggleStatus` deletes their sessions, but a request that
+  // was already in flight — or a session row that outlived a failed delete —
+  // would still carry every permission their peran grants. Enforced here rather
+  // than in each router so it covers every procedure, present and future.
   if (ctx.appUser.status !== 'Aktif') {
     throw new TRPCError({
       code: 'FORBIDDEN',

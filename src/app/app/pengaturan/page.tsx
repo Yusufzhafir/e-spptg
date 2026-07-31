@@ -5,11 +5,15 @@ import { RequireRole } from '@/components/RequireRole';
 import { trpc } from '@/trpc/client';
 import { User, Village, ProhibitedArea } from '@/types';
 import { useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { CreateProhibitedAreaInput, UpdateProhibitedAreaInput } from '@/types/prohibitedAreas';
 
 export default function PengaturanPage() {
   const utils = trpc.useUtils();
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const { data: usersData, refetch: refetchUsers } = trpc.users.list.useQuery({
     limit: 1000,
     offset: 0,
@@ -28,9 +32,13 @@ export default function PengaturanPage() {
   const { data: currentUser } = trpc.auth.me.useQuery();
 
   const createUserMutation = trpc.users.create.useMutation({
-    onSuccess: () => {
+    onSuccess: (user) => {
       refetchUsers();
-      toast.success('Pengguna berhasil ditambahkan. Menunggu login pertama untuk terhubung.');
+      toast.success(
+        user.hasPassword
+          ? 'Pengguna berhasil ditambahkan dan dapat langsung masuk.'
+          : `Pengguna berhasil ditambahkan. Email undangan untuk membuat kata sandi dikirim ke ${user.email}.`
+      );
     },
     onError: (error) => {
       toast.error(error.message || 'Gagal menambahkan pengguna.');
@@ -38,7 +46,17 @@ export default function PengaturanPage() {
   });
 
   const updateUserMutation = trpc.users.update.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
+      // Changing your own peran revokes every session server-side, so there is
+      // nothing left to refetch — every query on this page would come back
+      // UNAUTHORIZED. Drop the cache and go to the login page instead.
+      if (result.signedOut) {
+        queryClient.clear();
+        toast.success('Peran Anda diubah. Silakan masuk kembali.');
+        router.replace('/sign-in');
+        router.refresh();
+        return;
+      }
       refetchUsers();
       toast.success('Pengguna berhasil diperbarui.');
     },
@@ -48,12 +66,25 @@ export default function PengaturanPage() {
   });
 
   const toggleUserStatusMutation = trpc.users.toggleStatus.useMutation({
-    onSuccess: () => {
+    onSuccess: (user) => {
       refetchUsers();
-      toast.success('Status pengguna berhasil diperbarui.');
+      toast.success(
+        user.status === 'Aktif'
+          ? 'Pengguna berhasil diaktifkan.'
+          : 'Pengguna berhasil dinonaktifkan dan dikeluarkan dari semua perangkat.'
+      );
     },
     onError: (error) => {
       toast.error(error.message || 'Gagal memperbarui status pengguna.');
+    },
+  });
+
+  const sendPasswordResetMutation = trpc.users.sendPasswordResetLink.useMutation({
+    onSuccess: ({ email }) => {
+      toast.success(`Tautan atur ulang kata sandi dikirim ke ${email}.`);
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Gagal mengirim tautan atur ulang kata sandi.');
     },
   });
 
@@ -127,7 +158,7 @@ export default function PengaturanPage() {
     if (!usersData) return [];
     return usersData.map((u) => ({
       id: u.id,
-      clerkUserId: u.clerkUserId,
+      hasPassword: u.hasPassword,
       nama: u.nama,
       nipNik: u.nipNik,
       email: u.email,
@@ -184,7 +215,9 @@ export default function PengaturanPage() {
   }, [prohibitedAreasData]);
 
   const handleCreateUser = (
-    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'>
+    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'> & {
+      password?: string;
+    }
   ) => {
     createUserMutation.mutate({
       nama: data.nama,
@@ -195,6 +228,9 @@ export default function PengaturanPage() {
       assignedKecamatan: data.assignedKecamatan ?? undefined,
       status: data.status,
       nomorHP: data.nomorHP || undefined,
+      // Blank means "invite by email" — the server creates the account without
+      // a password and mails a link to set one.
+      password: data.password || undefined,
     });
   };
 
@@ -219,6 +255,10 @@ export default function PengaturanPage() {
 
   const handleToggleUserStatus = (id: number) => {
     toggleUserStatusMutation.mutate({ id });
+  };
+
+  const handleSendPasswordReset = (id: number) => {
+    sendPasswordResetMutation.mutate({ id });
   };
 
   const handleCreateVillage = (data: {
@@ -309,6 +349,7 @@ export default function PengaturanPage() {
         villages={villages}
         prohibitedAreas={prohibitedAreas}
         onCreateUser={handleCreateUser}
+        onSendPasswordReset={handleSendPasswordReset}
         onUpdateUser={handleUpdateUser}
         onToggleUserStatus={handleToggleUserStatus}
         onUpdateProhibitedAreas={handleUpdateProhibitedAreas}

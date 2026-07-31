@@ -2,7 +2,6 @@
 
 import { ReactNode } from 'react';
 import { RoleAwareToaster } from '@/components/RoleAwareToaster';
-import { ClerkProvider } from '@clerk/nextjs';
 import { TRPCProvider } from '@/trpc/client';
 import { AuthRoleProvider } from '@/components/AuthRoleProvider';
 import { ServiceWorkerRegistrar } from '@/components/ServiceWorkerRegistrar';
@@ -14,15 +13,14 @@ import { ServiceWorkerRegistrar } from '@/components/ServiceWorkerRegistrar';
  */
 export function Providers({ children }: { children: ReactNode }) {
   return (
-    // Point Clerk at our own branded routes instead of its hosted pages.
-    <ClerkProvider signInUrl="/sign-in" signUpUrl="/sign-up">
-      <TRPCProvider>
-        <AuthRoleProvider>
-          <ServiceWorkerRegistrar />
-          <RoleAwareToaster />
-          {children}
-        </AuthRoleProvider>
-      </TRPCProvider>
-    </ClerkProvider>
+    // AuthRoleProvider sits inside TRPCProvider: it resolves the session with a
+    // tRPC query, so the client has to exist first.
+    <TRPCProvider>
+      <AuthRoleProvider>
+        <ServiceWorkerRegistrar />
+        <RoleAwareToaster />
+        {children}
+      </AuthRoleProvider>
+    </TRPCProvider>
   );
 }

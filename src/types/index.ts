@@ -114,8 +114,12 @@ export type UserStatus = 'Aktif' | 'Nonaktif';
 
 export interface User {
   id: number;
-  /** Null until the user first logs in via Clerk (pre-registered from the app). */
-  clerkUserId: string | null;
+  /**
+   * False for an account an admin created without an initial password: it exists
+   * and has a role, but cannot sign in until the person follows the invite email
+   * and chooses one. The hash itself never leaves the server.
+   */
+  hasPassword: boolean;
   nama: string;
   nipNik: string;
   email: string;

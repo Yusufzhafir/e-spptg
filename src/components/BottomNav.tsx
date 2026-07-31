@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { useAuthRole } from './AuthRoleProvider';
 import { getVisibleNavItems } from '@/lib/nav-items';
 import { NotificationBell } from './NotificationBell';
-import { UserButton } from '@clerk/nextjs';
+import { UserMenu } from './UserMenu';
 
 interface BottomNavProps {
   /** Active nav id, derived from the route by the layout. */
@@ -52,7 +52,7 @@ export function BottomNav({ currentPage }: BottomNavProps) {
           <NotificationBell />
         </div>
         <div className="flex h-14 flex-1 items-center justify-center">
-          <UserButton />
+          <UserMenu />
         </div>
       </div>
     </nav>

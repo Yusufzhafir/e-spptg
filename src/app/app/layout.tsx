@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode, useState, createContext, useContext } from 'react';
+import { ReactNode, useState, useEffect, createContext, useContext } from 'react';
 import { Sidebar } from '@/components/Sidebar';
 import { BottomNav } from '@/components/BottomNav';
 import { Header } from '@/components/Header';
@@ -30,7 +30,18 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   const pathname = usePathname();
   const router = useRouter();
-  const { isDeactivated } = useAuthRole();
+  const { isAuthenticated, isLoading, isDeactivated, signOut } = useAuthRole();
+
+  // `src/proxy.ts` only checks that a session cookie *exists* — it runs on the
+  // Edge and cannot reach the database to validate it. So a cookie that has been
+  // revoked (logout elsewhere, deactivation, expiry) still gets this far and
+  // shows up as a failing `auth.me`. Clear it and send them to sign in, rather
+  // than leaving them on a shell whose every query 401s.
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated && !isDeactivated) {
+      void signOut(`/sign-in?next=${encodeURIComponent(pathname)}`);
+    }
+  }, [isLoading, isAuthenticated, isDeactivated, signOut, pathname]);
 
   // infer "currentPage" from the route (under /app)
   const currentPage =
@@ -128,6 +139,16 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   // would fail, so the nav, header and page would render only errors.
   if (isDeactivated) {
     return <AccountDeactivatedNotice />;
+  }
+
+  // Resolving the session, or on the way out via the effect above. Either way
+  // the shell has no user to render for.
+  if (isLoading || !isAuthenticated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-blue-600" />
+      </div>
+    );
   }
 
   return (

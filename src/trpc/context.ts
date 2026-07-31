@@ -1,86 +1,64 @@
 import 'server-only';
-import { auth, clerkClient } from '@clerk/nextjs/server';
+import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
 import { db } from '@/server/db/db';
-import {
-  getUserByClerkId,
-  getPendingUserByEmail,
-  linkClerkAccount,
-  createUser,
-  touchUserLastLogin,
-} from '@/server/db/queries/user';
+import { touchUserLastLogin } from '@/server/db/queries/user';
+import { readSessionToken } from '@/server/auth/cookies';
+import { validateSessionToken, type SessionUser } from '@/server/auth/session';
 
 // Only rewrite "terakhir masuk" at most this often per user (avoid a write per request)
 const LAST_LOGIN_THROTTLE_MS = 10 * 60 * 1000;
 
-export async function createTRPCContext() {
-  const { userId: clerkUserId } = await auth();
+/**
+ * Resolves the caller from our own session cookie. There is no auto-provisioning
+ * step any more: an account exists because someone registered or an admin
+ * created it, so an unknown cookie is simply not authenticated.
+ */
+export async function createTRPCContext(opts?: FetchCreateContextFnOptions) {
+  let appUser: SessionUser | null = null;
+  let sessionToken: string | null = null;
 
-  let appUser: Awaited<ReturnType<typeof getUserByClerkId>> | null = null;
+  if (opts?.req) {
+    sessionToken = readSessionToken(opts.req);
+  }
 
-  if (clerkUserId) {
-    appUser = await getUserByClerkId(clerkUserId);
+  if (sessionToken) {
+    const { session, user } = await validateSessionToken(sessionToken);
+    if (session && user) {
+      appUser = user;
 
-    // Auto-provision user if not exists
-    if (!appUser) {
-      try {
-        const clerkAuth = await clerkClient();
-        const clerkUser = await clerkAuth.users.getUser(clerkUserId);
-
-        const nipNikFromPrivateMetadata =
-          (clerkUser.privateMetadata.nipNik as string) || 'TEMP';
-        const email = clerkUser.emailAddresses[0]?.emailAddress || '';
-
-        if (clerkUser) {
-          // If an admin pre-registered this person from the app (a row with the
-          // same email and no Clerk link yet), link that row instead of creating
-          // a duplicate — preserving their assigned role and desa.
-          const pending = email ? await getPendingUserByEmail(email) : undefined;
-          if (pending) {
-            appUser = await linkClerkAccount(pending.id, clerkUserId);
-          } else {
-            appUser = await createUser({
-              clerkUserId: clerkUserId,
-              email,
-              nama: `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim(),
-              nipNik: nipNikFromPrivateMetadata,
-              peran: 'Viewer',
-            });
-          }
-        }
-      } catch (error) {
-        console.error('Error provisioning user from Clerk:', error);
-      }
-
-      // A first page load fires several tRPC queries at once, and each builds its
-      // own context, so they all try to provision the same brand-new user in
-      // parallel. `users.clerk_user_id` is unique, so exactly one insert wins and
-      // the rest throw — leaving those requests with appUser = null and a 401.
-      // When `auth.me` happened to be one of the losers the session looked
-      // unauthenticated and the sidebar rendered empty until a manual refresh.
-      // Re-read before giving up: if someone else created the row, use it.
-      if (!appUser) {
-        appUser = await getUserByClerkId(clerkUserId);
-      }
-    }
-
-    // Update last-login (throttled) so the "Terakhir Masuk" column is populated
-    if (appUser) {
-      const last = appUser.terakhirMasuk ? new Date(appUser.terakhirMasuk).getTime() : 0;
+      // Update last-login (throttled) so the "Terakhir Masuk" column is populated
+      const last = user.terakhirMasuk ? new Date(user.terakhirMasuk).getTime() : 0;
       if (Date.now() - last > LAST_LOGIN_THROTTLE_MS) {
         try {
-          await touchUserLastLogin(appUser.id);
-          appUser = { ...appUser, terakhirMasuk: new Date() };
+          await touchUserLastLogin(user.id);
+          appUser = { ...user, terakhirMasuk: new Date() };
         } catch (error) {
           console.error('Error updating last login:', error);
         }
       }
+    } else {
+      // Cookie present but dead (expired, revoked, or the account was deleted).
+      // Treat it as anonymous; the sign-in/logout procedures clear it.
+      sessionToken = null;
     }
   }
 
   return {
     db,
-    userId: clerkUserId,
+    userId: appUser?.id ?? null,
     appUser,
+    sessionToken,
+    // The auth procedures write `Set-Cookie` here. Optional so unit tests can
+    // build a context without a real HTTP response to attach headers to.
+    resHeaders: opts?.resHeaders,
+    /** Best-effort request metadata for session bookkeeping and rate limiting. */
+    requestMeta: {
+      userAgent: opts?.req?.headers.get('user-agent') ?? null,
+      ipAddress:
+        opts?.req?.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+        opts?.req?.headers.get('x-real-ip') ||
+        null,
+    },
   };
 }
 

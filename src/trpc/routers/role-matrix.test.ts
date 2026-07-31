@@ -56,8 +56,21 @@ vi.mock('@/server/s3/s3', () => ({
   extractS3KeyFromDocumentUrl: vi.fn(),
   deleteFileFromS3: vi.fn(),
 }));
-vi.mock('@clerk/nextjs/server', () => ({
-  clerkClient: vi.fn(async () => ({ users: { updateUserMetadata: vi.fn() } })),
+// Session revocation and outbound mail are side effects of the user mutations
+// under test; stub them so the matrix exercises authorization, not Postgres/SMTP.
+vi.mock('@/server/auth/session', () => ({
+  invalidateAllUserSessions: vi.fn(async () => undefined),
+}));
+vi.mock('@/server/auth/mailer', () => ({
+  isMailerConfigured: vi.fn(() => true),
+  sendAccountInviteEmail: vi.fn(async () => undefined),
+  sendPasswordResetEmail: vi.fn(async () => undefined),
+}));
+vi.mock('@/server/auth/password-reset', () => ({
+  createPasswordResetToken: vi.fn(async () => ({
+    token: 'token',
+    expiresAt: new Date(Date.now() + 3_600_000),
+  })),
 }));
 
 import { authRouter } from './auth/authrouter';
@@ -118,18 +131,27 @@ function ctx(
     id: userId,
     nama: `${peran} User`,
     email: `${peran.toLowerCase()}@example.com`,
-    clerkUserId: `clerk-${userId}`,
+    passwordHash: 'scrypt$16384$8$1$c2FsdA==$aGFzaA==',
     nipNik: '12345',
     peran,
     assignedVillageId,
     assignedKecamatan,
     status,
     nomorHP: null,
+    // Verified: these fixtures stand in for existing, usable accounts.
+    emailVerifiedAt: new Date(),
     terakhirMasuk: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
-  return { userId: `clerk-${userId}`, db: {} as TRPCContext['db'], appUser } satisfies TRPCContext;
+  return {
+    userId,
+    db: {} as TRPCContext['db'],
+    appUser,
+    sessionToken: `session-${userId}`,
+    resHeaders: new Headers(),
+    requestMeta: { userAgent: 'vitest', ipAddress: '127.0.0.1' },
+  } satisfies TRPCContext;
 }
 
 const SUPERADMIN = () => ctx('Superadmin', 1);
@@ -324,7 +346,7 @@ describe('users mutations — role guard', () => {
       peran: 'Verifikator',
       assignedVillageId: VILLAGE_A,
       status: 'Aktif',
-      clerkUserId: null,
+      passwordHash: null,
     } as UserRecord;
     getUserByIdMock.mockResolvedValue(target);
     updateUserMock.mockResolvedValue({ id: 99 } as never);
@@ -561,8 +583,9 @@ describe('submissions.checkOverlapsFromCoordinates — probing is staff-only', (
 
 // ---------------------------------------------------------------------------
 // Deactivated accounts — the 'Nonaktif' flag must actually revoke access.
-// Clerk keeps their session alive across the toggle, so the block lives in the
-// tRPC auth middleware and has to hold for every role and every procedure.
+// `users.toggleStatus` deletes their session rows, but a request already in
+// flight would still carry the old permissions, so the block lives in the tRPC
+// auth middleware and has to hold for every role and every procedure.
 // ---------------------------------------------------------------------------
 describe('status Nonaktif — access is revoked for every role', () => {
   const DEACTIVATED: Array<[string, TRPCContext]> = [
@@ -616,7 +639,7 @@ describe('self-deactivation is refused', () => {
       peran: 'Superadmin',
       assignedVillageId: null,
       status: 'Aktif',
-      clerkUserId: 'clerk-1',
+      passwordHash: 'scrypt$16384$8$1$c2FsdA==$aGFzaA==',
     } as UserRecord);
 
     await expect(
@@ -631,7 +654,7 @@ describe('self-deactivation is refused', () => {
       peran: 'Superadmin',
       assignedVillageId: null,
       status: 'Aktif',
-      clerkUserId: 'clerk-1',
+      passwordHash: 'scrypt$16384$8$1$c2FsdA==$aGFzaA==',
     } as UserRecord);
 
     await expect(
@@ -646,7 +669,7 @@ describe('self-deactivation is refused', () => {
       peran: 'Admin',
       assignedVillageId: VILLAGE_A,
       status: 'Aktif',
-      clerkUserId: 'clerk-9',
+      passwordHash: 'scrypt$16384$8$1$c2FsdA==$aGFzaA==',
     } as UserRecord);
     updateUserMock.mockResolvedValue({ id: 9 } as never);
 

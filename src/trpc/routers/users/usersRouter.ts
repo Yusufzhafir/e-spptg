@@ -5,9 +5,19 @@ import {
   updateUserSchema,
 } from '@/lib/validation';
 import * as queries from '@/server/db/queries/user';
+import { users } from '@/server/db/schema';
 import { assertCanManageUser, requireAssignedVillageId } from '@/server/authz';
 import { TRPCError } from '@trpc/server';
-import { clerkClient } from '@clerk/nextjs/server';
+import { passwordSchema } from '@/lib/password-policy';
+import { hashPassword } from '@/server/auth/password';
+import { invalidateAllUserSessions } from '@/server/auth/session';
+import { clearedSessionCookie } from '@/server/auth/cookies';
+import { createPasswordResetToken } from '@/server/auth/password-reset';
+import {
+  isMailerConfigured,
+  sendAccountInviteEmail,
+  sendPasswordResetEmail,
+} from '@/server/auth/mailer';
 
 type AssignableRole = 'Superadmin' | 'Admin' | 'Verifikator' | 'Kecamatan' | 'Viewer';
 
@@ -67,6 +77,17 @@ function assertNotSelfDeactivation(
   }
 }
 
+/**
+ * Strips `passwordHash` before a user row leaves the server, and replaces it
+ * with the only thing the UI actually needs to know — whether the account can
+ * sign in yet. Every read procedure goes through this; returning raw rows would
+ * put scrypt digests for the whole desa into the browser.
+ */
+function toClientUser(user: typeof users.$inferSelect) {
+  const { passwordHash, ...rest } = user;
+  return { ...rest, hasPassword: passwordHash !== null };
+}
+
 export const usersRouter = router({
   list: protectedProcedure
     .input(
@@ -80,20 +101,22 @@ export const usersRouter = router({
       // Superadmin sees everyone; Admin/Verifikator only their own desa;
       // anyone else (Viewer) only their own account.
       if (actor.peran === 'Superadmin') {
-        return queries.listUsers(input.limit, input.offset);
+        const rows = await queries.listUsers(input.limit, input.offset);
+        return rows.map(toClientUser);
       }
       if (
         (actor.peran === 'Admin' || actor.peran === 'Verifikator') &&
         actor.assignedVillageId != null
       ) {
-        return queries.listUsersByVillage(
+        const rows = await queries.listUsersByVillage(
           actor.assignedVillageId,
           input.limit,
           input.offset
         );
+        return rows.map(toClientUser);
       }
       const self = await queries.getUserById(actor.id);
-      return self ? [self] : [];
+      return self ? [toClientUser(self)] : [];
     }),
 
   byId: protectedProcedure
@@ -124,7 +147,7 @@ export const usersRouter = router({
         });
       }
 
-      return user;
+      return toClientUser(user);
     }),
 
   create: adminProcedure
@@ -132,6 +155,12 @@ export const usersRouter = router({
       createUserSchema.extend({
         nomorHP: z.string().optional(),
         status: z.enum(['Aktif', 'Nonaktif']).optional(),
+        /**
+         * Optional. Omitted means "invite instead": the account is created
+         * without a password and the person is emailed a link to choose their
+         * own, so an admin never has to hand a plaintext password over chat.
+         */
+        password: passwordSchema.optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -167,8 +196,9 @@ export const usersRouter = router({
         assignedVillageIdInput = actorVillageId;
       }
 
-      // Prevent duplicates: the email is what links this pre-registered row to a
-      // Clerk account on first login, so it must be unique.
+      // The email is the login identifier, so it has to be unique. The unique
+      // index on the column is the real guard; this check exists to return a
+      // readable message instead of a constraint violation.
       const existing = await queries.getUserByEmail(input.email);
       if (existing) {
         throw new TRPCError({
@@ -186,19 +216,56 @@ export const usersRouter = router({
         input.assignedKecamatan
       );
 
-      // No Clerk account yet — the user is pre-registered and will be linked by
-      // email when they first log in via Clerk.
-      return queries.createUser({
-        clerkUserId: null,
-        email: input.email,
-        nama: input.nama,
+      // Without a password there is no way into the account except the invite
+      // email, so refuse up front rather than creating a row nobody can use.
+      if (!input.password && !isMailerConfigured()) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message:
+            'Layanan email belum dikonfigurasi, sehingga undangan tidak dapat dikirim. Tetapkan kata sandi awal untuk pengguna ini.',
+        });
+      }
+
+      const user = await queries.createUser({
+        email: input.email.trim(),
+        nama: input.nama.trim(),
         nipNik: input.nipNik,
+        passwordHash: input.password ? await hashPassword(input.password) : null,
         peran: role,
         assignedVillageId,
         assignedKecamatan,
         status: input.status,
         nomorHP: input.nomorHP,
+        // An admin typed this address and is vouching for it, so the account
+        // skips the self-registration verification step. Requiring it here would
+        // also break the invite flow: the invite link sets a password, and the
+        // person would then still be refused at login for being unverified.
+        emailVerifiedAt: new Date(),
       });
+
+      if (!input.password) {
+        try {
+          const { token, expiresAt } = await createPasswordResetToken(user.id);
+          await sendAccountInviteEmail({
+            to: user.email,
+            nama: user.nama,
+            peran: user.peran,
+            token,
+            expiresAt,
+          });
+        } catch (error) {
+          // The account is already created and valid; a bounced invite is fixed
+          // by the "Kirim tautan sandi" action rather than by rolling back.
+          console.error('Gagal mengirim email undangan akun:', error);
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message:
+              'Pengguna berhasil dibuat, tetapi email undangan gagal dikirim. Kirim ulang tautan kata sandi dari daftar pengguna.',
+          });
+        }
+      }
+
+      return toClientUser(user);
     }),
 
   update: adminProcedure
@@ -262,27 +329,51 @@ export const usersRouter = router({
           : targetUser.assignedKecamatan
       );
 
-      // Only sync to Clerk once the user is actually linked to a Clerk account.
-      // Pre-registered users (no clerkUserId yet) get their role from the DB row,
-      // which is applied to Clerk metadata when they first log in if needed.
-      if (input.data.peran && targetUser.clerkUserId) {
-        try {
-          const client = await clerkClient();
-          await client.users.updateUserMetadata(targetUser.clerkUserId, {
-            privateMetadata: {
-              role: input.data.peran,
-            },
+      // Changing an email changes the login identifier, so it must stay unique
+      // and must not be taken by somebody else's account.
+      if (input.data.email && input.data.email.trim() !== targetUser.email) {
+        const emailOwner = await queries.getUserByEmail(input.data.email.trim());
+        if (emailOwner && emailOwner.id !== targetUser.id) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: 'Email sudah digunakan akun lain.',
           });
-        } catch (error) {
-          console.error('Gagal memperbarui role di Clerk:', error);
         }
       }
 
-      return queries.updateUser(input.id, {
+      const updated = await queries.updateUser(input.id, {
         ...input.data,
         assignedVillageId: nextAssignedVillageId,
         assignedKecamatan: nextAssignedKecamatan,
       });
+
+      // Deactivating through the edit dialog has to revoke access just as the
+      // status toggle does, otherwise the account stays usable until its cookie
+      // happens to expire.
+      if (input.data.status === 'Nonaktif' && targetUser.status === 'Aktif') {
+        await invalidateAllUserSessions(input.id);
+      }
+
+      // Changing your *own* role signs you out everywhere. A live session keeps
+      // whatever the app shell decided at load time — nav items, route guards
+      // and cached queries are all built from the old peran — so continuing in
+      // place would show a UI the new role is no longer entitled to until the
+      // next full reload. Signing out is the honest way to re-derive all of it,
+      // and the client warns before it happens.
+      const changedOwnRole =
+        input.id === ctx.appUser!.id &&
+        input.data.peran !== undefined &&
+        input.data.peran !== targetUser.peran;
+
+      if (changedOwnRole) {
+        await invalidateAllUserSessions(input.id);
+        ctx.resHeaders?.append('set-cookie', clearedSessionCookie());
+      }
+
+      // `signedOut` rides along so the client knows to send the user to the
+      // login page rather than leaving them on a page whose queries will all
+      // start failing with UNAUTHORIZED.
+      return { ...toClientUser(updated), signedOut: changedOwnRole };
     }),
 
   toggleStatus: adminProcedure
@@ -298,6 +389,60 @@ export const usersRouter = router({
       assertCanManageUser(ctx.appUser!, user);
       const newStatus = user.status === 'Aktif' ? 'Nonaktif' : 'Aktif';
       assertNotSelfDeactivation(ctx.appUser!.id, input.id, newStatus);
-      return queries.updateUser(input.id, { status: newStatus });
+
+      const updated = await queries.updateUser(input.id, { status: newStatus });
+
+      // "Nonaktif" has to mean logged out now, not at the next expiry. The tRPC
+      // middleware already refuses the account on every call; this closes the
+      // session rows so nothing is left to replay.
+      if (newStatus === 'Nonaktif') {
+        await invalidateAllUserSessions(input.id);
+      }
+
+      return toClientUser(updated);
+    }),
+
+  /**
+   * Mail a managed user a link to set their own password — for a forgotten
+   * password an admin is asked about in person, or an invite that never arrived.
+   * The admin never learns the password, and the link is the same single-use,
+   * one-hour token the public "lupa sandi" flow issues.
+   */
+  sendPasswordResetLink: adminProcedure
+    .input(z.object({ id: z.number().int() }))
+    .mutation(async ({ ctx, input }) => {
+      const user = await queries.getUserById(input.id);
+      if (!user) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Pengguna tidak ditemukan',
+        });
+      }
+      assertCanManageUser(ctx.appUser!, user);
+
+      if (!isMailerConfigured()) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Layanan email belum dikonfigurasi. Hubungi administrator sistem.',
+        });
+      }
+
+      const { token, expiresAt } = await createPasswordResetToken(user.id);
+      try {
+        await sendPasswordResetEmail({
+          to: user.email,
+          nama: user.nama,
+          token,
+          expiresAt,
+        });
+      } catch (error) {
+        console.error('Gagal mengirim email atur ulang kata sandi:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Gagal mengirim email. Coba beberapa saat lagi.',
+        });
+      }
+
+      return { email: user.email };
     }),
 });

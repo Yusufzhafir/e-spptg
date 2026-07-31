@@ -1,50 +1,18 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { UserRole, UserStatus } from '@/types';
 import { db, DBTransaction } from '../db';
 import { users } from '../schema';
 
-
-export async function getUserByClerkId(clerkUserId: string, tx?: DBTransaction) {
-  const queryDb = tx || db;
-  return queryDb.query.users.findFirst({
-    where: eq(
-      users.clerkUserId, clerkUserId
-    )
-  })
-}
-
-/** Any user with this email, regardless of link state. Used for dedup checks. */
+/**
+ * Look a user up by their login identifier. Emails are compared
+ * case-insensitively — people type "Budi@Pemda.go.id" and expect to get in —
+ * while the stored value keeps whatever casing they registered with.
+ */
 export async function getUserByEmail(email: string, tx?: DBTransaction) {
   const queryDb = tx || db;
   return queryDb.query.users.findFirst({
-    where: eq(users.email, email),
+    where: sql`lower(${users.email}) = lower(${email})`,
   });
-}
-
-/**
- * A user that was pre-registered from the app (no Clerk account linked yet)
- * whose email matches. Used to link the row on first Clerk login.
- */
-export async function getPendingUserByEmail(email: string, tx?: DBTransaction) {
-  const queryDb = tx || db;
-  return queryDb.query.users.findFirst({
-    where: and(eq(users.email, email), isNull(users.clerkUserId)),
-  });
-}
-
-/** Link a pre-registered app user to a Clerk account on first login. */
-export async function linkClerkAccount(
-  id: number,
-  clerkUserId: string,
-  tx?: DBTransaction
-) {
-  const queryDb = tx || db;
-  const result = await queryDb
-    .update(users)
-    .set({ clerkUserId, terakhirMasuk: new Date(), updatedAt: new Date() })
-    .where(eq(users.id, id))
-    .returning();
-  return result[0];
 }
 
 export async function getUserById(id: number, tx?: DBTransaction) {
@@ -57,31 +25,70 @@ export async function getUserById(id: number, tx?: DBTransaction) {
 }
 
 export async function createUser(data: {
-  clerkUserId?: string | null;
   email: string;
   nama: string;
   nipNik: string;
+  /** scrypt digest; null for accounts that must set one via the reset email. */
+  passwordHash?: string | null;
   peran?: UserRole;
   assignedVillageId?: number | null;
   assignedKecamatan?: string | null;
   nomorHP?: string;
   status?: UserStatus;
+  /**
+   * Set for accounts an admin creates (the admin vouches for the address);
+   * left null by self-registration, which must prove the address first.
+   */
+  emailVerifiedAt?: Date | null;
 }, tx?: DBTransaction) {
   const queryDb = tx || db;
 
   const result = await queryDb
     .insert(users)
     .values({
-      clerkUserId: data.clerkUserId ?? null,
       email: data.email,
       nama: data.nama,
       nipNik: data.nipNik,
+      passwordHash: data.passwordHash ?? null,
       peran: data.peran || 'Viewer',
       assignedVillageId: data.assignedVillageId ?? null,
       assignedKecamatan: data.assignedKecamatan ?? null,
       status: data.status || 'Aktif',
       nomorHP: data.nomorHP || null,
+      emailVerifiedAt: data.emailVerifiedAt ?? null,
     })
+    .returning();
+
+  return result[0];
+}
+
+/**
+ * Stamp an account as having proved its email address. Idempotent: verifying an
+ * already-verified account is a no-op rather than an error, so a double-clicked
+ * link does not need special handling.
+ */
+export async function markEmailVerified(id: number, tx?: DBTransaction) {
+  const queryDb = tx || db;
+  const result = await queryDb
+    .update(users)
+    .set({ emailVerifiedAt: new Date(), updatedAt: new Date() })
+    .where(eq(users.id, id))
+    .returning();
+
+  return result[0];
+}
+
+/** Replace a user's password. Callers are responsible for revoking sessions. */
+export async function setUserPassword(
+  id: number,
+  passwordHash: string,
+  tx?: DBTransaction
+) {
+  const queryDb = tx || db;
+  const result = await queryDb
+    .update(users)
+    .set({ passwordHash, updatedAt: new Date() })
+    .where(eq(users.id, id))
     .returning();
 
   return result[0];

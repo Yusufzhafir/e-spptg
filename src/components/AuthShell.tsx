@@ -13,9 +13,10 @@ interface AuthShellProps {
 }
 
 /**
- * Split layout for the Clerk sign-in / sign-up screens: form on the left,
- * branded context on the right. The panel is hidden below `lg` so phones and
- * tablets get the form full-width instead of a squeezed two-column view.
+ * Split layout shared by every unauthenticated screen (masuk, daftar, lupa
+ * sandi, atur ulang sandi): form on the left, branded context on the right. The
+ * panel is hidden below `lg` so phones and tablets get the form full-width
+ * instead of a squeezed two-column view.
  */
 export function AuthShell({ title, subtitle, points, children }: AuthShellProps) {
   return (
@@ -48,7 +49,7 @@ export function AuthShell({ title, subtitle, points, children }: AuthShellProps)
           </Link>
         </div>
 
-        {/* Clerk renders its own card; center it in the remaining space */}
+        {/* Center the form card in the remaining vertical space */}
         <div className="flex flex-1 items-center justify-center py-10">
           <div className="w-full max-w-md">{children}</div>
         </div>
