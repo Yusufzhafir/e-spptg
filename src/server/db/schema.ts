@@ -105,17 +105,36 @@ export const users = pgTable(
       cache: 1,
     }),
     nama: varchar('nama', { length: 255 }).notNull(),
-    // Nullable: an admin can pre-register a user from the app before they have
-    // ever logged in via Clerk. The row is linked to a Clerk account (by email)
-    // on that user's first login. Unique still holds for non-null values.
-    clerkUserId: varchar('clerk_user_id', { length: 255 }).unique(),
+    // scrypt digest produced by `src/server/auth/password.ts`. Nullable: an admin
+    // can pre-register a user without choosing a password for them, in which case
+    // the account cannot sign in until the person sets one through the
+    // "lupa sandi" email flow.
+    passwordHash: varchar('password_hash', { length: 255 }),
     nipNik: varchar('nip_nik', { length: 20 }).notNull(),
-    email: varchar('email', { length: 255 }).notNull(),
+    // The login identifier, so it has to be unique — not just validated in the
+    // router, which cannot stop two concurrent registrations.
+    email: varchar('email', { length: 255 }).notNull().unique(),
     peran: userRoleEnum('peran').notNull(),
     assignedVillageId: bigint('assigned_village_id', { mode: 'number' }),
     // Scope for the 'Kecamatan' role: every submission in this kecamatan.
     assignedKecamatan: varchar('assigned_kecamatan', { length: 255 }),
     status: userStatusEnum('status').notNull().default('Aktif'),
+    /**
+     * When the person proved they own this address by following the link mailed
+     * at self-registration. NULL means "registered but not verified", and login
+     * refuses that account.
+     *
+     * Kept separate from `status` on purpose: `status` is the admin's decision
+     * ("this account is switched off"), while this is the account's own
+     * onboarding state. Folding them into one column would make an unverified
+     * signup indistinguishable from an account an admin deliberately disabled,
+     * and the two need different messages and different remedies.
+     *
+     * Accounts an admin creates are stamped verified immediately — the admin
+     * typed the address and is vouching for it — as were all rows that existed
+     * before this column was introduced.
+     */
+    emailVerifiedAt: timestamp('email_verified_at'),
     nomorHP: varchar('nomor_hp', { length: 15 }),
     terakhirMasuk: timestamp('terakhir_masuk'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -123,6 +142,94 @@ export const users = pgTable(
   },
   (t) => [
     index('users_assigned_village_idx').on(t.assignedVillageId),
+  ]
+);
+
+
+// ============================================================================
+// SESSIONS TABLE
+// ============================================================================
+
+/**
+ * Server-side sessions for the app's own authentication. The browser only ever
+ * holds the opaque token; `id` is its SHA-256 digest, so a leaked database dump
+ * cannot be replayed as a login.
+ *
+ * Rows are deleted (not just expired) on logout and whenever an account is
+ * deactivated or its password changes, which is what makes those actions revoke
+ * access immediately instead of at the next expiry.
+ */
+export const sessions = pgTable(
+  'sessions',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    userId: bigint('user_id', { mode: 'number' })
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: timestamp('expires_at').notNull(),
+    // Shown in "perangkat aktif" so a user can recognise a session that is not
+    // theirs; never used for authorization.
+    userAgent: varchar('user_agent', { length: 512 }),
+    ipAddress: varchar('ip_address', { length: 64 }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('sessions_user_idx').on(t.userId),
+    index('sessions_expires_at_idx').on(t.expiresAt),
+  ]
+);
+
+// ============================================================================
+// PASSWORD RESET TOKENS TABLE
+// ============================================================================
+
+/**
+ * Single-use "lupa sandi" tokens mailed out over Gmail SMTP. As with sessions,
+ * only the SHA-256 digest of the token is stored.
+ */
+export const passwordResetTokens = pgTable(
+  'password_reset_tokens',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    userId: bigint('user_id', { mode: 'number' })
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: timestamp('expires_at').notNull(),
+    // Set once the token is redeemed. Kept rather than deleted so a replay of
+    // the same link can be told apart from a link that never existed.
+    usedAt: timestamp('used_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('password_reset_tokens_user_idx').on(t.userId),
+    index('password_reset_tokens_expires_at_idx').on(t.expiresAt),
+  ]
+);
+
+// ============================================================================
+// EMAIL VERIFICATION TOKENS TABLE
+// ============================================================================
+
+/**
+ * Single-use links that prove a self-registered address is real. Same shape and
+ * same digest-only rule as `password_reset_tokens`; the difference is lifetime
+ * (24 hours rather than 1) because this link is less sensitive and people often
+ * only read their mail hours later.
+ */
+export const emailVerificationTokens = pgTable(
+  'email_verification_tokens',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    userId: bigint('user_id', { mode: 'number' })
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: timestamp('expires_at').notNull(),
+    usedAt: timestamp('used_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('email_verification_tokens_user_idx').on(t.userId),
+    index('email_verification_tokens_expires_at_idx').on(t.expiresAt),
   ]
 );
 

@@ -35,7 +35,7 @@ pnpm push:stag / push:prod           # Push schema directly (can fail on PostGIS
 
 ## Application flow
 
-1. **Login & provisioning**: Users authenticate via Clerk (`src/proxy.ts` protects `/app/*` and `/api/*`). First login auto-creates a `users` row with role `Viewer`. Roles (`peran`): `Superadmin` (everything), `Admin`/`Verifikator` (scoped to their `assigned_village_id`), `Viewer` (own drafts only, Step 1 only).
+1. **Login & registration**: Authentication is the app's own — email + scrypt password hash, server-side `sessions` rows keyed by the SHA-256 of an HttpOnly cookie (`src/server/auth/`). `src/proxy.ts` gates `/app/*` on cookie presence only (Edge, no DB); `/api/trpc` stays open so login/register/reset are reachable. Self-registration always creates a `Viewer`; admins create accounts from Pengaturan with an initial password or an emailed invite link. Roles (`peran`) — five of them: `Superadmin` (everything), `Admin`/`Verifikator` (scoped to their `assigned_village_id`), `Kecamatan` (**read-only** oversight of every desa in its `assigned_kecamatan`; takes no part in the workflow — no drafts, no comments, no status or validity changes), `Viewer` (own drafts only, Step 1 only).
 2. **4-step submission wizard** (`src/components/SubmissionFlow.tsx` + `submission-steps/Step1…Step4`). In-progress data lives as JSONB in `submission_drafts.payload`, validated per step by Zod schemas in `src/lib/validation/submission-draft.ts`, saved via `drafts.saveStep`:
    - **Step 1 — Berkas**: pick desa, applicant data (nama, NIK, alamat), upload mandatory KTP + KK plus supporting documents.
    - **Step 2 — Lapangan**: land boundary coordinates (geografis/UTM, map polygon drawing, or KML/KMZ import), area, boundary witnesses (saksi), survey team (juru ukur).
@@ -58,12 +58,18 @@ pnpm push:stag / push:prod           # Push schema directly (can fail on PostGIS
 
 ## Architecture
 
-**Stack**: Next.js 16 App Router, React 19, tRPC v11, Drizzle ORM on PostgreSQL + PostGIS, Clerk auth, Tailwind 4 + shadcn/ui, S3-compatible storage, Google Maps (`@vis.gl/react-google-maps`), `@react-pdf/renderer` for certificates, Zod v4.
+**Stack**: Next.js 16 App Router, React 19, tRPC v11, Drizzle ORM on PostgreSQL + PostGIS, self-hosted auth (scrypt + DB sessions), Tailwind 4 + shadcn/ui, S3-compatible storage, Google Maps (`@vis.gl/react-google-maps`), `@react-pdf/renderer` for certificates, nodemailer over Gmail SMTP for password-reset mail, Zod v4.
 
-**Request path**: `src/proxy.ts` (Clerk middleware) → tRPC handler at `src/app/api/trpc/[trpc]/route.ts` → routers in `src/trpc/routers/` (auth, drafts, documents, submissions, prohibitedAreas, villages, users) → query functions in `src/server/db/queries/`. The single Drizzle schema is `src/server/db/schema.ts`.
+**Request path**: `src/proxy.ts` (Edge session-cookie gate) → tRPC handler at `src/app/api/trpc/[trpc]/route.ts` → routers in `src/trpc/routers/` (auth, drafts, documents, submissions, prohibitedAreas, villages, users) → query functions in `src/server/db/queries/`. The single Drizzle schema is `src/server/db/schema.ts`.
+
+**Statistics API** (`/api/statistik`, `src/app/api/statistik/` + `src/server/public-api/`) is the one route family outside tRPC: read-only aggregate JSON for the Dashboard Eksekutif Kutai Timur. It authenticates on `X-Client-Id` / `X-API-Key` pairs from `STATISTIK_API_CLIENTS` (not sessions, not the DB), optionally restricts callers to `STATISTIK_API_ALLOWED_IPS`, and returns `503` when neither is configured — so it is off by default. It sends no CORS headers on purpose (server-to-server only) and must never expose applicant fields; see `docs/API-STATISTIK.md`.
+
+**Redis** (`src/server/redis/`) backs sessions, rate limiting and read caching. Every use goes through `withRedis()`, which returns a fallback when Redis is unreachable — so a cache outage degrades the app (slower, more Postgres reads) instead of breaking it, and `REDIS_URL` being unset is a supported local-dev configuration. Two rules when adding to it: **the user row is never cached without explicit invalidation** (`src/server/db/queries/user.ts` invalidates inside every write function, because `validateSessionToken` reads the user through that cache on every request — a miss means stale permissions), and **anything scoped per role uses `scopedKey()`**, which hashes the scope into the key so one role's dashboard numbers cannot be served to another. Sessions are written to both Redis and Postgres: Redis serves every request, Postgres is the durable copy that survives a Redis restart and still powers "perangkat aktif".
+
+**Authentication** lives in `src/server/auth/`: `password.ts` (scrypt hash/verify), `session.ts` (create/validate/revoke, 30-day sliding expiry), `cookies.ts` (`espptg_session`, HttpOnly/Lax/Secure), `password-reset.ts` (single-use 1-hour tokens), `mailer.ts` (Gmail SMTP — the only third-party call left), `rate-limit.ts`. Only token *digests* reach the database. `users.password_hash` must never leave the server: every read procedure passes rows through `toClientUser`, which swaps it for a `hasPassword` boolean.
 
 **Authorization is two-layered**:
-1. Procedure middleware in `src/trpc/init.ts`: `publicProcedure` → `protectedProcedure` → `verifikatorProcedure` (Superadmin/Admin/Verifikator) → `adminProcedure` (Superadmin/Admin) → `superadminProcedure`. The role field is `appUser.peran`.
+1. Procedure middleware in `src/trpc/init.ts`: `publicProcedure` → `protectedProcedure` → `verifikatorProcedure` (Superadmin/Admin/Verifikator) → `adminProcedure` (Superadmin/Admin) → `superadminProcedure`. The role field is `appUser.peran`. `Kecamatan` clears only `protectedProcedure` — it is deliberately absent from every tier above, which is what makes it read-only.
 2. Row-level scoping via `src/server/authz.ts` — reuse these helpers (`canAccessDraft`, `assertCanAccessSubmission`, `getSubmissionScopeForUser`, …) in routers rather than reimplementing checks. `submissions.owner_user_id` is the source of truth for Viewer visibility; `verifikator` is the processor, not the owner.
 
 Two submission-flow gotchas that have caused real data loss:

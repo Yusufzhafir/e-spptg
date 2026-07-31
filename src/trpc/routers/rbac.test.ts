@@ -77,18 +77,27 @@ function ctx(
     id: userId,
     nama: `${peran} User`,
     email: `${peran.toLowerCase()}@example.com`,
-    clerkUserId: `clerk-${userId}`,
+    passwordHash: 'scrypt$16384$8$1$c2FsdA==$aGFzaA==',
     nipNik: '12345',
     peran,
     assignedVillageId,
     assignedKecamatan,
     status: 'Aktif',
     nomorHP: null,
+    // Verified: these fixtures stand in for existing, usable accounts.
+    emailVerifiedAt: new Date(),
     terakhirMasuk: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
-  return { userId: `clerk-${userId}`, db: {} as TRPCContext['db'], appUser } satisfies TRPCContext;
+  return {
+    userId,
+    db: {} as TRPCContext['db'],
+    appUser,
+    sessionToken: `session-${userId}`,
+    resHeaders: new Headers(),
+    requestMeta: { userAgent: 'vitest', ipAddress: '127.0.0.1' },
+  } satisfies TRPCContext;
 }
 
 const SUPERADMIN = () => ctx('Superadmin', 1);

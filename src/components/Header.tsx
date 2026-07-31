@@ -1,6 +1,11 @@
+'use client';
+
 import Image from 'next/image';
-import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton } from '@clerk/nextjs';
+import Link from 'next/link';
 import { NotificationBell } from './NotificationBell';
+import { UserMenu } from './UserMenu';
+import { useAuthRole } from './AuthRoleProvider';
+import { Button } from './ui/button';
 
 interface HeaderProps {
   /** Page heading shown on the left. */
@@ -8,6 +13,8 @@ interface HeaderProps {
 }
 
 export function Header({ title = 'Dashboard' }: HeaderProps) {
+  const { isAuthenticated, isLoading } = useAuthRole();
+
   return (
     <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4">
       <div className="flex items-center justify-between gap-3">
@@ -24,21 +31,26 @@ export function Header({ title = 'Dashboard' }: HeaderProps) {
         </div>
 
         <div className="flex shrink-0 items-center gap-3">
-          <SignedOut>
-            <SignInButton />
-            <SignUpButton>
-              <button className="bg-[#6c47ff] text-ceramic-white rounded-full font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 cursor-pointer">
-                Sign Up
-              </button>
-            </SignUpButton>
-          </SignedOut>
-          <SignedIn>
-            {/* Below lg these live in the bottom nav, so avoid showing them twice */}
+          {isAuthenticated ? (
+            // Below lg these live in the bottom nav, so avoid showing them twice
             <div className="hidden items-center gap-3 lg:flex">
               <NotificationBell />
-              <UserButton />
+              <UserMenu />
             </div>
-          </SignedIn>
+          ) : (
+            // Only reachable in the brief window before `auth.me` resolves, or
+            // if a stale cookie got someone this far; offer the way back in.
+            !isLoading && (
+              <div className="flex items-center gap-2">
+                <Button asChild variant="ghost" className="text-gray-700">
+                  <Link href="/sign-in">Masuk</Link>
+                </Button>
+                <Button asChild className="bg-blue-600 hover:bg-blue-700">
+                  <Link href="/sign-up">Daftar</Link>
+                </Button>
+              </div>
+            )
+          )}
         </div>
       </div>
     </header>

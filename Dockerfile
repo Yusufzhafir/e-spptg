@@ -35,14 +35,12 @@ RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
 WORKDIR /app
 
 # NEXT_PUBLIC_* di-inline saat build, jadi WAJIB dikirim sebagai build arg.
-# Kalau salah/ kosong, Clerk & Google Maps mati di browser walaupun .env runtime benar.
-ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+# Kalau salah/kosong, Google Maps mati di browser walaupun .env runtime benar.
 ARG NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 # Dipakai next.config.ts untuk images.remotePatterns (opsional).
 ARG S3_BUCKET_NAME
 ARG S3_DOMAIN
-ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY \
-    NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY \
+ENV NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY \
     S3_BUCKET_NAME=$S3_BUCKET_NAME \
     S3_DOMAIN=$S3_DOMAIN
 

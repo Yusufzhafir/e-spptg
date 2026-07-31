@@ -32,7 +32,7 @@ This is a **government land registry application** for Indonesian local governme
 | **API** | tRPC v11 (type-safe RPC) |
 | **Database** | PostgreSQL with PostGIS extension |
 | **ORM** | Drizzle ORM |
-| **Auth** | Clerk (with role-based access) |
+| **Auth** | Self-hosted: scrypt password hashes + server-side sessions (no third party) |
 | **Storage** | S3-compatible (AWS S3 or Cloudflare R2) |
 | **Maps** | Google Maps API (@vis.gl/react-google-maps) |
 | **PDF** | @react-pdf/renderer, pdf-lib |
@@ -52,7 +52,7 @@ src/
 │   │   ├── page.tsx       # Dashboard
 │   │   ├── pengajuan/     # Submission routes
 │   │   └── pengaturan/    # Settings page
-│   ├── layout.tsx         # Root layout (Clerk + tRPC providers)
+│   ├── layout.tsx         # Root layout (tRPC + auth providers)
 │   └── page.tsx           # Landing page
 │
 ├── components/
@@ -109,7 +109,7 @@ src/
     ├── number-to-words.ts # Terbilang helpers
     └── validation/        # Zod schemas
 
-src/proxy.ts               # Clerk middleware route protection
+src/proxy.ts               # Edge middleware: session-cookie gate for /app/*
 ```
 
 ---
@@ -120,7 +120,9 @@ src/proxy.ts               # Clerk middleware route protection
 
 | Table | Purpose |
 |-------|---------|
-| `users` | System users (Clerk-synced) with roles |
+| `users` | System users (email + `password_hash`) with roles |
+| `sessions` | Server-side sessions; `id` is the SHA-256 of the cookie token |
+| `password_reset_tokens` | Single-use, 1-hour "lupa sandi" / invite tokens |
 | `villages` | Reference data for villages (desa) |
 | `submissions` | Final submitted land claims |
 | `submission_drafts` | In-progress multi-step form data (JSONB payload) |
@@ -226,11 +228,55 @@ superadminProcedure // Requires Superadmin only
 
 ## Authentication & Authorization
 
-### Clerk Integration
+### Self-hosted authentication
 
-- Users authenticate via Clerk
-- On first login, user is auto-provisioned in `users` table with "Viewer" role
-- Clerk user ID is stored as `clerkUserId` for linking
+No identity provider is involved. Everything lives in `src/server/auth/`:
+
+| Module | Responsibility |
+|---|---|
+| `password.ts` | scrypt hashing (N=16384, r=8, p=1), constant-time verify, `fakeVerifyPassword` to equalise timing on unknown emails |
+| `session.ts` | Create/validate/revoke sessions; 30-day expiry with sliding renewal past the halfway mark |
+| `cookies.ts` | Builds and parses the `espptg_session` cookie (HttpOnly, SameSite=Lax, Secure in production) |
+| `password-reset.ts` | Single-use, 1-hour reset/invite tokens |
+| `mailer.ts` | Gmail SMTP (nodemailer) — the only remaining third-party call, used solely for reset and invite email |
+| `rate-limit.ts` | In-process throttle on login / register / reset-request |
+
+**Only token digests are stored.** `sessions.id` and `password_reset_tokens.id`
+are SHA-256 of the value the user holds, so a database dump cannot be replayed.
+
+**Sign-in is two steps**: `auth.checkEmail` first, then `auth.login`. The first
+step decides whether to ask for a password at all — an admin-created account
+that has not accepted its invite has `password_hash = NULL`, so the form sends
+that person to `/lupa-sandi?alasan=belum-ada-sandi` instead of asking for a
+password that does not exist.
+
+> ⚠️ `checkEmail` is by construction a narrow account-enumeration oracle: a
+> `'reset'` answer confirms the address is a real, password-less account. Every
+> other case — unknown email, deactivated account, account with a password —
+> answers `'password'`, so those stay indistinguishable, and the failure surfaces
+> later through `login`'s single generic message. It is rate-limited on email+IP
+> exactly like `login`. Keep it that way: widening the answers (e.g. returning
+> "email tidak terdaftar") turns the form into a full membership check on staff
+> addresses.
+
+**Registration** (`auth.register`) always lands on `Viewer`; the role is never
+read from input. An admin promotes the account afterwards.
+
+**Admin-created accounts** (`users.create`) either take an initial password or —
+by default — are created with `password_hash = NULL` and emailed an invite link
+to choose one. `hasPassword` is what the UI shows; the hash never leaves the
+server (`toClientUser` strips it from every read).
+
+**Deactivation** (`users.toggleStatus`, or `status: 'Nonaktif'` via
+`users.update`) deletes the account's session rows, and `src/trpc/init.ts`
+re-checks `status` on every request for anything already in flight.
+
+**Where the boundary is**: `src/proxy.ts` runs on the Edge and can only see
+whether a session cookie *exists* — it cannot reach the database. Real
+authorization is the tRPC procedure middleware. `/api/trpc` is deliberately
+ungated so anonymous callers can reach login, registration and password reset.
+`src/app/app/layout.tsx` signs the user out when `auth.me` comes back 401,
+which is what handles a cookie that got past the middleware but is revoked.
 
 ### Role Hierarchy
 
@@ -405,9 +451,15 @@ Required environment variables:
 
 ```env
 DATABASE_URL=           # PostgreSQL connection string (with PostGIS)
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
-CLERK_SECRET_KEY=
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=
+
+# Gmail SMTP — used ONLY for "lupa sandi" and account-invite email.
+# GMAIL_APP_PASSWORD must be a 16-character Google App Password (2FA required).
+# If unset the app still runs; only those two emails fail, with a clear message.
+GMAIL_USER=
+GMAIL_APP_PASSWORD=
+MAIL_FROM_NAME=         # Display name on outgoing mail (default: SIAPTAH)
+NEXT_PUBLIC_APP_URL=    # Absolute base URL used to build links inside emails
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 AWS_REGION=

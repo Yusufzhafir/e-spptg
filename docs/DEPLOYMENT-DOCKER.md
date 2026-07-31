@@ -9,17 +9,21 @@ Pembagian tugas:
 |---|---|---|
 | nginx (TLS, reverse proxy) | host | 80, 443 (publik) |
 | Aplikasi Next.js | **Docker** | 127.0.0.1:3000 (privat) |
+| Redis (sesi, rate limit, cache) | **Docker** | tidak dipublikasikan sama sekali |
 | PostgreSQL 16 + PostGIS | host | 127.0.0.1:5432 + bridge Docker (privat) |
 | MinIO (API + console) | host | 127.0.0.1:9000 / 9001 (privat) |
 
-Hanya aplikasi yang di-dockerize. PostgreSQL dan MinIO dipasang langsung di server.
+Aplikasi dan Redis yang di-dockerize. PostgreSQL dan MinIO dipasang langsung di server.
+
+Redis sengaja tanpa `ports:` — ia hanya dijangkau service `app` lewat network
+internal compose, jadi tidak pernah terlihat dari host maupun internet.
 
 ## File yang dipakai
 
 | File | Fungsi |
 |---|---|
 | [Dockerfile](../Dockerfile) | Image aplikasi (multi-stage, output `standalone`) + stage `migrator` |
-| [docker-compose.yml](../docker-compose.yml) | Service `app` dan `migrate` |
+| [docker-compose.yml](../docker-compose.yml) | Service `app`, `redis`, dan `migrate` |
 | [.env.docker.example](../.env.docker.example) | Template `.env` produksi |
 | [deploy/nginx/e-spptg.conf](../deploy/nginx/e-spptg.conf) | Konfigurasi nginx host |
 | [deploy/postgres/init-db.sql](../deploy/postgres/init-db.sql) | Bootstrap role, database, extension PostGIS |
@@ -274,16 +278,27 @@ chmod 600 .env
 vi .env
 ```
 
-Yang wajib diisi: kunci Clerk, kunci Google Maps, `DATABASE_URL` +
+Yang wajib diisi: kunci Google Maps, kredensial Gmail SMTP, `DATABASE_URL` +
 `DATABASE_URL_DDL`, kredensial MinIO. Nilai S3 di template sudah sesuai
 keputusan bagian 0.
 
-> `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` dan `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`
-> di-inline saat build. Mengubahnya **wajib rebuild image**, restart saja tidak cukup.
+> `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` di-inline saat build. Mengubahnya **wajib
+> rebuild image**, restart saja tidak cukup.
 
-Di dashboard Clerk: tambahkan `https://siaptah.kutaitimurkab.go.id` sebagai domain
-aplikasi. Di Google Cloud Console: batasi API key ke referrer domain tersebut.
-Server tetap butuh **outbound HTTPS** ke Clerk dan Google Maps.
+Autentikasi (login, daftar, aktif/nonaktif akun) sepenuhnya berjalan di aplikasi
+dan database — tidak ada layanan identitas pihak ketiga. Satu-satunya panggilan
+keluar yang tersisa untuk autentikasi adalah **Gmail SMTP**, dipakai hanya untuk
+email "lupa kata sandi" dan undangan akun baru:
+
+- `GMAIL_APP_PASSWORD` wajib **App Password 16 karakter** dari akun Google yang
+  sudah mengaktifkan 2FA (kata sandi akun biasa ditolak SMTP Gmail).
+- `NEXT_PUBLIC_APP_URL` menentukan tautan absolut di dalam email. Kalau salah,
+  email terkirim tapi tautannya mengarah ke host yang keliru.
+- Server butuh **outbound TCP 465/587** ke `smtp.gmail.com`. Bila diblokir,
+  login tetap jalan; hanya reset kata sandi yang gagal.
+
+Di Google Cloud Console: batasi API key Maps ke referrer domain di atas. Server
+tetap butuh **outbound HTTPS** ke Google Maps.
 
 ---
 
@@ -328,12 +343,22 @@ Selanjutnya penambahan user dilakukan dari dalam aplikasi.
 |---|---|---|
 | 1 | Container sehat | `docker compose ps` → `healthy` |
 | 2 | HTTPS + redirect | `curl -I http://siaptah.kutaitimurkab.go.id` → 301; `curl -I https://…` → 200 |
-| 3 | Login Clerk dari jaringan pemda | login sampai masuk `/app` |
+| 3 | Login dari jaringan pemda | login dengan email + kata sandi sampai masuk `/app` |
+| 3b | Lupa kata sandi | `/lupa-sandi` → email masuk → tautan membuka `/atur-ulang-sandi` → sandi baru dipakai untuk login |
+| 3c | Nonaktifkan akun | Pengaturan → nonaktifkan satu akun uji → sesi akun itu langsung ditolak di tab lain |
 | 4 | Upload PDF 10 MB | via wizard Step 1, lalu `mc ls local/spptg-files/submissions/` |
 | 5 | Download dokumen | klik unduh → presigned URL ke domain (bukan `:9000`), file terbuka |
 | 6 | Cek overlap PostGIS | submission dengan poligon → Step 3 menampilkan hasil |
 | 7 | Generate PDF SPPTG | Step 4 sampai file SPPTG tersimpan sebagai dokumen `SPPG` |
-| 8 | Drill restore | lihat bagian 9 |
+| 8 | Redis terpakai | `docker compose exec redis redis-cli -a "$REDIS_PASSWORD" --no-auth-warning DBSIZE` setelah satu login → > 0 |
+| 9 | **Redis mati, aplikasi hidup** | `docker compose stop redis` → login & buka dashboard tetap bisa (lebih lambat) → `docker compose start redis` |
+| 10 | Sesi selamat dari restart Redis | login → `docker compose restart redis` → tab yang terbuka tetap masuk tanpa diminta login ulang |
+| 11 | Drill restore | lihat bagian 9 |
+
+Uji 9 dan 10 adalah alasan Redis dipasang seperti ini. Sesi ditulis ke Redis
+**dan** Postgres: Redis melayani setiap request, Postgres salinan durabelnya.
+Kalau uji 9 membuat aplikasi jatuh, berarti ada jalur yang memanggil Redis tanpa
+melewati `withRedis()` di `src/server/redis/client.ts`.
 
 Uji 5 adalah yang paling sering gagal di on-prem. Kalau muncul
 `SignatureDoesNotMatch`, penyebabnya hampir selalu: `S3_FORCE_PATH_STYLE` bukan
@@ -413,7 +438,10 @@ Dockerisasi ini menyentuh dua file aplikasi (keduanya minimal dan backward compa
 ### Kenapa NEXT_PUBLIC_* harus jadi build arg
 
 `pnpm build` berjalan dengan `NODE_ENV=production`, dan Next **tidak** membaca
-`.env.development.local` pada mode itu. Build tanpa `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
-gagal saat prerender `/_not-found` dengan
-`@clerk/nextjs: Missing publishableKey` — sudah diverifikasi. Karena itu compose
-mengirimkan nilainya sebagai build arg dari `.env`.
+`.env.development.local` pada mode itu. Nilai `NEXT_PUBLIC_*` di-inline ke bundel
+browser saat build, jadi compose mengirimkannya sebagai build arg dari `.env`;
+mengubahnya di runtime saja tidak berpengaruh.
+
+Variabel Gmail (`GMAIL_USER`, `GMAIL_APP_PASSWORD`) **bukan** `NEXT_PUBLIC_*` —
+hanya dibaca di server saat runtime, jadi mengubahnya cukup `docker compose up -d`
+tanpa rebuild.

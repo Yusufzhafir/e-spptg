@@ -1,9 +1,9 @@
 'use client';
 
 import Image from 'next/image';
-import { SignOutButton } from '@clerk/nextjs';
 import { ShieldOff } from 'lucide-react';
 import { ACCOUNT_DEACTIVATED_MESSAGE } from '@/lib/account-status';
+import { useAuthRole } from './AuthRoleProvider';
 
 /**
  * Shown in place of the whole app shell when a signed-in user's account has been
@@ -12,6 +12,8 @@ import { ACCOUNT_DEACTIVATED_MESSAGE } from '@/lib/account-status';
  * offer the one action that still makes sense.
  */
 export function AccountDeactivatedNotice() {
+  const { signOut, isSigningOut } = useAuthRole();
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-8 text-center shadow-sm">
@@ -32,11 +34,14 @@ export function AccountDeactivatedNotice() {
           {ACCOUNT_DEACTIVATED_MESSAGE}
         </p>
 
-        <SignOutButton>
-          <button className="mt-6 w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700">
-            Keluar
-          </button>
-        </SignOutButton>
+        <button
+          type="button"
+          onClick={() => void signOut('/sign-in')}
+          disabled={isSigningOut}
+          className="mt-6 w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
+        >
+          {isSigningOut ? 'Keluar…' : 'Keluar'}
+        </button>
       </div>
     </div>
   );

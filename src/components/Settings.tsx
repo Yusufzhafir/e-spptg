@@ -48,13 +48,17 @@ interface SettingsProps {
   prohibitedAreas: ProhibitedArea[];
   onUpdateUsers?: (users: User[]) => void;
   onCreateUser?: (
-    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'>
+    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'> & {
+      /** Omitted/blank means the server emails an invite to set one instead. */
+      password?: string;
+    }
   ) => void;
   onUpdateUser?: (
     id: number,
     data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'>>
   ) => void;
   onToggleUserStatus?: (id: number) => void;
+  onSendPasswordReset?: (id: number) => void;
   onUpdateVillages?: (villages: Village[]) => void; // Keep for backward compatibility
   onUpdateProhibitedAreas: (areas: ProhibitedArea[]) => void; // Changed to ProhibitedArea[] for local state updates
   // Village mutation callbacks
@@ -82,6 +86,7 @@ export function Settings({
   onCreateUser,
   onUpdateUser,
   onToggleUserStatus,
+  onSendPasswordReset,
   onUpdateVillages,
   onUpdateProhibitedAreas,
   onCreateVillage,
@@ -178,6 +183,7 @@ export function Settings({
             onCreateUser={onCreateUser}
             onUpdateUser={onUpdateUser}
             onToggleUserStatus={onToggleUserStatus}
+            onSendPasswordReset={onSendPasswordReset}
           />
         </TabsContent>
 

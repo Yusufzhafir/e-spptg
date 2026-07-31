@@ -13,7 +13,7 @@ import {
   Award,
 } from "lucide-react";
 import { Button } from "./ui/button";
-import { SignedIn, SignedOut } from "@clerk/nextjs";
+import { SignedIn, SignedOut } from "./auth/SessionGate";
 import Link from "next/link";
 import Image from "next/image";
 import { Reveal } from "./Reveal";

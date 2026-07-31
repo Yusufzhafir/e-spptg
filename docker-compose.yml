@@ -10,13 +10,55 @@
 # File `.env` yang sama dipakai untuk interpolasi build arg dan env runtime.
 
 services:
+  # Sesi pengguna, rate limit, dan cache baca. Sengaja container sendiri milik
+  # e-spptg, bukan menumpang Redis stack lain: sesi login tidak boleh ikut mati
+  # saat aplikasi lain di host ini di-restart atau dihapus.
+  #
+  # Tidak ada `ports:` — Redis hanya dijangkau service `app` lewat network
+  # internal compose, jadi tidak pernah terekspos ke host maupun publik.
+  redis:
+    image: redis:7-alpine
+    container_name: e-spptg-redis
+    restart: unless-stopped
+    # `--requirepass` tetap dipasang meski jaringannya sudah tertutup: kalau
+    # suatu saat ada yang menambahkan port mapping, password ini yang menahan.
+    # `--appendonly yes` supaya sesi selamat dari restart container.
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD wajib diisi di .env}
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-256mb}
+      # noeviction, bukan allkeys-lru: kalau memori penuh, lebih baik Redis
+      # menolak tulis (aplikasi jatuh ke Postgres) daripada diam-diam membuang
+      # sesi pengguna yang sedang aktif.
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "--no-auth-warning", "PING"]
+      interval: 10s
+      timeout: 3s
+      start_period: 10s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   app:
+    depends_on:
+      redis:
+        condition: service_healthy
     build:
       context: .
       target: runner
       args:
         # NEXT_PUBLIC_* di-inline saat build -> harus benar di tahap build.
-        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
         S3_BUCKET_NAME: ${S3_BUCKET_NAME}
         S3_DOMAIN: ${S3_DOMAIN}
@@ -58,7 +100,6 @@ services:
       context: .
       target: migrator
       args:
-        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
     image: e-spptg-migrator:latest
     container_name: e-spptg-migrate
@@ -68,3 +109,8 @@ services:
       - .env
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+volumes:
+  # Append-only file Redis. Tanpa volume ini, setiap `docker compose down`
+  # mengeluarkan semua orang yang sedang login.
+  redis-data:

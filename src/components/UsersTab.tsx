@@ -19,6 +19,9 @@ import { RequiredMark } from './RequiredMark';
 import { SearchableSelect } from './SearchableSelect';
 import { FieldError } from './FieldError';
 import { createUserSchema } from '@/lib/validation';
+import { passwordSchema } from '@/lib/password-policy';
+import { PasswordInput } from './auth/PasswordInput';
+import { PasswordChecklist } from './auth/PasswordChecklist';
 import { isValidPhoneNumber, normalizePhoneNumber, PHONE_NUMBER_ERROR } from '@/lib/phone-number';
 import {
   Dialog,
@@ -55,13 +58,18 @@ interface UsersTabProps {
   canManageVillageAssignment?: boolean;
   onUpdateUsers?: (users: User[]) => void;
   onCreateUser?: (
-    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'>
+    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'> & {
+      /** Blank means "invite by email" — the server mails a link to set one. */
+      password?: string;
+    }
   ) => void;
   onUpdateUser?: (
     id: number,
     data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'>>
   ) => void;
   onToggleUserStatus?: (id: number) => void;
+  /** Emails the user a single-use link to set their own password. */
+  onSendPasswordReset?: (id: number) => void;
 }
 
 export function UsersTab({
@@ -72,6 +80,7 @@ export function UsersTab({
   onCreateUser,
   onUpdateUser,
   onToggleUserStatus,
+  onSendPasswordReset,
 }: UsersTabProps) {
   const { user: currentUser } = useAuthRole();
   const canAddUser = currentUser?.peran === 'Superadmin' || currentUser?.peran === 'Admin';
@@ -88,8 +97,14 @@ export function UsersTab({
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeactivateDialogOpen, setIsDeactivateDialogOpen] = useState(false);
+  const [isSelfRoleChangeDialogOpen, setIsSelfRoleChangeDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [formData, setFormData] = useState<Partial<User>>({});
+  // Kept out of `formData` on purpose: that object is spread from an existing
+  // User row when editing, and a password must never ride along with it.
+  const [newPassword, setNewPassword] = useState('');
+  const [useInviteEmail, setUseInviteEmail] = useState(true);
+  const [resetTarget, setResetTarget] = useState<User | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const errorClass = (field: string) => (errors[field] ? 'border-red-500' : undefined);
   const clearError = (field: string) =>
@@ -154,6 +169,8 @@ export function UsersTab({
 
   const handleAddUser = () => {
     setErrors({});
+    setNewPassword('');
+    setUseInviteEmail(true);
     // Start on the only role an Admin may create, pre-scoped to their desa.
     setFormData(
       isAdminActor
@@ -179,7 +196,7 @@ export function UsersTab({
     setIsDeactivateDialogOpen(true);
   };
 
-  const validateUser = () => {
+  const validateUser = (requirePassword = false) => {
     const next: Record<string, string> = {};
     const result = createUserSchema.safeParse({
       email: formData.email ?? '',
@@ -209,12 +226,18 @@ export function UsersTab({
     if (nomorHP && !isValidPhoneNumber(nomorHP)) {
       next.nomorHP = PHONE_NUMBER_ERROR;
     }
+    // Only when an admin chose to set the password themselves; the invite path
+    // leaves the account without one until the user follows the email.
+    if (requirePassword) {
+      const parsed = passwordSchema.safeParse(newPassword);
+      if (!parsed.success) next.password = parsed.error.issues[0].message;
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
 
   const handleSaveUser = () => {
-    if (!validateUser()) {
+    if (!validateUser(!useInviteEmail)) {
       toast.error('Harap lengkapi field wajib yang ditandai merah');
       return;
     }
@@ -229,6 +252,7 @@ export function UsersTab({
         assignedKecamatan: formData.assignedKecamatan ?? null,
         status: (formData.status as UserStatus) || 'Aktif',
         nomorHP: formData.nomorHP || null,
+        password: useInviteEmail ? undefined : newPassword,
       });
     } else if (onUpdateUsers) {
       const newUser: User = {
@@ -240,7 +264,7 @@ export function UsersTab({
         assignedVillageId: formData.assignedVillageId ?? null,
         status: (formData.status as UserStatus) || 'Aktif',
         nomorHP: formData.nomorHP || null,
-        clerkUserId: null,
+        hasPassword: !useInviteEmail,
         terakhirMasuk: null,
       };
       onUpdateUsers([...users, newUser]);
@@ -250,8 +274,21 @@ export function UsersTab({
     }
     setIsAddDialogOpen(false);
     setFormData({});
+    setNewPassword('');
     // Success toast is shown by the create mutation's onSuccess handler.
   };
+
+  /**
+   * True when the open edit dialog would change the signed-in user's own peran.
+   * The server revokes every session in that case, so the save must be
+   * confirmed first rather than dropping the user out of the app unannounced.
+   */
+  const isChangingOwnRole =
+    !!selectedUser &&
+    !!currentUser &&
+    selectedUser.id === currentUser.id &&
+    !!formData.peran &&
+    formData.peran !== selectedUser.peran;
 
   const handleUpdateUser = () => {
     if (!selectedUser) return;
@@ -260,6 +297,17 @@ export function UsersTab({
       toast.error('Harap lengkapi field wajib yang ditandai merah');
       return;
     }
+
+    if (isChangingOwnRole) {
+      setIsSelfRoleChangeDialogOpen(true);
+      return;
+    }
+
+    submitUpdateUser();
+  };
+
+  const submitUpdateUser = () => {
+    if (!selectedUser) return;
 
     if (onUpdateUser) {
       onUpdateUser(selectedUser.id, {
@@ -286,6 +334,7 @@ export function UsersTab({
       return;
     }
 
+    setIsSelfRoleChangeDialogOpen(false);
     setIsEditDialogOpen(false);
     setSelectedUser(null);
     setFormData({});
@@ -321,8 +370,16 @@ export function UsersTab({
     );
   };
 
-  const handleResetPassword = (user: User) => {
-    toast.success(`Email reset kata sandi telah dikirim ke ${user.email}`);
+  const confirmSendPasswordReset = () => {
+    if (!resetTarget) return;
+    if (!onSendPasswordReset) {
+      toast.error('Pengiriman tautan kata sandi tidak tersedia.');
+      return;
+    }
+    // The toast is raised by the mutation's onSuccess/onError, so a failed send
+    // is not reported here as a success.
+    onSendPasswordReset(resetTarget.id);
+    setResetTarget(null);
   };
 
   return (
@@ -395,7 +452,7 @@ export function UsersTab({
               <SortableHead label="Email" sortKey="email" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
               <SortableHead label="Peran" sortKey="peran" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
               <SortableHead label="Status" sortKey="status" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
-              <TableHead>Status Akun</TableHead>
+              <TableHead>Kata Sandi</TableHead>
               <SortableHead label="Terakhir Masuk" sortKey="terakhirMasuk" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
               <TableHead className="text-right">Aksi</TableHead>
             </TableRow>
@@ -442,19 +499,19 @@ export function UsersTab({
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {user.clerkUserId ? (
+                    {user.hasPassword ? (
                       <Badge
                         variant="outline"
                         className="border-green-600 text-green-700 bg-green-50"
                       >
-                        Terhubung
+                        Sandi diatur
                       </Badge>
                     ) : (
                       <Badge
                         variant="outline"
                         className="border-amber-500 text-amber-700 bg-amber-50"
                       >
-                        Menunggu login
+                        Menunggu buat sandi
                       </Badge>
                     )}
                   </TableCell>
@@ -483,8 +540,12 @@ export function UsersTab({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleResetPassword(user)}
-                          title="Reset Sandi"
+                          onClick={() => setResetTarget(user)}
+                          title={
+                            user.hasPassword
+                              ? 'Kirim tautan atur ulang sandi'
+                              : 'Kirim ulang undangan buat sandi'
+                          }
                         >
                           <KeyRound className="h-4 w-4" />
                         </Button>
@@ -511,10 +572,9 @@ export function UsersTab({
           </DialogHeader>
 
           <div className="space-y-4">
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-              Pengguna ditambahkan dengan status <strong>Menunggu login</strong>. Akun akan
-              otomatis terhubung saat pengguna login pertama kali via Clerk menggunakan email
-              yang sama. Email bisa memakai domain apa pun (tidak harus @gmail).
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+              Pengguna masuk memakai email dan kata sandi. Anda dapat mengirim undangan agar
+              pengguna membuat sandinya sendiri, atau menetapkan sandi awal di bawah.
             </div>
             <div>
               <Label htmlFor="nama">Nama Lengkap<RequiredMark /></Label>
@@ -667,6 +727,73 @@ export function UsersTab({
                 placeholder="08xxxxxxxxxx, 021xxxxxxx, atau 05xxxxxxxx"
               />
               <FieldError message={errors.nomorHP} />
+            </div>
+
+            {/* ------------------------------------------------- Kata sandi */}
+            <div className="rounded-lg border border-gray-200 p-3">
+              <p className="text-sm font-medium text-gray-900">Kata Sandi Awal</p>
+
+              <div className="mt-3 space-y-2">
+                <label className="flex cursor-pointer items-start gap-2 text-sm text-gray-700">
+                  <input
+                    type="radio"
+                    name="password-mode"
+                    className="mt-1"
+                    checked={useInviteEmail}
+                    onChange={() => {
+                      setUseInviteEmail(true);
+                      setNewPassword('');
+                      clearError('password');
+                    }}
+                  />
+                  <span>
+                    Kirim undangan lewat email
+                    <span className="block text-xs text-gray-500">
+                      Pengguna membuat sandinya sendiri lewat tautan yang berlaku 1 jam.
+                      Anda tidak perlu mengetahui sandi mereka.
+                    </span>
+                  </span>
+                </label>
+
+                <label className="flex cursor-pointer items-start gap-2 text-sm text-gray-700">
+                  <input
+                    type="radio"
+                    name="password-mode"
+                    className="mt-1"
+                    checked={!useInviteEmail}
+                    onChange={() => setUseInviteEmail(false)}
+                  />
+                  <span>
+                    Tetapkan sandi awal sekarang
+                    <span className="block text-xs text-gray-500">
+                      Sampaikan sandi ke pengguna melalui saluran yang aman, lalu minta
+                      mereka menggantinya setelah masuk.
+                    </span>
+                  </span>
+                </label>
+              </div>
+
+              {!useInviteEmail && (
+                <div className="mt-3">
+                  <Label htmlFor="password">
+                    Kata Sandi
+                    <RequiredMark />
+                  </Label>
+                  <PasswordInput
+                    id="password"
+                    autoComplete="new-password"
+                    placeholder="Buat kata sandi"
+                    value={newPassword}
+                    onChange={(e) => {
+                      setNewPassword(e.target.value);
+                      clearError('password');
+                    }}
+                    className={errorClass('password')}
+                  />
+                  <FieldError message={errors.password} />
+                  <PasswordChecklist value={newPassword} />
+                </div>
+              )}
             </div>
           </div>
 
@@ -874,6 +1001,73 @@ export function UsersTab({
               }
             >
               {selectedUser?.status === 'Aktif' ? 'Nonaktifkan' : 'Aktifkan'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Self Role Change Confirmation — the save signs the user out */}
+      <AlertDialog
+        open={isSelfRoleChangeDialogOpen}
+        onOpenChange={setIsSelfRoleChangeDialogOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Ubah peran akun Anda sendiri?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Anda akan mengubah peran akun Anda sendiri dari{' '}
+              <strong>{selectedUser?.peran}</strong> menjadi{' '}
+              <strong>{formData.peran}</strong>. Setelah disimpan, Anda akan{' '}
+              <strong>otomatis keluar dari sistem</strong> di semua perangkat dan
+              harus masuk kembali dengan peran yang baru.
+              {formData.peran !== 'Superadmin' && selectedUser?.peran === 'Superadmin' && (
+                <>
+                  {' '}
+                  Perlu diketahui: peran baru ini tidak dapat mengubah peran pengguna,
+                  jadi Anda tidak bisa mengembalikannya sendiri.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Tidak</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={submitUpdateUser}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Ya, ubah dan keluar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Password Reset Confirmation Dialog */}
+      <AlertDialog
+        open={resetTarget !== null}
+        onOpenChange={(open) => !open && setResetTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {resetTarget?.hasPassword
+                ? 'Kirim Tautan Atur Ulang Sandi?'
+                : 'Kirim Ulang Undangan Buat Sandi?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Tautan sekali pakai akan dikirim ke <strong>{resetTarget?.email}</strong> dan
+              berlaku 1 jam.
+              {resetTarget?.hasPassword
+                ? ' Kata sandi lama tetap berlaku sampai pengguna membuat yang baru.'
+                : ' Tautan undangan sebelumnya akan otomatis dibatalkan.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmSendPasswordReset}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              Kirim Tautan
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
