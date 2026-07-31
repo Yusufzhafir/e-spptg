@@ -124,6 +124,28 @@ function setCookieHeader(ctx: TRPCContext): string | null {
   return ctx.resHeaders?.get('set-cookie') ?? null;
 }
 
+/**
+ * Calls `attempt` until it is refused with TOO_MANY_REQUESTS and returns how
+ * many calls succeeded first — i.e. the effective limit.
+ *
+ * Asserting the measured number, rather than looping a hard-coded count and
+ * expecting the next one to fail, means a change to the limit shows up as a
+ * readable "expected 10, got 8" instead of a mysterious failure.
+ */
+async function hitungBatas(
+  attempt: () => Promise<unknown>,
+  maxPercobaan = 60
+): Promise<number> {
+  for (let i = 0; i < maxPercobaan; i += 1) {
+    const error = await attempt().then(
+      () => null,
+      (e: { code?: string }) => e
+    );
+    if (error?.code === 'TOO_MANY_REQUESTS') return i;
+  }
+  throw new Error(`tidak pernah kena rate limit dalam ${maxPercobaan} percobaan`);
+}
+
 beforeEach(async () => {
   PASSWORD_HASH ??= await hashPassword(PASSWORD);
   vi.clearAllMocks();
@@ -209,16 +231,13 @@ describe('auth.login', () => {
   it('throttles repeated failures for the same email and IP', async () => {
     getUserByEmailMock.mockResolvedValue(userRow());
 
-    for (let i = 0; i < 8; i++) {
-      await authRouter
+    const batas = await hitungBatas(() =>
+      authRouter
         .createCaller(anonCtx())
         .login({ email: 'budi@pemda.go.id', password: 'Salah123x' })
-        .catch(() => undefined);
-    }
+    );
 
-    await expect(
-      authRouter.createCaller(anonCtx()).login({ email: 'budi@pemda.go.id', password: PASSWORD })
-    ).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS' });
+    expect(batas, 'batas login berubah dari 10 percobaan').toBe(10);
   });
 
   it('matches the email case-insensitively', async () => {
@@ -278,13 +297,12 @@ describe('auth.checkEmail', () => {
   it('is throttled, so the oracle cannot be scraped', async () => {
     getUserByEmailMock.mockResolvedValue(userRow());
 
-    for (let i = 0; i < 8; i++) {
-      await authRouter.createCaller(anonCtx()).checkEmail({ email: 'budi@pemda.go.id' });
-    }
-
-    await expect(
+    const batas = await hitungBatas(() =>
       authRouter.createCaller(anonCtx()).checkEmail({ email: 'budi@pemda.go.id' })
-    ).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS' });
+    );
+
+    // Shares the login bucket size: both are guesses against the same address.
+    expect(batas, 'batas cek email berubah dari 10 percobaan').toBe(10);
   });
 
   it('never issues a session', async () => {
@@ -351,13 +369,24 @@ describe('auth.register', () => {
     });
   });
 
-  it('rejects a password that fails the policy', async () => {
+  it('rejects a password shorter than the minimum', async () => {
     getUserByEmailMock.mockResolvedValue(undefined);
 
+    // The policy is length-only now (5 characters), so this has to be a genuinely
+    // short string — "pendek" is six characters and is accepted.
     await expect(
-      authRouter.createCaller(anonCtx()).register({ ...payload, password: 'pendek' })
+      authRouter.createCaller(anonCtx()).register({ ...payload, password: 'abcd' })
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
     expect(createUserMock).not.toHaveBeenCalled();
+  });
+
+  it('accepts a short lower-case-only password now that the policy is length-only', async () => {
+    getUserByEmailMock.mockResolvedValue(undefined);
+    createUserMock.mockResolvedValue(userRow({ id: 22, email: payload.email }));
+
+    await expect(
+      authRouter.createCaller(anonCtx()).register({ ...payload, password: 'abcde' })
+    ).resolves.toBeTruthy();
   });
 
   it('creates the account unverified and does NOT sign it in', async () => {
@@ -387,6 +416,17 @@ describe('auth.register', () => {
     expect(sendEmailVerificationEmailMock).toHaveBeenCalledWith(
       expect.objectContaining({ to: payload.email, token: 'verify-token' })
     );
+  });
+
+  it('throttles registration per IP', async () => {
+    // The throttle runs before the duplicate-email check, so returning an
+    // existing user keeps every attempt cheap — no scrypt hashing per loop.
+    getUserByEmailMock.mockResolvedValue(userRow());
+
+    const batas = await hitungBatas(() =>
+      authRouter.createCaller(anonCtx()).register(payload)
+    );
+    expect(batas, 'batas pendaftaran berubah dari 10 percobaan').toBe(10);
   });
 
   it('refuses to create an account it cannot mail', async () => {
@@ -617,11 +657,12 @@ describe('auth.requestPasswordReset', () => {
       expiresAt: new Date(Date.now() + 3_600_000),
     });
 
-    for (let i = 0; i < 4; i++) {
-      await authRouter
+    const batas = await hitungBatas(() =>
+      authRouter
         .createCaller(anonCtx())
-        .requestPasswordReset({ email: 'budi@pemda.go.id' });
-    }
+        .requestPasswordReset({ email: 'budi@pemda.go.id' })
+    );
+    expect(batas, 'batas lupa sandi berubah dari 5 permintaan').toBe(5);
 
     await expect(
       authRouter.createCaller(anonCtx()).requestPasswordReset({ email: 'budi@pemda.go.id' })

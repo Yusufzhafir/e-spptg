@@ -119,6 +119,11 @@ export const prohibitedAreasRouter = router({
         })
   
         await invalidateProhibitedAreas();
+        ctx.audit.set({
+          entitasId: result[0]?.id,
+          ringkasan: `Menambah kawasan Non-SPPTG "${input.namaKawasan}" (${input.jenisKawasan})`,
+          sesudah: { ...input, geomGeoJSON: undefined },
+        });
         return result[0];
       }catch(error) {
         console.error(error)
@@ -137,6 +142,12 @@ export const prohibitedAreasRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      // Snapshot for the audit trail, taken before anything is written.
+      // `getProhibitedAreaById` returns an array rather than a row (a known
+      // quirk of that query), so normalise it here.
+      const sebelumRaw = await queries.getProhibitedAreaById(input.id);
+      const sebelumUbah = Array.isArray(sebelumRaw) ? sebelumRaw[0] : sebelumRaw;
+
       // Validate GeoJSON if provided
       if (input.data.geomGeoJSON) {
         if (input.data.geomGeoJSON.type !== 'Polygon') {
@@ -196,12 +207,24 @@ export const prohibitedAreasRouter = router({
           .returning({ id: prohibitedAreas.id });
 
         await invalidateProhibitedAreas();
+        ctx.audit.set({
+          entitasId: input.id,
+          ringkasan: `Mengubah kawasan Non-SPPTG #${input.id} (termasuk batas wilayah)`,
+          sebelum: sebelumUbah,
+          sesudah: { ...updateData, geomGeoJSON: '[batas wilayah diubah]' },
+        });
         return result[0];
       }
 
       // Regular update without geometry change
       const updated = await queries.updateProhibitedArea(input.id, updateData);
       await invalidateProhibitedAreas();
+      ctx.audit.set({
+        entitasId: input.id,
+        ringkasan: `Mengubah kawasan Non-SPPTG #${input.id}`,
+        sebelum: sebelumUbah,
+        sesudah: updated,
+      });
       return updated;
     }),
 

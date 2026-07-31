@@ -265,6 +265,12 @@ export const usersRouter = router({
         }
       }
 
+      ctx.audit.set({
+        entitasId: user.id,
+        ringkasan: `Menambah pengguna ${user.nama} (${user.email}) sebagai ${user.peran}`,
+        sesudah: toClientUser(user),
+      });
+
       return toClientUser(user);
     }),
 
@@ -370,6 +376,15 @@ export const usersRouter = router({
         ctx.resHeaders?.append('set-cookie', clearedSessionCookie());
       }
 
+      ctx.audit.set({
+        entitasId: input.id,
+        ringkasan: `Mengubah pengguna ${targetUser.nama} (${targetUser.email})`,
+        // `toClientUser` drops the scrypt digest; `redact` in the audit writer
+        // would catch it anyway, but not shipping it at all is cheaper.
+        sebelum: toClientUser(targetUser),
+        sesudah: toClientUser(updated),
+      });
+
       // `signedOut` rides along so the client knows to send the user to the
       // login page rather than leaving them on a page whose queries will all
       // start failing with UNAUTHORIZED.
@@ -398,6 +413,16 @@ export const usersRouter = router({
       if (newStatus === 'Nonaktif') {
         await invalidateAllUserSessions(input.id);
       }
+
+      ctx.audit.set({
+        entitasId: input.id,
+        ringkasan:
+          newStatus === 'Nonaktif'
+            ? `Menonaktifkan pengguna ${user.nama} (${user.email})`
+            : `Mengaktifkan kembali pengguna ${user.nama} (${user.email})`,
+        sebelum: { status: user.status },
+        sesudah: { status: newStatus },
+      });
 
       return toClientUser(updated);
     }),

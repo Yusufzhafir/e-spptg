@@ -65,16 +65,28 @@ export function AuthRoleProvider({ children }: { children: ReactNode }) {
     async (redirectTo = '/') => {
       setIsSigningOut(true);
       try {
-        await utils.client.auth.logout.mutate();
-      } catch {
-        // A failed logout still has to get the user out of the app: the cookie
-        // may already be invalid, which is exactly when this throws.
+        try {
+          await utils.client.auth.logout.mutate();
+        } catch {
+          // A failed logout still has to get the user out of the app: the cookie
+          // may already be invalid, which is exactly when this throws.
+        }
+        // Wipe every cached query, not just auth.me — otherwise the next account
+        // to sign in on this browser briefly sees the previous user's data.
+        queryClient.clear();
+        router.replace(redirectTo);
+        router.refresh();
+      } finally {
+        // This provider sits above the router, so it is *not* unmounted by the
+        // navigation above and survives into the next sign-in. Leaving the flag
+        // set left "Keluar" disabled for the rest of the browser session — the
+        // next person to sign in on this tab could never sign out again.
+        //
+        // Clearing it here is safe rather than flashy: `queryClient.clear()`
+        // has already emptied `auth.me`, so `user` is null and `UserMenu`
+        // renders nothing at all until the next session resolves.
+        setIsSigningOut(false);
       }
-      // Wipe every cached query, not just auth.me — otherwise the next account
-      // to sign in on this browser briefly sees the previous user's data.
-      queryClient.clear();
-      router.replace(redirectTo);
-      router.refresh();
     },
     [utils, queryClient, router]
   );

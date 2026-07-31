@@ -33,7 +33,7 @@ Selain kredensial, ada pembatasan IP: hanya IP publik yang terdaftar di
 ke pengelola untuk didaftarkan. Selama daftar itu masih kosong, semua IP
 diterima — ini kondisi sementara untuk masa uji coba.
 
-Batas laju: **120 permintaan per menit per client**.
+Batas laju: **500 permintaan per menit per client**.
 
 ## Parameter (opsional, berlaku di semua endpoint)
 

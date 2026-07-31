@@ -76,7 +76,7 @@ describe('authenticateApiRequest', () => {
   });
 
   it('throttles a client that floods the endpoint', async () => {
-    for (let i = 0; i < 120; i += 1) {
+    for (let i = 0; i < 500; i += 1) {
       expect((await authenticateApiRequest(request(VALID))).ok).toBe(true);
     }
 
@@ -90,7 +90,7 @@ describe('authenticateApiRequest', () => {
     process.env.STATISTIK_API_CLIENTS =
       'dashboard-eksekutif:rahasia-panjang,bappeda:rahasia-lain';
 
-    for (let i = 0; i < 121; i += 1) await authenticateApiRequest(request(VALID));
+    for (let i = 0; i < 501; i += 1) await authenticateApiRequest(request(VALID));
 
     expect(
       (

@@ -8,6 +8,7 @@ import { villagesRouter } from './villages/villagesRouter';
 import { usersRouter } from './users/usersRouter';
 import { commentsRouter } from './comments/commentsRouter';
 import { notificationsRouter } from './notifications/notificationsRouter';
+import { auditRouter } from './audit/auditRouter';
 
 export const appRouter = router({
   auth: authRouter,
@@ -19,6 +20,7 @@ export const appRouter = router({
   users: usersRouter,
   comments: commentsRouter,
   notifications: notificationsRouter,
+  audit: auditRouter,
 });
 
 export type AppRouter = typeof appRouter;

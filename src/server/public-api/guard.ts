@@ -17,7 +17,7 @@ export const API_KEY_HEADER = 'x-api-key';
  * a runaway loop or a brute-force attempt from hammering the database, not to
  * meter legitimate use.
  */
-const RATE_LIMIT_MAX = 120;
+const RATE_LIMIT_MAX = 500;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 
 export type ApiAuthSuccess = { ok: true; clientId: string };

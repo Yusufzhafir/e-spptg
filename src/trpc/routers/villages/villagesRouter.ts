@@ -55,9 +55,14 @@ export const villagesRouter = router({
   // renamed or deleted desa changes those numbers too.
   create: superadminProcedure
     .input(createVillageSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const village = await queries.createVillage(input);
       await invalidateVillages();
+      ctx.audit.set({
+        entitasId: village?.id,
+        ringkasan: `Menambah desa ${input.namaDesa} (${input.kecamatan})`,
+        sesudah: village,
+      });
       return village;
     }),
 
@@ -68,17 +73,32 @@ export const villagesRouter = router({
         data: updateVillageSchema,
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      // Read the row first purely so the audit entry can show what changed;
+      // without it the trail would say "desa diubah" and nothing more.
+      const sebelum = await queries.getVillageById(input.id);
       const village = await queries.updateVillage(input.id, input.data);
       await invalidateVillages();
+      ctx.audit.set({
+        entitasId: input.id,
+        ringkasan: `Mengubah desa ${sebelum?.namaDesa ?? input.id}`,
+        sebelum,
+        sesudah: village,
+      });
       return village;
     }),
 
   delete: superadminProcedure
     .input(z.object({ id: z.number().int() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      const sebelum = await queries.getVillageById(input.id);
       const result = await queries.deleteVillage(input.id);
       await invalidateVillages();
+      ctx.audit.set({
+        entitasId: input.id,
+        ringkasan: `Menghapus desa ${sebelum?.namaDesa ?? input.id}`,
+        sebelum,
+      });
       return result;
     }),
 });
