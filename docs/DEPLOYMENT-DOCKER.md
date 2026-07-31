@@ -9,17 +9,21 @@ Pembagian tugas:
 |---|---|---|
 | nginx (TLS, reverse proxy) | host | 80, 443 (publik) |
 | Aplikasi Next.js | **Docker** | 127.0.0.1:3000 (privat) |
+| Redis (sesi, rate limit, cache) | **Docker** | tidak dipublikasikan sama sekali |
 | PostgreSQL 16 + PostGIS | host | 127.0.0.1:5432 + bridge Docker (privat) |
 | MinIO (API + console) | host | 127.0.0.1:9000 / 9001 (privat) |
 
-Hanya aplikasi yang di-dockerize. PostgreSQL dan MinIO dipasang langsung di server.
+Aplikasi dan Redis yang di-dockerize. PostgreSQL dan MinIO dipasang langsung di server.
+
+Redis sengaja tanpa `ports:` — ia hanya dijangkau service `app` lewat network
+internal compose, jadi tidak pernah terlihat dari host maupun internet.
 
 ## File yang dipakai
 
 | File | Fungsi |
 |---|---|
 | [Dockerfile](../Dockerfile) | Image aplikasi (multi-stage, output `standalone`) + stage `migrator` |
-| [docker-compose.yml](../docker-compose.yml) | Service `app` dan `migrate` |
+| [docker-compose.yml](../docker-compose.yml) | Service `app`, `redis`, dan `migrate` |
 | [.env.docker.example](../.env.docker.example) | Template `.env` produksi |
 | [deploy/nginx/e-spptg.conf](../deploy/nginx/e-spptg.conf) | Konfigurasi nginx host |
 | [deploy/postgres/init-db.sql](../deploy/postgres/init-db.sql) | Bootstrap role, database, extension PostGIS |
@@ -346,7 +350,15 @@ Selanjutnya penambahan user dilakukan dari dalam aplikasi.
 | 5 | Download dokumen | klik unduh → presigned URL ke domain (bukan `:9000`), file terbuka |
 | 6 | Cek overlap PostGIS | submission dengan poligon → Step 3 menampilkan hasil |
 | 7 | Generate PDF SPPTG | Step 4 sampai file SPPTG tersimpan sebagai dokumen `SPPG` |
-| 8 | Drill restore | lihat bagian 9 |
+| 8 | Redis terpakai | `docker compose exec redis redis-cli -a "$REDIS_PASSWORD" --no-auth-warning DBSIZE` setelah satu login → > 0 |
+| 9 | **Redis mati, aplikasi hidup** | `docker compose stop redis` → login & buka dashboard tetap bisa (lebih lambat) → `docker compose start redis` |
+| 10 | Sesi selamat dari restart Redis | login → `docker compose restart redis` → tab yang terbuka tetap masuk tanpa diminta login ulang |
+| 11 | Drill restore | lihat bagian 9 |
+
+Uji 9 dan 10 adalah alasan Redis dipasang seperti ini. Sesi ditulis ke Redis
+**dan** Postgres: Redis melayani setiap request, Postgres salinan durabelnya.
+Kalau uji 9 membuat aplikasi jatuh, berarti ada jalur yang memanggil Redis tanpa
+melewati `withRedis()` di `src/server/redis/client.ts`.
 
 Uji 5 adalah yang paling sering gagal di on-prem. Kalau muncul
 `SignatureDoesNotMatch`, penyebabnya hampir selalu: `S3_FORCE_PATH_STYLE` bukan

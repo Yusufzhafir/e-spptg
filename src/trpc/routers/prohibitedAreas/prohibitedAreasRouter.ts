@@ -10,8 +10,19 @@ import { getSubmissionScopeForUser } from '@/server/authz';
 import { sql, eq } from 'drizzle-orm';
 import { prohibitedAreas } from '@/server/db/schema';
 import { TRPCError } from '@trpc/server';
+import {
+  TTL,
+  cacheKeys,
+  cached,
+  invalidateProhibitedAreas,
+} from '@/server/redis/cache';
 
 export const prohibitedAreasRouter = router({
+  // Cached: the kawasan layer is redrawn on every map render but only changes
+  // when a Superadmin/Admin edits it. Same list for every role.
+  //
+  // Deliberately NOT caching `checkOverlaps` below — that one is scoped per
+  // caller and reflects live submission geometry.
   list: protectedProcedure
     .input(
       z.object({
@@ -20,7 +31,11 @@ export const prohibitedAreasRouter = router({
       })
     )
     .query(async ({ input }) => {
-      return queries.listProhibitedAreas(input.limit, input.offset);
+      return cached(
+        cacheKeys.prohibitedAreasList(input.limit, input.offset),
+        TTL.prohibitedAreas,
+        () => queries.listProhibitedAreas(input.limit, input.offset)
+      );
     }),
 
   byId: protectedProcedure
@@ -103,6 +118,7 @@ export const prohibitedAreasRouter = router({
           })
         })
   
+        await invalidateProhibitedAreas();
         return result[0];
       }catch(error) {
         console.error(error)
@@ -179,16 +195,21 @@ export const prohibitedAreasRouter = router({
           .where(eq(prohibitedAreas.id, input.id))
           .returning({ id: prohibitedAreas.id });
 
+        await invalidateProhibitedAreas();
         return result[0];
       }
 
       // Regular update without geometry change
-      return queries.updateProhibitedArea(input.id, updateData);
+      const updated = await queries.updateProhibitedArea(input.id, updateData);
+      await invalidateProhibitedAreas();
+      return updated;
     }),
 
   delete: adminProcedure
     .input(z.object({ id: z.number().int() }))
     .mutation(async ({ input }) => {
-      return queries.deleteProhibitedArea(input.id);
+      const result = await queries.deleteProhibitedArea(input.id);
+      await invalidateProhibitedAreas();
+      return result;
     }),
 });

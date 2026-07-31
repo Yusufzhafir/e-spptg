@@ -14,6 +14,7 @@ import { computeOverlaps } from '@/server/postgis';
 import { sql, eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { normalizeOverlapRows } from '@/lib/overlap-results';
+import { TTL, cached, invalidateDashboard, scopedKey } from '@/server/redis/cache';
 import { deriveSubmissionStatus } from '@/lib/submission-status';
 import { normalizePhoneNumber } from '@/lib/phone-number';
 import type { FeedbackData } from '@/types';
@@ -36,7 +37,7 @@ export const submissionsRouter = router({
         .mutation(async ({ ctx, input }) => {
             // Wrap all database operations in a transaction
             // This ensures that if any operation fails, all changes are rolled back
-            return await ctx.db.transaction(async (tx) => {
+            const submitted = await ctx.db.transaction(async (tx) => {
                 try {
                     const draft = await draftQueries.getDraftById(input.draftId, tx);
 
@@ -315,6 +316,13 @@ export const submissionsRouter = router({
                     });
                 }
             });
+
+            // A new submission changes every aggregate. Outside the transaction
+            // on purpose: dropping cache entries for a transaction that then
+            // rolls back would only cost a recompute, but doing it inside would
+            // hold the database transaction open on a Redis round trip.
+            await invalidateDashboard();
+            return submitted;
         }),
 
     byId: protectedProcedure
@@ -502,6 +510,10 @@ export const submissionsRouter = router({
                     input.alasan,
                     input.feedback
                 );
+                // A status change moves the KPI cards and the trend chart, so
+                // every cached aggregate is dropped rather than waiting out the
+                // TTL — a verifikator must see their own decision immediately.
+                await invalidateDashboard();
                 return {
                     success: true,
                     submission: result,
@@ -541,6 +553,9 @@ export const submissionsRouter = router({
                 input.submissionId,
                 input.isValid
             );
+            // The aggregates count only valid submissions, so flipping this flag
+            // changes every KPI and trend number.
+            await invalidateDashboard();
             return {
                 success: true,
                 submission: result,
@@ -555,11 +570,15 @@ export const submissionsRouter = router({
             const scope = getSubmissionScopeForUser(ctx.appUser!);
             // onlyValid: invalid entries are hidden from the map, so counting
             // them here would contradict what the user sees.
-            const data = await submissionQueries.getKPIDataScoped({
-                ...input,
-                ...scope,
-                onlyValid: true,
-            });
+            const filters = { ...input, ...scope, onlyValid: true };
+            // The cache key hashes the scope as well as the filters, so an
+            // Admin's desa-limited counts can never be served to a Superadmin
+            // (or to an Admin of another desa) that happens to ask first.
+            const data = await cached(
+                scopedKey('kpi', filters),
+                TTL.dashboard,
+                () => submissionQueries.getKPIDataScoped(filters)
+            );
             const kpi = {
                 'SPPTG terdata': 0,
                 'SPPTG terdaftar': 0,
@@ -585,11 +604,12 @@ export const submissionsRouter = router({
         .input(dashboardFilterSchema)
         .query(async ({ ctx, input }) => {
             const scope = getSubmissionScopeForUser(ctx.appUser!);
-            return submissionQueries.getMonthlyStats({
-                ...input,
-                ...scope,
-                onlyValid: true,
-            });
+            const filters = { ...input, ...scope, onlyValid: true };
+            return cached(
+                scopedKey('tren', filters),
+                TTL.dashboard,
+                () => submissionQueries.getMonthlyStats(filters)
+            );
         }),
 });
 

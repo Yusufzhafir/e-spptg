@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
  * a 200 here means the credentials are good and nothing else is in the way.
  */
 export async function GET(req: Request) {
-  const auth = authenticateApiRequest(req);
+  const auth = await authenticateApiRequest(req);
   if (!auth.ok) {
     return apiError(
       auth.status,

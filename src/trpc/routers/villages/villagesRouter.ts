@@ -6,8 +6,13 @@ import {
 } from '@/lib/validation';
 import * as queries from '@/server/db/queries/villages';
 import { TRPCError } from '@trpc/server';
+import { TTL, cacheKeys, cached, invalidateVillages } from '@/server/redis/cache';
 
 export const villagesRouter = router({
+  // Cached: reference data read on nearly every screen (the desa picker, the
+  // dashboard filter, the submission wizard) and written only by a Superadmin.
+  // Not scoped per role — every caller sees the same desa list — so one shared
+  // entry per page is correct.
   list: protectedProcedure
     .input(
       z.object({
@@ -16,7 +21,11 @@ export const villagesRouter = router({
       })
     )
     .query(async ({ input }) => {
-      return queries.listVillages(input.limit, input.offset);
+      return cached(
+        cacheKeys.villagesList(input.limit, input.offset),
+        TTL.villages,
+        () => queries.listVillages(input.limit, input.offset)
+      );
     }),
 
   search: protectedProcedure
@@ -41,10 +50,15 @@ export const villagesRouter = router({
   // Desa is master data affecting every scope, and Admins are themselves
   // desa-scoped — so only Superadmin may mutate it. This matches the UI, which
   // only shows the Desa tab to Superadmin.
+  // Each mutation drops the village caches *and* the dashboard aggregates:
+  // desa carries the kecamatan mapping the KPI scoping resolves through, so a
+  // renamed or deleted desa changes those numbers too.
   create: superadminProcedure
     .input(createVillageSchema)
     .mutation(async ({ input }) => {
-      return queries.createVillage(input);
+      const village = await queries.createVillage(input);
+      await invalidateVillages();
+      return village;
     }),
 
   update: superadminProcedure
@@ -55,12 +69,16 @@ export const villagesRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      return queries.updateVillage(input.id, input.data);
+      const village = await queries.updateVillage(input.id, input.data);
+      await invalidateVillages();
+      return village;
     }),
 
   delete: superadminProcedure
     .input(z.object({ id: z.number().int() }))
     .mutation(async ({ input }) => {
-      return queries.deleteVillage(input.id);
+      const result = await queries.deleteVillage(input.id);
+      await invalidateVillages();
+      return result;
     }),
 });

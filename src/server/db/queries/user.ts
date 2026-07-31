@@ -2,6 +2,18 @@ import { eq, sql } from 'drizzle-orm';
 import { UserRole, UserStatus } from '@/types';
 import { db, DBTransaction } from '../db';
 import { users } from '../schema';
+import { invalidateUser } from '@/server/redis/cache';
+
+/**
+ * Every function here that writes a user row drops that user's cache entry
+ * before returning.
+ *
+ * Doing it in the query layer rather than at the ~9 router call sites is
+ * deliberate: `validateSessionToken` reads the user through this cache on every
+ * authenticated request, so a missed invalidation means a demoted or
+ * deactivated account keeps its old permissions until the TTL lapses. Putting
+ * it here means a future caller cannot forget.
+ */
 
 /**
  * Look a user up by their login identifier. Emails are compared
@@ -75,6 +87,7 @@ export async function markEmailVerified(id: number, tx?: DBTransaction) {
     .where(eq(users.id, id))
     .returning();
 
+  await invalidateUser(id);
   return result[0];
 }
 
@@ -91,6 +104,7 @@ export async function setUserPassword(
     .where(eq(users.id, id))
     .returning();
 
+  await invalidateUser(id);
   return result[0];
 }
 
@@ -101,6 +115,11 @@ export async function touchUserLastLogin(id: number, tx?: DBTransaction) {
     .update(users)
     .set({ terakhirMasuk: new Date() })
     .where(eq(users.id, id));
+
+  // Only a display field, but leaving it stale would make the 10-minute
+  // throttle in `createTRPCContext` re-fire on every request: it compares
+  // against the cached row, which would never show the write that just landed.
+  await invalidateUser(id);
 }
 
 export async function listUsers(limit = 50, offset = 0, tx?: DBTransaction) {
@@ -141,5 +160,7 @@ export async function updateUser(
     .where(eq(users.id, id))
     .returning();
 
+  // The important one: this is how peran, status and assigned desa change.
+  await invalidateUser(id);
   return result[0];
 }

@@ -70,13 +70,14 @@ const RESET_REQUESTED_MESSAGE =
 const VERIFICATION_RESENT_MESSAGE =
   'Jika email tersebut terdaftar dan belum diverifikasi, tautan verifikasi baru telah dikirim. Periksa kotak masuk dan folder spam Anda.';
 
-function throttle(
+/** Async since the counters moved to Redis; every call site awaits it. */
+async function throttle(
   key: string,
   limit: number,
   windowMs: number,
   message: string
 ) {
-  const result = consumeRateLimit(key, limit, windowMs);
+  const result = await consumeRateLimit(key, limit, windowMs);
   if (!result.allowed) {
     const minutes = Math.ceil(result.retryAfterSeconds / 60);
     throw new TRPCError({
@@ -145,7 +146,7 @@ export const authRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const email = input.email.trim();
-      throttle(
+      await throttle(
         `register:${ctx.requestMeta.ipAddress ?? 'unknown'}`,
         REGISTER_LIMIT,
         REGISTER_WINDOW_MS,
@@ -255,7 +256,7 @@ export const authRouter = router({
     .input(z.object({ email: z.string().refine(isValidEmail, EMAIL_ERROR) }))
     .mutation(async ({ ctx, input }) => {
       const email = input.email.trim();
-      throttle(
+      await throttle(
         `check-email:${email.toLowerCase()}:${ctx.requestMeta.ipAddress ?? 'unknown'}`,
         LOGIN_LIMIT,
         LOGIN_WINDOW_MS,
@@ -281,7 +282,7 @@ export const authRouter = router({
     .mutation(async ({ ctx, input }) => {
       const email = input.email.trim();
       const ip = ctx.requestMeta.ipAddress ?? 'unknown';
-      throttle(
+      await throttle(
         `login:${email.toLowerCase()}:${ip}`,
         LOGIN_LIMIT,
         LOGIN_WINDOW_MS,
@@ -326,7 +327,7 @@ export const authRouter = router({
         });
       }
 
-      resetRateLimit(`login:${email.toLowerCase()}:${ip}`);
+      await resetRateLimit(`login:${email.toLowerCase()}:${ip}`);
 
       const { token, expiresAt } = await createSession(user.id, ctx.requestMeta);
       ctx.resHeaders?.append('set-cookie', sessionCookie(token, expiresAt));
@@ -409,7 +410,7 @@ export const authRouter = router({
     .input(z.object({ email: z.string().refine(isValidEmail, EMAIL_ERROR) }))
     .mutation(async ({ ctx, input }) => {
       const email = input.email.trim();
-      throttle(
+      await throttle(
         `verify-resend:${email.toLowerCase()}:${ctx.requestMeta.ipAddress ?? 'unknown'}`,
         RESET_REQUEST_LIMIT,
         RESET_REQUEST_WINDOW_MS,
@@ -509,7 +510,7 @@ export const authRouter = router({
     .input(z.object({ email: z.string().refine(isValidEmail, EMAIL_ERROR) }))
     .mutation(async ({ ctx, input }) => {
       const email = input.email.trim();
-      throttle(
+      await throttle(
         `reset:${email.toLowerCase()}:${ctx.requestMeta.ipAddress ?? 'unknown'}`,
         RESET_REQUEST_LIMIT,
         RESET_REQUEST_WINDOW_MS,

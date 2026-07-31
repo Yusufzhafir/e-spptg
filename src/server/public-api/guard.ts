@@ -51,7 +51,7 @@ function warnIfAllowlistEmpty(allowedIps: string[]) {
  * Rate limiting comes last and is keyed per client, so one misbehaving consumer
  * cannot lock the others out.
  */
-export function authenticateApiRequest(req: Request): ApiAuthResult {
+export async function authenticateApiRequest(req: Request): Promise<ApiAuthResult> {
   const clients = parseApiClients(process.env.STATISTIK_API_CLIENTS);
 
   // No credentials configured means the integration was never set up. Failing
@@ -94,7 +94,7 @@ export function authenticateApiRequest(req: Request): ApiAuthResult {
     };
   }
 
-  const limit = consumeRateLimit(
+  const limit = await consumeRateLimit(
     `statistik-api:${client.clientId}`,
     RATE_LIMIT_MAX,
     RATE_LIMIT_WINDOW_MS

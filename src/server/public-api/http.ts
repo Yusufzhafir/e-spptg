@@ -106,7 +106,7 @@ export async function handleStatistikRequest(
   req: Request,
   handler: (filters: SubmissionDashboardFilters) => Promise<unknown>
 ): Promise<Response> {
-  const auth = authenticateApiRequest(req);
+  const auth = await authenticateApiRequest(req);
   if (!auth.ok) {
     return apiError(
       auth.status,
