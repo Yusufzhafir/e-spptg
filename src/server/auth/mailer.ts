@@ -177,9 +177,10 @@ export async function sendEmailVerificationEmail(params: {
 }
 
 /**
- * Sent when an admin creates an account without setting a password: the person
- * gets a reset link to choose their own, so a plaintext password never has to be
- * passed along out of band.
+ * Sent whenever an admin creates an account — there is no other way in, since an
+ * admin cannot set an initial password. Opening the link both sets the first
+ * password and verifies the address, so this one message is the account's whole
+ * activation path.
  */
 export async function sendAccountInviteEmail(params: {
   to: string;
@@ -201,6 +202,7 @@ export async function sendAccountInviteEmail(params: {
       `Buat kata sandi Anda melalui tautan berikut (berlaku ${minutes} menit):`,
       url,
       '',
+      'Membuka tautan ini sekaligus memverifikasi alamat email Anda.',
       `Setelah itu Anda dapat masuk menggunakan email ${params.to}.`,
     ].join('\n'),
     html: layout(
@@ -213,8 +215,9 @@ export async function sendAccountInviteEmail(params: {
       </p>
       ${button(url, 'Buat Kata Sandi')}
       <p style="margin:0;font-size:13px;line-height:1.6;color:#6b7280;">
-        Tautan berlaku selama <strong>${minutes} menit</strong>. Setelah kata sandi dibuat,
-        Anda dapat masuk menggunakan email <strong>${params.to}</strong>.
+        Tautan berlaku selama <strong>${minutes} menit</strong> dan sekaligus memverifikasi
+        alamat email Anda. Setelah kata sandi dibuat, Anda dapat masuk menggunakan email
+        <strong>${params.to}</strong>.
       </p>
       <p style="margin:16px 0 0;font-size:12px;line-height:1.6;color:#9ca3af;word-break:break-all;">
         Tombol tidak berfungsi? Salin tautan ini ke peramban: ${url}

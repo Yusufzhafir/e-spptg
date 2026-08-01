@@ -48,12 +48,13 @@ interface SettingsProps {
   villages: Village[];
   prohibitedAreas: ProhibitedArea[];
   onUpdateUsers?: (users: User[]) => void;
+  /**
+   * The server mails an invite link; no password is ever sent from here. The
+   * returned promise is what UsersTab waits on before closing its dialog.
+   */
   onCreateUser?: (
-    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'> & {
-      /** Omitted/blank means the server emails an invite to set one instead. */
-      password?: string;
-    }
-  ) => void;
+    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'>
+  ) => void | Promise<unknown>;
   onUpdateUser?: (
     id: number,
     data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'>>

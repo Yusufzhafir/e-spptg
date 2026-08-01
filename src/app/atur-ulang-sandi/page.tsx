@@ -3,6 +3,7 @@ import { Suspense } from 'react';
 import { AuthShell } from '@/components/AuthShell';
 import { ResetPasswordForm } from '@/components/auth/ResetPasswordForm';
 import { AuthFormSkeleton } from '@/components/auth/AuthFormSkeleton';
+import { PASSWORD_RULE_TEXT } from '@/lib/password-policy';
 
 export const metadata: Metadata = { title: 'Atur Ulang Kata Sandi' };
 
@@ -12,7 +13,7 @@ export default function ResetPasswordPage() {
       title="Buat kata sandi baru."
       subtitle="Pilih kata sandi yang kuat dan tidak Anda pakai di layanan lain."
       points={[
-        'Minimal 8 karakter dengan huruf besar, kecil, dan angka',
+        PASSWORD_RULE_TEXT,
         'Tautan ini hanya berlaku sekali pakai',
         'Perangkat lain akan otomatis keluar demi keamanan',
       ]}

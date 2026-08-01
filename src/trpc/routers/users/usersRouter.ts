@@ -8,8 +8,6 @@ import * as queries from '@/server/db/queries/user';
 import { users } from '@/server/db/schema';
 import { assertCanManageUser, requireAssignedVillageId } from '@/server/authz';
 import { TRPCError } from '@trpc/server';
-import { passwordSchema } from '@/lib/password-policy';
-import { hashPassword } from '@/server/auth/password';
 import { invalidateAllUserSessions } from '@/server/auth/session';
 import { clearedSessionCookie } from '@/server/auth/cookies';
 import { createPasswordResetToken } from '@/server/auth/password-reset';
@@ -150,17 +148,17 @@ export const usersRouter = router({
       return toClientUser(user);
     }),
 
+  /**
+   * Create an account. There is deliberately no way for an admin to set an
+   * initial password: the person is always emailed a link to choose their own,
+   * so a plaintext password never travels over chat and the account is only
+   * usable by whoever actually reads that inbox.
+   */
   create: adminProcedure
     .input(
       createUserSchema.extend({
         nomorHP: z.string().optional(),
         status: z.enum(['Aktif', 'Nonaktif']).optional(),
-        /**
-         * Optional. Omitted means "invite instead": the account is created
-         * without a password and the person is emailed a link to choose their
-         * own, so an admin never has to hand a plaintext password over chat.
-         */
-        password: passwordSchema.optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -216,13 +214,13 @@ export const usersRouter = router({
         input.assignedKecamatan
       );
 
-      // Without a password there is no way into the account except the invite
-      // email, so refuse up front rather than creating a row nobody can use.
-      if (!input.password && !isMailerConfigured()) {
+      // The invite email is the only way into the account, so refuse up front
+      // rather than creating a row nobody can ever sign in to.
+      if (!isMailerConfigured()) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message:
-            'Layanan email belum dikonfigurasi, sehingga undangan tidak dapat dikirim. Tetapkan kata sandi awal untuk pengguna ini.',
+            'Layanan email belum dikonfigurasi, sehingga undangan tidak dapat dikirim. Hubungi administrator sistem.',
         });
       }
 
@@ -230,39 +228,38 @@ export const usersRouter = router({
         email: input.email.trim(),
         nama: input.nama.trim(),
         nipNik: input.nipNik,
-        passwordHash: input.password ? await hashPassword(input.password) : null,
+        // Always null: the account gets its first password from the invite link.
+        passwordHash: null,
         peran: role,
         assignedVillageId,
         assignedKecamatan,
         status: input.status,
         nomorHP: input.nomorHP,
-        // An admin typed this address and is vouching for it, so the account
-        // skips the self-registration verification step. Requiring it here would
-        // also break the invite flow: the invite link sets a password, and the
-        // person would then still be refused at login for being unverified.
-        emailVerifiedAt: new Date(),
+        // Unverified until the invite link is opened. An admin typing the
+        // address is not proof it exists or belongs to the right person —
+        // redeeming a link that only landed in that inbox is, and
+        // `auth.resetPassword` stamps the account verified when it happens.
+        emailVerifiedAt: null,
       });
 
-      if (!input.password) {
-        try {
-          const { token, expiresAt } = await createPasswordResetToken(user.id);
-          await sendAccountInviteEmail({
-            to: user.email,
-            nama: user.nama,
-            peran: user.peran,
-            token,
-            expiresAt,
-          });
-        } catch (error) {
-          // The account is already created and valid; a bounced invite is fixed
-          // by the "Kirim tautan sandi" action rather than by rolling back.
-          console.error('Gagal mengirim email undangan akun:', error);
-          throw new TRPCError({
-            code: 'INTERNAL_SERVER_ERROR',
-            message:
-              'Pengguna berhasil dibuat, tetapi email undangan gagal dikirim. Kirim ulang tautan kata sandi dari daftar pengguna.',
-          });
-        }
+      try {
+        const { token, expiresAt } = await createPasswordResetToken(user.id);
+        await sendAccountInviteEmail({
+          to: user.email,
+          nama: user.nama,
+          peran: user.peran,
+          token,
+          expiresAt,
+        });
+      } catch (error) {
+        // The account is already created and valid; a bounced invite is fixed
+        // by the "Kirim tautan sandi" action rather than by rolling back.
+        console.error('Gagal mengirim email undangan akun:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message:
+            'Pengguna berhasil dibuat, tetapi email undangan gagal dikirim. Kirim ulang tautan kata sandi dari daftar pengguna.',
+        });
       }
 
       ctx.audit.set({

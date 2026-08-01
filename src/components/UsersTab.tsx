@@ -19,9 +19,6 @@ import { RequiredMark } from './RequiredMark';
 import { SearchableSelect } from './SearchableSelect';
 import { FieldError } from './FieldError';
 import { createUserSchema } from '@/lib/validation';
-import { passwordSchema } from '@/lib/password-policy';
-import { PasswordInput } from './auth/PasswordInput';
-import { PasswordChecklist } from './auth/PasswordChecklist';
 import { isValidPhoneNumber, normalizePhoneNumber, PHONE_NUMBER_ERROR } from '@/lib/phone-number';
 import {
   Dialog,
@@ -49,7 +46,7 @@ import {
   AlertDialogTitle,
 } from './ui/alert-dialog';
 import { Badge } from './ui/badge';
-import { Search, Plus, Edit, Power, KeyRound } from 'lucide-react';
+import { Search, Plus, Edit, Power, KeyRound, Mail, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface UsersTabProps {
@@ -57,12 +54,14 @@ interface UsersTabProps {
   villages: Village[];
   canManageVillageAssignment?: boolean;
   onUpdateUsers?: (users: User[]) => void;
+  /**
+   * The server mails an invite link; no password is ever sent from here.
+   * Returning a promise keeps the dialog open — and the Simpan button in its
+   * "Mengirim undangan…" state — until the invite has actually been sent.
+   */
   onCreateUser?: (
-    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'> & {
-      /** Blank means "invite by email" — the server mails a link to set one. */
-      password?: string;
-    }
-  ) => void;
+    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'>
+  ) => void | Promise<unknown>;
   onUpdateUser?: (
     id: number,
     data: Partial<Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'>>
@@ -100,10 +99,9 @@ export function UsersTab({
   const [isSelfRoleChangeDialogOpen, setIsSelfRoleChangeDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [formData, setFormData] = useState<Partial<User>>({});
-  // Kept out of `formData` on purpose: that object is spread from an existing
-  // User row when editing, and a password must never ride along with it.
-  const [newPassword, setNewPassword] = useState('');
-  const [useInviteEmail, setUseInviteEmail] = useState(true);
+  // The add dialog stays open, and locked, for as long as the create mutation
+  // (account row + invite email) is in flight.
+  const [isSavingUser, setIsSavingUser] = useState(false);
   const [resetTarget, setResetTarget] = useState<User | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const errorClass = (field: string) => (errors[field] ? 'border-red-500' : undefined);
@@ -169,8 +167,6 @@ export function UsersTab({
 
   const handleAddUser = () => {
     setErrors({});
-    setNewPassword('');
-    setUseInviteEmail(true);
     // Start on the only role an Admin may create, pre-scoped to their desa.
     setFormData(
       isAdminActor
@@ -196,7 +192,7 @@ export function UsersTab({
     setIsDeactivateDialogOpen(true);
   };
 
-  const validateUser = (requirePassword = false) => {
+  const validateUser = () => {
     const next: Record<string, string> = {};
     const result = createUserSchema.safeParse({
       email: formData.email ?? '',
@@ -226,34 +222,40 @@ export function UsersTab({
     if (nomorHP && !isValidPhoneNumber(nomorHP)) {
       next.nomorHP = PHONE_NUMBER_ERROR;
     }
-    // Only when an admin chose to set the password themselves; the invite path
-    // leaves the account without one until the user follows the email.
-    if (requirePassword) {
-      const parsed = passwordSchema.safeParse(newPassword);
-      if (!parsed.success) next.password = parsed.error.issues[0].message;
-    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
 
-  const handleSaveUser = () => {
-    if (!validateUser(!useInviteEmail)) {
+  const handleSaveUser = async () => {
+    if (!validateUser()) {
       toast.error('Harap lengkapi field wajib yang ditandai merah');
       return;
     }
 
     if (onCreateUser) {
-      onCreateUser({
-        nama: formData.nama ?? '',
-        nipNik: formData.nipNik ?? '',
-        email: formData.email ?? '',
-        peran: formData.peran as UserRole,
-        assignedVillageId: formData.assignedVillageId ?? null,
-        assignedKecamatan: formData.assignedKecamatan ?? null,
-        status: (formData.status as UserStatus) || 'Aktif',
-        nomorHP: formData.nomorHP || null,
-        password: useInviteEmail ? undefined : newPassword,
-      });
+      setIsSavingUser(true);
+      try {
+        // Awaited on purpose: creating the account includes sending the invite
+        // over SMTP, which takes a few seconds. Closing the dialog immediately
+        // would leave that gap silent and looking like nothing happened.
+        await onCreateUser({
+          nama: formData.nama ?? '',
+          nipNik: formData.nipNik ?? '',
+          email: formData.email ?? '',
+          peran: formData.peran as UserRole,
+          assignedVillageId: formData.assignedVillageId ?? null,
+          assignedKecamatan: formData.assignedKecamatan ?? null,
+          status: (formData.status as UserStatus) || 'Aktif',
+          nomorHP: formData.nomorHP || null,
+        });
+      } catch {
+        // The mutation's own onError already said what went wrong; keep the
+        // dialog open with the form intact so the admin can retry or fix the
+        // email address without retyping everything.
+        return;
+      } finally {
+        setIsSavingUser(false);
+      }
     } else if (onUpdateUsers) {
       const newUser: User = {
         id: new Date().getTime(),
@@ -264,7 +266,8 @@ export function UsersTab({
         assignedVillageId: formData.assignedVillageId ?? null,
         status: (formData.status as UserStatus) || 'Aktif',
         nomorHP: formData.nomorHP || null,
-        hasPassword: !useInviteEmail,
+        // Every new account starts without one — it is set from the invite link.
+        hasPassword: false,
         terakhirMasuk: null,
       };
       onUpdateUsers([...users, newUser]);
@@ -274,7 +277,6 @@ export function UsersTab({
     }
     setIsAddDialogOpen(false);
     setFormData({});
-    setNewPassword('');
     // Success toast is shown by the create mutation's onSuccess handler.
   };
 
@@ -562,7 +564,15 @@ export function UsersTab({
       </div>
 
       {/* Add User Dialog */}
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+      <Dialog
+        open={isAddDialogOpen}
+        // Esc and the backdrop are ignored mid-save: the account is already
+        // being created, and closing here would strand the admin without ever
+        // learning whether the invite went out.
+        onOpenChange={(open) => {
+          if (!isSavingUser) setIsAddDialogOpen(open);
+        }}
+      >
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>Tambah Pengguna</DialogTitle>
@@ -572,10 +582,6 @@ export function UsersTab({
           </DialogHeader>
 
           <div className="space-y-4">
-            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
-              Pengguna masuk memakai email dan kata sandi. Anda dapat mengirim undangan agar
-              pengguna membuat sandinya sendiri, atau menetapkan sandi awal di bawah.
-            </div>
             <div>
               <Label htmlFor="nama">Nama Lengkap<RequiredMark /></Label>
               <Input
@@ -729,80 +735,36 @@ export function UsersTab({
               <FieldError message={errors.nomorHP} />
             </div>
 
-            {/* ------------------------------------------------- Kata sandi */}
-            <div className="rounded-lg border border-gray-200 p-3">
-              <p className="text-sm font-medium text-gray-900">Kata Sandi Awal</p>
-
-              <div className="mt-3 space-y-2">
-                <label className="flex cursor-pointer items-start gap-2 text-sm text-gray-700">
-                  <input
-                    type="radio"
-                    name="password-mode"
-                    className="mt-1"
-                    checked={useInviteEmail}
-                    onChange={() => {
-                      setUseInviteEmail(true);
-                      setNewPassword('');
-                      clearError('password');
-                    }}
-                  />
-                  <span>
-                    Kirim undangan lewat email
-                    <span className="block text-xs text-gray-500">
-                      Pengguna membuat sandinya sendiri lewat tautan yang berlaku 1 jam.
-                      Anda tidak perlu mengetahui sandi mereka.
-                    </span>
-                  </span>
-                </label>
-
-                <label className="flex cursor-pointer items-start gap-2 text-sm text-gray-700">
-                  <input
-                    type="radio"
-                    name="password-mode"
-                    className="mt-1"
-                    checked={!useInviteEmail}
-                    onChange={() => setUseInviteEmail(false)}
-                  />
-                  <span>
-                    Tetapkan sandi awal sekarang
-                    <span className="block text-xs text-gray-500">
-                      Sampaikan sandi ke pengguna melalui saluran yang aman, lalu minta
-                      mereka menggantinya setelah masuk.
-                    </span>
-                  </span>
-                </label>
-              </div>
-
-              {!useInviteEmail && (
-                <div className="mt-3">
-                  <Label htmlFor="password">
-                    Kata Sandi
-                    <RequiredMark />
-                  </Label>
-                  <PasswordInput
-                    id="password"
-                    autoComplete="new-password"
-                    placeholder="Buat kata sandi"
-                    value={newPassword}
-                    onChange={(e) => {
-                      setNewPassword(e.target.value);
-                      clearError('password');
-                    }}
-                    className={errorClass('password')}
-                  />
-                  <FieldError message={errors.password} />
-                  <PasswordChecklist value={newPassword} />
-                </div>
-              )}
+            {/* --------------------------------------------- Undangan email */}
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+              <p className="flex items-center gap-2 text-sm font-medium text-blue-900">
+                <Mail className="h-4 w-4 shrink-0" />
+                Undangan dikirim otomatis
+              </p>
+              <p className="mt-1.5 text-xs leading-relaxed text-blue-800">
+                Begitu Anda menyimpan, email undangan dikirim ke alamat di atas. Pengguna
+                membuat sandinya sendiri lewat tautan yang berlaku 1 jam, dan tautan itu
+                sekaligus memverifikasi alamat emailnya. Akun belum dapat dipakai masuk
+                sampai langkah tersebut selesai — jadi pastikan alamat email sudah benar.
+              </p>
             </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsAddDialogOpen(false)}
+              disabled={isSavingUser}
+            >
               Batal
             </Button>
-            <Button onClick={handleSaveUser} className="bg-blue-600 hover:bg-blue-700">
-              Simpan
+            <Button
+              onClick={handleSaveUser}
+              disabled={isSavingUser}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {isSavingUser && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isSavingUser ? 'Mengirim undangan…' : 'Simpan'}
             </Button>
           </DialogFooter>
         </DialogContent>

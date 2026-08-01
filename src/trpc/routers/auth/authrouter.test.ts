@@ -372,20 +372,29 @@ describe('auth.register', () => {
   it('rejects a password shorter than the minimum', async () => {
     getUserByEmailMock.mockResolvedValue(undefined);
 
-    // The policy is length-only now (5 characters), so this has to be a genuinely
-    // short string — "pendek" is six characters and is accepted.
+    // The minimum is 5 characters, so this has to be a genuinely short string —
+    // "abcd1" is five characters with a digit and is accepted.
     await expect(
-      authRouter.createCaller(anonCtx()).register({ ...payload, password: 'abcd' })
+      authRouter.createCaller(anonCtx()).register({ ...payload, password: 'abc1' })
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
     expect(createUserMock).not.toHaveBeenCalled();
   });
 
-  it('accepts a short lower-case-only password now that the policy is length-only', async () => {
+  it('rejects a long password with no digit in it', async () => {
+    getUserByEmailMock.mockResolvedValue(undefined);
+
+    await expect(
+      authRouter.createCaller(anonCtx()).register({ ...payload, password: 'sandirahasiapanjang' })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    expect(createUserMock).not.toHaveBeenCalled();
+  });
+
+  it('accepts a short lower-case-only password as long as it contains a digit', async () => {
     getUserByEmailMock.mockResolvedValue(undefined);
     createUserMock.mockResolvedValue(userRow({ id: 22, email: payload.email }));
 
     await expect(
-      authRouter.createCaller(anonCtx()).register({ ...payload, password: 'abcde' })
+      authRouter.createCaller(anonCtx()).register({ ...payload, password: 'abcd1' })
     ).resolves.toBeTruthy();
   });
 
@@ -714,6 +723,35 @@ describe('auth.resetPassword', () => {
     expect(result).toEqual({ success: true, signedIn: true });
     expect(invalidateAllUserSessionsMock).toHaveBeenCalledWith(7);
     expect(setCookieHeader(ctx)).toContain(`${SESSION_COOKIE_NAME}=new-session-token`);
+  });
+
+  it('verifies the address of an account invited by an admin', async () => {
+    // Admin-created accounts are born unverified and are activated only through
+    // this link, so redeeming it has to stamp them verified — otherwise the
+    // person sets a password and is then refused at login for being unverified.
+    consumeCheckPasswordResetTokenMock.mockResolvedValue({
+      ...validToken,
+      user: userRow({ emailVerifiedAt: null, passwordHash: null }),
+    });
+    markPasswordResetTokenUsedMock.mockResolvedValue(true);
+
+    const result = await authRouter
+      .createCaller(anonCtx())
+      .resetPassword({ token: 'invite-token', newPassword: 'BaruSekali9' });
+
+    expect(markEmailVerifiedMock).toHaveBeenCalledWith(7);
+    expect(result).toEqual({ success: true, signedIn: true });
+  });
+
+  it('leaves an already-verified account alone on a normal reset', async () => {
+    consumeCheckPasswordResetTokenMock.mockResolvedValue(validToken);
+    markPasswordResetTokenUsedMock.mockResolvedValue(true);
+
+    await authRouter
+      .createCaller(anonCtx())
+      .resetPassword({ token: 'reset-token', newPassword: 'BaruSekali9' });
+
+    expect(markEmailVerifiedMock).not.toHaveBeenCalled();
   });
 
   it('sets the password but grants no session to a deactivated account', async () => {
