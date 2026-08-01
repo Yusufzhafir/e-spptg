@@ -4,7 +4,11 @@ import { AuthShell } from '@/components/AuthShell';
 import { VerifyEmailForm } from '@/components/auth/VerifyEmailForm';
 import { AuthFormSkeleton } from '@/components/auth/AuthFormSkeleton';
 
-export const metadata: Metadata = { title: 'Verifikasi Email' };
+// Reached only from a link in an email, and the URL carries a single-use token.
+export const metadata: Metadata = {
+  title: 'Verifikasi Email',
+  robots: { index: false, follow: false },
+};
 
 export default function VerifyEmailPage() {
   return (

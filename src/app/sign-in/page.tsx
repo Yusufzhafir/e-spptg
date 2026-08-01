@@ -4,7 +4,9 @@ import { AuthShell } from '@/components/AuthShell';
 import { SignInForm } from '@/components/auth/SignInForm';
 import { AuthFormSkeleton } from '@/components/auth/AuthFormSkeleton';
 
-export const metadata: Metadata = { title: 'Masuk' };
+// A login form is a thin page with nothing to rank for, and indexing it splits
+// signal away from the landing page. Same reasoning on every auth route.
+export const metadata: Metadata = { title: 'Masuk', robots: { index: false, follow: false } };
 
 export default function SignInPage() {
   return (

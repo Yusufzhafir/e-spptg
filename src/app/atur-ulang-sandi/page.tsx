@@ -5,7 +5,11 @@ import { ResetPasswordForm } from '@/components/auth/ResetPasswordForm';
 import { AuthFormSkeleton } from '@/components/auth/AuthFormSkeleton';
 import { PASSWORD_RULE_TEXT } from '@/lib/password-policy';
 
-export const metadata: Metadata = { title: 'Atur Ulang Kata Sandi' };
+// Reached only from a link in an email, and the URL carries a single-use token.
+export const metadata: Metadata = {
+  title: 'Atur Ulang Kata Sandi',
+  robots: { index: false, follow: false },
+};
 
 export default function ResetPasswordPage() {
   return (

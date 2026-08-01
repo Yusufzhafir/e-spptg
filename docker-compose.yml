@@ -62,6 +62,9 @@ services:
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
         S3_BUCKET_NAME: ${S3_BUCKET_NAME}
         S3_DOMAIN: ${S3_DOMAIN}
+        # Sama alasannya: "/" di-prerender saat build, jadi kode verifikasi
+        # Search Console harus sudah ada di tahap ini.
+        GOOGLE_SITE_VERIFICATION: ${GOOGLE_SITE_VERIFICATION:-}
     image: e-spptg:latest
     container_name: e-spptg-app
     restart: unless-stopped

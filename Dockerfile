@@ -40,9 +40,14 @@ ARG NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 # Dipakai next.config.ts untuk images.remotePatterns (opsional).
 ARG S3_BUCKET_NAME
 ARG S3_DOMAIN
+# Kode verifikasi Google Search Console. Halaman "/" di-prerender saat build,
+# jadi meta tag-nya ikut dibekukan di sini — menyetelnya hanya di .env runtime
+# tidak akan memunculkan tag apa pun. Kosongkan kalau memakai metode file HTML.
+ARG GOOGLE_SITE_VERIFICATION
 ENV NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY \
     S3_BUCKET_NAME=$S3_BUCKET_NAME \
-    S3_DOMAIN=$S3_DOMAIN
+    S3_DOMAIN=$S3_DOMAIN \
+    GOOGLE_SITE_VERIFICATION=$GOOGLE_SITE_VERIFICATION
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

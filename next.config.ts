@@ -30,6 +30,22 @@ const nextConfig: NextConfig = {
         ]
       : [],
   },
+  // `X-Robots-Tag` is the enforcing half of robots.txt: a Disallow only asks a
+  // crawler not to fetch, while this tells any crawler that did fetch not to
+  // index. The app shell is set here rather than in metadata because
+  // src/app/app/layout.tsx is a client component and cannot export any.
+  async headers() {
+    return [
+      {
+        source: "/app/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+      {
+        source: "/api/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

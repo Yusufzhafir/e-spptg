@@ -191,8 +191,15 @@ export function LandingPage() {
           className="pointer-events-none absolute inset-0 bg-[radial-gradient(60rem_40rem_at_50%_-10%,theme(colors.blue.100),transparent)]"
         />
         <div className="relative mx-auto grid max-w-7xl items-center gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-2 lg:gap-14 lg:px-8 lg:py-24">
-          <Reveal direction="right" className="text-center lg:text-left">
-            <h1 className="mt-5 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl lg:text-5xl">
+          {/* Deliberately NOT wrapped in <Reveal>: this block is the LCP element
+              and is on screen from the first paint, so fading it in would only
+              delay the largest paint and leave the heading at opacity-0 for any
+              renderer that never fires an IntersectionObserver. */}
+          <div className="text-center lg:text-left">
+            <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">
+              Pemerintah Kabupaten Kutai Timur
+            </p>
+            <h1 className="mt-3 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl lg:text-5xl">
               Sistem Informasi
               <span className="mt-1 block bg-gradient-to-r from-blue-600 to-sky-500 bg-clip-text text-transparent">
                 Administrasi Pertanahan
@@ -200,9 +207,12 @@ export function LandingPage() {
             </h1>
 
             <p className="mx-auto mt-5 max-w-xl text-base text-gray-600 sm:text-lg lg:mx-0">
-              Platform digital untuk memudahkan proses registrasi, verifikasi,
-              pendataan dan pengelolaan Surat Keterangan Tanah (SKT) bagi
-              masyarakat dan pemerintah daerah.
+              Platform digital Pemerintah Kabupaten Kutai Timur untuk registrasi,
+              verifikasi, pendataan, dan penerbitan{' '}
+              <strong className="font-semibold text-gray-900">
+                SPPTG — Surat Pernyataan Penguasaan Tanah Garapan
+              </strong>{' '}
+              bagi masyarakat dan aparatur desa.
             </p>
 
             <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center lg:justify-start">
@@ -239,10 +249,11 @@ export function LandingPage() {
                 </Button>
               </SignedIn>
             </div>
-          </Reveal>
+          </div>
 
-          {/* Stylised product preview (pure CSS — no screenshot needed) */}
-          <Reveal direction="left" delay={150} className="relative">
+          {/* Stylised product preview (pure CSS — no screenshot needed).
+              Above the fold as well, so it skips <Reveal> for the same reason. */}
+          <div className="relative">
             <div className="rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl shadow-blue-900/10 sm:p-4">
               <div className="mb-3 flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
@@ -298,7 +309,7 @@ export function LandingPage() {
                 </div>
               </div>
             </div>
-          </Reveal>
+          </div>
         </div>
       </section>
 

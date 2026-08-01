@@ -2,24 +2,58 @@ import './globals.css';
 import type { Metadata, Viewport } from 'next';
 import { ReactNode } from 'react';
 import { Providers } from './providers';
-
-const APP_NAME = 'SIAPTAH';
-const APP_DESCRIPTION =
-  'Sistem Informasi Administrasi Pertanahan — pendaftaran dan penerbitan SPPTG.';
+import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL } from '@/lib/site';
 
 export const metadata: Metadata = {
+  // Makes every relative URL below — canonical, OG image, manifest — resolve to
+  // an absolute one. Without it Next emits relative OG tags, which crawlers and
+  // chat apps ignore, and a canonical tag cannot be expressed at all.
+  metadataBase: new URL(SITE_URL),
   // Pages set their own title; this template appends the app name.
   title: {
-    default: `${APP_NAME} — Sistem Informasi Administrasi Pertanahan`,
-    template: `%s | ${APP_NAME}`,
+    default: `${SITE_NAME} — ${SITE_TAGLINE}`,
+    template: `%s | ${SITE_NAME}`,
   },
-  description: APP_DESCRIPTION,
-  applicationName: APP_NAME,
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
   manifest: '/manifest.webmanifest',
+  // Public by default; the private routes each opt out, and robots.ts disallows
+  // them as well. `max-image-preview: large` is what allows a rich result.
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
+  // Drives the preview card in WhatsApp, Facebook and Telegram — the channels a
+  // pemda actually socialises a service through.
+  openGraph: {
+    type: 'website',
+    siteName: SITE_NAME,
+    title: `${SITE_NAME} — ${SITE_TAGLINE} Kabupaten Kutai Timur`,
+    description: SITE_DESCRIPTION,
+    url: '/',
+    locale: 'id_ID',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: `${SITE_NAME} — ${SITE_TAGLINE} Kabupaten Kutai Timur`,
+    description: SITE_DESCRIPTION,
+  },
+  // Google Search Console's meta-tag method. Read at *build* time because "/"
+  // is prerendered; unset simply emits no tag, which is the correct behaviour
+  // for anyone verifying by HTML file or DNS record instead.
+  verification: {
+    google: process.env.GOOGLE_SITE_VERIFICATION || undefined,
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: APP_NAME,
+    title: SITE_NAME,
   },
   icons: {
     icon: [

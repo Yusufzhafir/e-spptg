@@ -463,7 +463,12 @@ NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=
 GMAIL_USER=
 GMAIL_APP_PASSWORD=
 MAIL_FROM_NAME=         # Display name on outgoing mail (default: SIAPTAH)
-NEXT_PUBLIC_APP_URL=    # Absolute base URL used to build links inside emails
+NEXT_PUBLIC_APP_URL=    # Absolute base URL for email links AND the SEO canonical
+                        # host (src/lib/site.ts); unset falls back to the
+                        # production domain, never localhost
+GOOGLE_SITE_VERIFICATION=  # Optional. Search Console "HTML tag" value. Read at
+                        # BUILD time — "/" is prerendered, so it must be a build
+                        # arg (see Dockerfile), not just a runtime env
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 AWS_REGION=
