@@ -4,7 +4,10 @@ import { AuthShell } from '@/components/AuthShell';
 import { ForgotPasswordForm } from '@/components/auth/ForgotPasswordForm';
 import { AuthFormSkeleton } from '@/components/auth/AuthFormSkeleton';
 
-export const metadata: Metadata = { title: 'Lupa Kata Sandi' };
+export const metadata: Metadata = {
+  title: 'Lupa Kata Sandi',
+  robots: { index: false, follow: false },
+};
 
 export default function ForgotPasswordPage() {
   return (

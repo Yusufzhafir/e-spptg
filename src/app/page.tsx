@@ -1,35 +1,48 @@
-'use client';
-
+import type { Metadata } from 'next';
 import { LandingPage } from '@/components/LandingPage';
-import { useAuthRole } from '@/components/AuthRoleProvider';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { RedirectSignedInHome } from '@/components/RedirectSignedInHome';
+import { landingStructuredData } from '@/lib/structured-data';
+import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE } from '@/lib/site';
+
+/**
+ * The landing page is a **server component on purpose**.
+ *
+ * It used to be a client component that rendered a spinner until `auth.me`
+ * resolved, which meant the prerendered HTML contained no heading and no copy at
+ * all — search engines and link previews saw an empty page. Signing-in visitors
+ * are redirected by `src/proxy.ts` before this HTML is ever sent, so the page
+ * does not need to guard the render itself; `<RedirectSignedInHome />` is only a
+ * client-side safety net and renders nothing.
+ */
+export const metadata: Metadata = {
+  // `absolute` so the root page is not titled "… | SIAPTAH" twice over.
+  title: {
+    absolute: `${SITE_NAME} — ${SITE_TAGLINE} Kabupaten Kutai Timur`,
+  },
+  description: SITE_DESCRIPTION,
+  alternates: { canonical: '/' },
+  keywords: [
+    'SPPTG',
+    'Surat Pernyataan Penguasaan Tanah Garapan',
+    'SIAPTAH',
+    'administrasi pertanahan',
+    'Kutai Timur',
+    'pendaftaran tanah',
+    'pemerintah kabupaten Kutai Timur',
+  ],
+};
 
 export default function HomePage() {
-  const { isAuthenticated, isLoading } = useAuthRole();
-  const router = useRouter();
-
-  // `src/proxy.ts` already redirects visitors who carry a session cookie, so
-  // this only catches the case it cannot see: a cookie that turned out to be
-  // valid after the tRPC round trip on a client-side navigation to "/".
-  // `replace` (not `push`) so the back button doesn't land them here again.
-  useEffect(() => {
-    if (isAuthenticated) {
-      router.replace('/app');
-    }
-  }, [isAuthenticated, router]);
-
-  // Show the spinner while auth is resolving *and* while the redirect above is
-  // in flight. Rendering <LandingPage /> for signed-in users is what made the
-  // landing page flash before the redirect completed.
-  if (isLoading || isAuthenticated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-
-  // Show landing page for unauthenticated users
-  return <LandingPage />;
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        // The payload is built from constants in this repo, never from user
+        // input, so there is nothing here for a visitor to inject into.
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(landingStructuredData()) }}
+      />
+      <RedirectSignedInHome />
+      <LandingPage />
+    </>
+  );
 }
