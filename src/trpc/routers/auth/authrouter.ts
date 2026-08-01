@@ -648,6 +648,15 @@ export const authRouter = router({
       const passwordHash = await hashPassword(input.newPassword);
       await queries.setUserPassword(found.user.id, passwordHash);
 
+      // Opening this link proves control of the mailbox, which is exactly what
+      // verification asks for — so redeeming it verifies the address too. That
+      // is what lets an admin-created account be born unverified: its invite is
+      // one of these links, and without this the person would set a password
+      // and then be refused at login for never having "verified".
+      if (!found.user.emailVerifiedAt) {
+        await queries.markEmailVerified(found.user.id);
+      }
+
       // Whoever asked for this link may be locking an intruder out; drop every
       // existing session rather than leaving the old cookies valid.
       await invalidateAllUserSessions(found.user.id);

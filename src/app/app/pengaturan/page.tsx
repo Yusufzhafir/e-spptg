@@ -34,10 +34,10 @@ export default function PengaturanPage() {
   const createUserMutation = trpc.users.create.useMutation({
     onSuccess: (user) => {
       refetchUsers();
+      // The server only resolves once the invite is actually handed to SMTP, so
+      // this message can state it as fact rather than as an intention.
       toast.success(
-        user.hasPassword
-          ? 'Pengguna berhasil ditambahkan dan dapat langsung masuk.'
-          : `Pengguna berhasil ditambahkan. Email undangan untuk membuat kata sandi dikirim ke ${user.email}.`
+        `Pengguna berhasil ditambahkan. Email undangan untuk membuat kata sandi dikirim ke ${user.email}.`
       );
     },
     onError: (error) => {
@@ -215,11 +215,14 @@ export default function PengaturanPage() {
   }, [prohibitedAreasData]);
 
   const handleCreateUser = (
-    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'> & {
-      password?: string;
-    }
+    data: Pick<User, 'nama' | 'nipNik' | 'email' | 'peran' | 'assignedVillageId' | 'assignedKecamatan' | 'nomorHP' | 'status'>
   ) => {
-    createUserMutation.mutate({
+    // No password travels with this: the server always creates the account
+    // without one and mails an invite link to set it.
+    //
+    // `mutateAsync` rather than `mutate` so the dialog can wait for the invite
+    // to be sent; UsersTab catches the rejection, and `onError` still reports it.
+    return createUserMutation.mutateAsync({
       nama: data.nama,
       nipNik: data.nipNik,
       email: data.email,
@@ -228,9 +231,6 @@ export default function PengaturanPage() {
       assignedKecamatan: data.assignedKecamatan ?? undefined,
       status: data.status,
       nomorHP: data.nomorHP || undefined,
-      // Blank means "invite by email" — the server creates the account without
-      // a password and mails a link to set one.
-      password: data.password || undefined,
     });
   };
 

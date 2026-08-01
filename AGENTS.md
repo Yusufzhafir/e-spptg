@@ -262,10 +262,14 @@ password that does not exist.
 **Registration** (`auth.register`) always lands on `Viewer`; the role is never
 read from input. An admin promotes the account afterwards.
 
-**Admin-created accounts** (`users.create`) either take an initial password or —
-by default — are created with `password_hash = NULL` and emailed an invite link
-to choose one. `hasPassword` is what the UI shows; the hash never leaves the
-server (`toClientUser` strips it from every read).
+**Admin-created accounts** (`users.create`) are *always* created with
+`password_hash = NULL` **and** `email_verified_at = NULL`, then emailed an invite
+link — an admin cannot set an initial password, and the procedure refuses to
+create anyone at all when the mailer is unconfigured (there would be no way into
+the account). Redeeming that link in `auth.resetPassword` both sets the first
+password and stamps `email_verified_at`, which is what keeps the account from
+being rejected at login as unverified. `hasPassword` is what the UI shows; the
+hash never leaves the server (`toClientUser` strips it from every read).
 
 **Deactivation** (`users.toggleStatus`, or `status: 'Nonaktif'` via
 `users.update`) deletes the account's session rows, and `src/trpc/init.ts`
