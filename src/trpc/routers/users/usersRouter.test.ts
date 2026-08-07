@@ -74,7 +74,7 @@ function ctx(peran: UserRole = 'Superadmin'): TRPCContext {
 
 const payload = {
   nama: 'Siti Rahayu',
-  email: 'siti@pemda.go.id',
+  email: 'siti@gmail.com',
   nipNik: '3201010101010002',
   peran: 'Viewer' as const,
 };

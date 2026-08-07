@@ -17,6 +17,8 @@ import { adminProcedure, protectedProcedure, router } from '@/trpc/init';
 import {
   assertCanAccessDraft,
   assertCanAccessSubmission,
+  assertCanViewSubmissionDocument,
+  canViewSubmissionDocumentCategory,
   isPrivilegedProcessor,
   isSuperadmin,
 } from '@/server/authz';
@@ -238,15 +240,19 @@ export const documentsRouter = router({
 
       const documents = await queries.listDocumentsBySubmission(input.submissionId);
 
-      return documents.map((d) => ({
-        id: d.id,
-        filename: d.filename,
-        fileType: d.fileType,
-        size: d.size,
-        url: d.url,
-        category: d.category,
-        uploadedAt: d.uploadedAt,
-      }));
+      return documents
+        // Oversight roles get the SPPTG certificate only — filter here rather
+        // than in the client so the berkas never leaves the server.
+        .filter((d) => canViewSubmissionDocumentCategory(ctx.appUser!, d.category))
+        .map((d) => ({
+          id: d.id,
+          filename: d.filename,
+          fileType: d.fileType,
+          size: d.size,
+          url: d.url,
+          category: d.category,
+          uploadedAt: d.uploadedAt,
+        }));
     }),
 
   getSignedDownloadUrl: protectedProcedure
@@ -279,6 +285,7 @@ export const documentsRouter = router({
           villageId: submission.villageId,
           desaKecamatan: submission.desaKecamatan,
         });
+        assertCanViewSubmissionDocument(ctx.appUser!, document.category);
       } else if (document.draftId) {
         const draft = await draftQueries.getDraftById(document.draftId);
         if (!draft) {
@@ -367,6 +374,7 @@ export const documentsRouter = router({
           villageId: submission.villageId,
           desaKecamatan: submission.desaKecamatan,
         });
+        assertCanViewSubmissionDocument(ctx.appUser!, document.category);
       } else if (document.draftId) {
         const draft = await draftQueries.getDraftById(document.draftId);
         if (!draft) {

@@ -18,7 +18,6 @@ import { toast } from 'sonner';
 import { trpc } from '@/trpc/client';
 import { usePDFGenerator } from '@/hooks/usePDFGenerator';
 import { buildSPPTGPDFData } from '@/lib/spptg-pdf-data';
-import { generateSPPTGDocxBlob } from '@/lib/spptg-docx-generator';
 
 interface Step4Props {
   draft: SubmissionDraft;
@@ -32,7 +31,6 @@ interface Step4Props {
 
 type GeneratedDocs = {
   pdfUrl: string;
-  docxUrl: string;
   baseName: string;
   /**
    * The Nomor SPPTG and Tanggal Diterbitkan actually baked into these files.
@@ -266,7 +264,7 @@ export function Step4Issuance({
   };
 
   /**
-   * Generate the SPPTG certificate as PDF + DOCX for download.
+   * Generate the SPPTG certificate as a PDF for download.
    * Note: nomor SPPTG and tanggal terbit are NOT auto-filled here — they use
    * whatever the user entered. The generated files are provided as download
    * links; they are NOT uploaded as the softcopy (that is uploaded manually).
@@ -302,25 +300,20 @@ export function Step4Issuance({
         includeAdministrative: true,
         includeMap: true,
       });
-      const docxBlob = await generateSPPTGDocxBlob(pdfData);
-      const docxUrl = URL.createObjectURL(docxBlob);
-
-      // Revoke any previously generated URLs to avoid memory leaks
+      // Revoke any previously generated URL to avoid memory leaks
       if (generatedDocs) {
         URL.revokeObjectURL(generatedDocs.pdfUrl);
-        URL.revokeObjectURL(generatedDocs.docxUrl);
       }
 
       const baseName = `SPPTG_${(draft.nomorSPPTG || 'dokumen').replace(/[\\/]/g, '_')}`;
       setGeneratedDocs({
         pdfUrl: pdfResult.url,
-        docxUrl,
         baseName,
         nomorSPPTG: draft.nomorSPPTG.trim(),
         tanggalTerbit: draft.tanggalTerbit,
       });
 
-      toast.success('Dokumen SPPTG berhasil dibuat. Silakan unduh dalam format PDF atau DOCX.');
+      toast.success('Dokumen SPPTG berhasil dibuat. Silakan unduh dalam format PDF.');
     } catch (error: unknown) {
       console.error('Document generation error:', error);
       if (error instanceof Error && error.message) {
@@ -379,8 +372,8 @@ export function Step4Issuance({
 
   const isFormComplete = draft.dokumenSPPTG && draft.nomorSPPTG && draft.tanggalTerbit;
 
-  // The generated PDF/DOCX are fixed blobs: editing the number or the issue date
-  // afterwards leaves the download links pointing at a certificate that no
+  // The generated PDF is a fixed blob: editing the number or the issue date
+  // afterwards leaves the download link pointing at a certificate that no
   // longer matches the form. Flag it instead of letting it pass silently.
   const generatedDocsAreStale =
     generatedDocs !== null &&
@@ -446,7 +439,7 @@ export function Step4Issuance({
 
       {draft.status === 'SPPTG terdaftar' && (
         <>
-          {/* PDF/DOCX Generation Button */}
+          {/* PDF Generation Button */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -456,7 +449,7 @@ export function Step4Issuance({
                 <p className="text-xs text-blue-700">
                   Buat dokumen SPPTG dari data pengajuan. Dokumen memakai Nomor SPPTG
                   dan Tanggal Diterbitkan yang Anda isi di atas (tidak diisi otomatis).
-                  Hasilnya berupa tautan unduh (PDF &amp; DOCX) — bukan diunggah otomatis
+                  Hasilnya berupa tautan unduh PDF — bukan diunggah otomatis
                   sebagai softcopy.
                 </p>
               </div>
@@ -521,17 +514,6 @@ export function Step4Issuance({
                 >
                   <FileDown className="w-4 h-4 mr-2" />
                   Unduh PDF
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    triggerBrowserDownload(generatedDocs.docxUrl, `${generatedDocs.baseName}.docx`)
-                  }
-                  className="text-blue-700 border-blue-200 hover:bg-blue-50"
-                >
-                  <FileDown className="w-4 h-4 mr-2" />
-                  Unduh DOCX
                 </Button>
               </div>
             </div>

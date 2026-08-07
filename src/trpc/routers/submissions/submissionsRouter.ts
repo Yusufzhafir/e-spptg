@@ -10,6 +10,7 @@ import * as submissionQueries from '@/server/db/queries/submissions';
 import * as draftQueries from '@/server/db/queries/drafts';
 import * as documentQueries from '@/server/db/queries/documents';
 import * as notificationQueries from '@/server/db/queries/notifications';
+import { pushSubmissionEvent, type SubmissionPushEvent } from '@/server/push/notify';
 import { computeOverlaps } from '@/server/postgis';
 import { sql, eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
@@ -35,6 +36,10 @@ export const submissionsRouter = router({
     submitDraft: protectedProcedure
         .input(createSubmissionFromDraftSchema)
         .mutation(async ({ ctx, input }) => {
+            // Device notifications are dispatched after the transaction commits
+            // (see below), so the event is captured here rather than sent inline.
+            let pushEvent: SubmissionPushEvent | null = null;
+
             // Wrap all database operations in a transaction
             // This ensures that if any operation fails, all changes are rolled back
             const submitted = await ctx.db.transaction(async (tx) => {
@@ -273,6 +278,16 @@ export const submissionsRouter = router({
                         tx
                     );
 
+                    pushEvent = {
+                        submissionId,
+                        kind: editingSubmissionId ? 'updated' : 'created',
+                        status: submissionData.status,
+                        namaPemilik: submissionData.namaPemilik,
+                        villageId: draftVillageId,
+                        ownerUserId: notifOwnerUserId,
+                        actorUserId: ctx.appUser!.id,
+                    };
+
                     // Compute overlaps (pass transaction)
                     await computeOverlaps(submissionId, tx);
 
@@ -322,6 +337,11 @@ export const submissionsRouter = router({
             // rolls back would only cost a recompute, but doing it inside would
             // hold the database transaction open on a Redis round trip.
             await invalidateDashboard();
+
+            // Only now that the row is durable: a push for a rolled-back
+            // pengajuan would open a detail page that 404s.
+            if (pushEvent) await pushSubmissionEvent(pushEvent);
+
             return submitted;
         }),
 
@@ -514,6 +534,35 @@ export const submissionsRouter = router({
                 // every cached aggregate is dropped rather than waiting out the
                 // TTL — a verifikator must see their own decision immediately.
                 await invalidateDashboard();
+
+                // A decision on someone's berkas is the event people most need
+                // to hear about, so it feeds the bell and the device push just
+                // like a new pengajuan does. The status change is already
+                // committed at this point, so a failure here is logged rather
+                // than reported as a failed status update.
+                try {
+                    await notificationQueries.createNotification({
+                        submissionId: input.submissionId,
+                        type: 'updated',
+                        status: input.newStatus,
+                        namaPemilik: submission.namaPemilik,
+                        villageId: submission.villageId,
+                        ownerUserId: submission.ownerUserId,
+                        actorUserId: ctx.appUser!.id,
+                    });
+                } catch (error) {
+                    console.error('Gagal mencatat notifikasi perubahan status:', error);
+                }
+
+                await pushSubmissionEvent({
+                    submissionId: input.submissionId,
+                    kind: 'status',
+                    status: input.newStatus,
+                    namaPemilik: submission.namaPemilik,
+                    villageId: submission.villageId,
+                    ownerUserId: submission.ownerUserId,
+                    actorUserId: ctx.appUser!.id,
+                });
 
                 ctx.audit.set({
                     entitasId: input.submissionId,

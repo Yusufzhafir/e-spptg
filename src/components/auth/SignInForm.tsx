@@ -192,7 +192,7 @@ export function SignInForm() {
             autoComplete="username"
             autoFocus={step === 'email'}
             readOnly={step === 'password'}
-            placeholder="nama@pemda.go.id"
+            placeholder="nama@gmail.com"
             value={email}
             onChange={(event) => {
               setEmail(event.target.value);

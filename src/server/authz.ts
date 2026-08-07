@@ -95,6 +95,41 @@ export function getSubmissionScopeForUser(user: AppUser): {
   return { villageId: requireAssignedVillageId(user) };
 }
 
+/**
+ * Oversight roles read a filed pengajuan to confirm the certificate exists, not
+ * to inspect the applicant's identity papers. Kecamatan and Superadmin therefore
+ * see only the issued SPPTG on a submission — never the KTP, KK, kwitansi or any
+ * other berkas. The desa staff who actually process the berkas (Admin,
+ * Verifikator) and the Viewer who owns it keep full access.
+ *
+ * Drafts are deliberately not covered: the wizard has to show its own uploads,
+ * and Kecamatan cannot reach a draft at all (see `canAccessDraft`).
+ */
+export function canViewSubmissionDocumentCategory(
+  user: AppUser,
+  category: string
+): boolean {
+  if (isSuperadmin(user) || isKecamatanViewer(user)) {
+    return category === 'SPPG';
+  }
+  return true;
+}
+
+/** True when the role only ever sees the SPPTG certificate on a submission. */
+export function isCertificateOnlyDocumentViewer(user: AppUser): boolean {
+  return isSuperadmin(user) || isKecamatanViewer(user);
+}
+
+export function assertCanViewSubmissionDocument(user: AppUser, category: string) {
+  if (!canViewSubmissionDocumentCategory(user, category)) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message:
+        'Peran Anda hanya dapat membuka dokumen SPPTG pada pengajuan ini.',
+    });
+  }
+}
+
 export function canAccessDraft(user: AppUser, draft: DraftAccessRecord): boolean {
   if (isSuperadmin(user)) return true;
   if (isViewer(user)) return draft.userId === user.id;

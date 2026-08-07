@@ -4,7 +4,7 @@ import { REDACTED, diffFields, redact } from './redact';
 describe('redact — menyensor rahasia', () => {
   it('menyensor kata sandi, hash, token, dan secret apa pun', () => {
     const out = redact({
-      email: 'budi@pemda.go.id',
+      email: 'budi@gmail.com',
       password: 'RahasiaBanget123',
       passwordHash: 'scrypt$16384$8$1$c2FsdA==$aGFzaA==',
       newPassword: 'Baru123',
@@ -16,7 +16,7 @@ describe('redact — menyensor rahasia', () => {
     }) as Record<string, unknown>;
 
     expect(out.email, 'email bukan rahasia dan berguna di jejak audit').toBe(
-      'budi@pemda.go.id'
+      'budi@gmail.com'
     );
     for (const field of [
       'password',
