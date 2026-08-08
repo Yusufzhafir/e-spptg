@@ -9,6 +9,9 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:unit": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
     "generate-schema": "pnpm drizzle-kit generate --config stag.drizzle.config.ts",
     "pull:stag": "pnpm drizzle-kit pull --config stag.drizzle.config.ts",
     "push:stag": "pnpm drizzle-kit push --config stag.drizzle.config.ts",
@@ -91,6 +94,7 @@
     "zod": "^4.1.13"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/google.maps": "^3.58.1",
     "@types/node": "^20",

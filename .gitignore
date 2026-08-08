@@ -41,3 +41,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# playwright browser suite (see e2e/README.md)
+/e2e/.auth/
+/e2e/.artifacts/
+/playwright-report/
+/test-results/
