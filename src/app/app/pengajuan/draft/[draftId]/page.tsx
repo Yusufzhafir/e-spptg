@@ -1,27 +1,64 @@
 'use client';
 
+import { Suspense, useEffect, useRef } from 'react';
 import { SubmissionFlow } from '@/components/SubmissionFlow';
 import { useAppState } from '../../../layout';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import { toast } from 'sonner';
 import { trpc } from '@/trpc/client';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, ArrowLeft } from 'lucide-react';
 
+function DraftLoading() {
+  return (
+    <div className="flex items-center justify-center py-16">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <span className="ml-3 text-gray-600">Memuat draft...</span>
+    </div>
+  );
+}
+
+/**
+ * `useSearchParams` needs a Suspense boundary above it, so the editor itself
+ * lives in an inner component.
+ */
 export default function DraftEditorPage() {
+  return (
+    <Suspense fallback={<DraftLoading />}>
+      <DraftEditor />
+    </Suspense>
+  );
+}
+
+function DraftEditor() {
   const { handleCompleteSubmission } = useAppState();
   const router = useRouter();
   const params = useParams<{ draftId: string }>();
-  
+  const searchParams = useSearchParams();
+
   const draftId = Number(params.draftId);
-  
+
   // Validate draftId is a number
   const isValidId = !isNaN(draftId) && draftId > 0;
-  
+
   // Query the draft to verify it exists and user has access
   const { data: draft, isLoading, error } = trpc.drafts.getById.useQuery(
     { draftId },
     { enabled: isValidId }
   );
+
+  // "Draft baru berhasil dibuat" is raised here rather than on the list page, so
+  // the confirmation appears once the editor is actually on screen. The flag is
+  // then stripped from the URL: a refresh or a shared link must not replay it.
+  const announcedNewDraft = useRef(false);
+  const isNewDraft = searchParams.get('baru') === '1';
+
+  useEffect(() => {
+    if (!isNewDraft || announcedNewDraft.current || !draft) return;
+    announcedNewDraft.current = true;
+    toast.success('Draft baru berhasil dibuat');
+    router.replace(`/app/pengajuan/draft/${draftId}`);
+  }, [isNewDraft, draft, draftId, router]);
 
   const handleCancelSubmissionFlow = () => {
     router.push('/app/pengajuan');
@@ -46,12 +83,7 @@ export default function DraftEditorPage() {
 
   // Loading state
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        <span className="ml-3 text-gray-600">Memuat draft...</span>
-      </div>
-    );
+    return <DraftLoading />;
   }
 
   // Error state (draft not found or unauthorized)

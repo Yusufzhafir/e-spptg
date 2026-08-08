@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { RequireRole } from '@/components/RequireRole';
 import { useRouter } from 'next/navigation';
 import { trpc } from '@/trpc/client';
@@ -137,16 +137,27 @@ export default function DraftsListPage() {
       <ChevronsUpDown className="w-3.5 h-3.5 text-gray-400" />
     );
 
+  // Stays true until the draft editor has actually rendered, so the button
+  // cannot be clicked a second time during the navigation itself — the mutation's
+  // own isPending drops the moment the row is created, well before we leave.
+  const [isOpeningDraft, startOpeningDraft] = useTransition();
+
   // Create draft mutation
   const createDraftMutation = trpc.drafts.create.useMutation({
     onSuccess: (data) => {
-      toast.success('Draft baru berhasil dibuat');
-      router.push(`/app/pengajuan/draft/${data.id}`);
+      // The success toast is raised by the draft editor once it is on screen
+      // (see the `?baru=1` flag), so the confirmation lands on the page the
+      // user was sent to rather than on the one they are leaving.
+      startOpeningDraft(() => {
+        router.push(`/app/pengajuan/draft/${data.id}?baru=1`);
+      });
     },
     onError: (error) => {
       toast.error(`Gagal membuat draft: ${error.message}`);
     },
   });
+
+  const isCreatingDraft = createDraftMutation.isPending || isOpeningDraft;
 
   // Delete draft mutation
   const deleteDraftMutation = trpc.drafts.delete.useMutation({
@@ -238,11 +249,11 @@ export default function DraftsListPage() {
           </div>
           <Button
             onClick={handleCreateDraft}
-            disabled={createDraftMutation.isPending}
+            disabled={isCreatingDraft}
             className="bg-blue-600 hover:bg-blue-700"
           >
             <Plus className="w-4 h-4 mr-2" />
-            {createDraftMutation.isPending ? 'Membuat...' : 'Buat Draft Baru'}
+            {isCreatingDraft ? 'Membuat...' : 'Buat Draft Baru'}
           </Button>
         </div>
       </div>
@@ -470,11 +481,11 @@ export default function DraftsListPage() {
             </p>
             <Button
               onClick={handleCreateDraft}
-              disabled={createDraftMutation.isPending}
+              disabled={isCreatingDraft}
               className="bg-blue-600 hover:bg-blue-700"
             >
               <Plus className="w-4 h-4 mr-2" />
-              {createDraftMutation.isPending ? 'Membuat...' : 'Buat Draft Baru'}
+              {isCreatingDraft ? 'Membuat...' : 'Buat Draft Baru'}
             </Button>
           </div>
         )}
