@@ -56,7 +56,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog';
-import { Plus, Trash2, MapPin, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, MapPin, AlertTriangle, Pencil, X, Check } from 'lucide-react';
+import { SearchableSelect } from '../SearchableSelect';
 import { Badge } from '../ui/badge';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -100,7 +101,35 @@ type NewWitnessWithUsage = {
   nama?: string;
   sisi?: BoundaryDirection;
   penggunaanLahanBatas?: string;
+  umur?: string;
+  pekerjaan?: string;
+  alamat?: string;
 };
+
+const EMPTY_WITNESS_FORM: NewWitnessWithUsage = {
+  nama: '',
+  sisi: '' as BoundaryDirection,
+  penggunaanLahanBatas: '',
+  umur: '',
+  pekerjaan: '',
+  alamat: '',
+};
+
+const BOUNDARY_DIRECTIONS: BoundaryDirection[] = [
+  'Utara',
+  'Timur Laut',
+  'Timur',
+  'Tenggara',
+  'Selatan',
+  'Barat Daya',
+  'Barat',
+  'Barat Laut',
+];
+
+const BOUNDARY_DIRECTION_OPTIONS = BOUNDARY_DIRECTIONS.map((direction) => ({
+  value: direction,
+  label: direction,
+}));
 
 function formatUtmValue(value: number): string {
   return value.toFixed(2);
@@ -138,11 +167,9 @@ export function Step2FieldValidation({
   const [recenterSignal, setRecenterSignal] = useState(() =>
     hasValidPolygonCoordinates(draft.coordinatesGeografis) ? 1 : 0
   );
-  const [newWitness, setNewWitness] = useState<NewWitnessWithUsage>({
-    nama: '',
-    sisi: '' as BoundaryDirection,
-    penggunaanLahanBatas: '',
-  });
+  const [newWitness, setNewWitness] = useState<NewWitnessWithUsage>(EMPTY_WITNESS_FORM);
+  // Set while an existing witness is being edited; the form doubles as the edit form.
+  const [editingWitnessId, setEditingWitnessId] = useState<string | null>(null);
   
   // Local state for UTM coordinates to prevent rounding issues during editing
   // We sync this with draft.coordinatesGeografis whenever draft changes or user edits
@@ -190,8 +217,14 @@ export function Step2FieldValidation({
     setRecenterSignal((value) => value + 1);
   }, []);
 
-  const handleAddWitness = () => {
-    if (!newWitness.nama) {
+  const resetWitnessForm = () => {
+    setNewWitness(EMPTY_WITNESS_FORM);
+    setEditingWitnessId(null);
+  };
+
+  /** Adds a new witness, or saves the one currently being edited. */
+  const handleSaveWitness = () => {
+    if (!newWitness.nama?.trim()) {
       toast.error('Nama saksi harus diisi');
       return;
     }
@@ -206,24 +239,53 @@ export function Step2FieldValidation({
       return;
     }
 
+    // Umur/pekerjaan/alamat are optional: they only fill in the witness block
+    // of the SPPTG, which falls back to blank lines when they are missing.
+    const umur = newWitness.umur ? parseInt(newWitness.umur, 10) : undefined;
+
     const witness: BoundaryWitness = {
-      id: `W-${Date.now()}`,
+      id: editingWitnessId || `W-${Date.now()}`,
       nama: newWitness.nama.trim(),
       sisi: newWitness.sisi,
       penggunaanLahanBatas: newWitness.penggunaanLahanBatas.trim(),
+      umur: Number.isFinite(umur) ? umur : undefined,
+      pekerjaan: newWitness.pekerjaan?.trim() || undefined,
+      alamat: newWitness.alamat?.trim() || undefined,
     };
 
-    onUpdateDraft({ saksiList: [...draft.saksiList, witness] });
+    if (editingWitnessId) {
+      onUpdateDraft({
+        saksiList: draft.saksiList.map((w) =>
+          w.id === editingWitnessId ? witness : w
+        ),
+      });
+      toast.success('Data saksi berhasil diperbarui');
+    } else {
+      onUpdateDraft({ saksiList: [...draft.saksiList, witness] });
+      toast.success('Saksi berhasil ditambahkan');
+    }
+
+    resetWitnessForm();
+  };
+
+  const handleEditWitness = (witness: BoundaryWitness) => {
+    setEditingWitnessId(witness.id);
     setNewWitness({
-      nama: '',
-      sisi: '' as BoundaryDirection,
-      penggunaanLahanBatas: '',
+      nama: witness.nama,
+      sisi: witness.sisi,
+      penggunaanLahanBatas: witness.penggunaanLahanBatas,
+      umur: witness.umur ? String(witness.umur) : '',
+      pekerjaan: witness.pekerjaan || '',
+      alamat: witness.alamat || '',
     });
-    toast.success('Saksi berhasil ditambahkan');
   };
 
   const handleRemoveWitness = (id: string) => {
     onUpdateDraft({ saksiList: draft.saksiList.filter((w) => w.id !== id) });
+    // Editing the row that just disappeared would silently re-add it on save.
+    if (editingWitnessId === id) {
+      resetWitnessForm();
+    }
     toast.info('Saksi dihapus');
   };
 
@@ -650,46 +712,130 @@ export function Step2FieldValidation({
           <p className="text-xs text-red-600">{errors.saksiList}</p>
         )}
 
-        {/* The "add a witness" row is pure input — nothing to read here. */}
+        {/* The add/edit form is pure input — nothing to read here. */}
         {!readOnly && (
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_200px_1fr_auto] gap-2">
-          <Input
-            placeholder="Nama saksi"
-            value={newWitness.nama}
-            onChange={(e) => setNewWitness({ ...newWitness, nama: e.target.value })}
-          />
-          <Select
-            value={newWitness.sisi}
-            onValueChange={(value) =>
-              setNewWitness({ ...newWitness, sisi: value as BoundaryDirection })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Sisi batas" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="Utara">Utara</SelectItem>
-              <SelectItem value="Timur Laut">Timur Laut</SelectItem>
-              <SelectItem value="Timur">Timur</SelectItem>
-              <SelectItem value="Tenggara">Tenggara</SelectItem>
-              <SelectItem value="Selatan">Selatan</SelectItem>
-              <SelectItem value="Barat Daya">Barat Daya</SelectItem>
-              <SelectItem value="Barat">Barat</SelectItem>
-              <SelectItem value="Barat Laut">Barat Laut</SelectItem>
-            </SelectContent>
-          </Select>
-          <Input
-            placeholder="Penggunaan batas lahan"
-            value={newWitness.penggunaanLahanBatas}
-            onChange={(e) =>
-              setNewWitness({ ...newWitness, penggunaanLahanBatas: e.target.value })
-            }
-          />
-          <Button onClick={handleAddWitness}>
-            <Plus className="w-4 h-4 mr-2" />
-            Tambah
-          </Button>
-        </div>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium text-gray-900">
+                {editingWitnessId ? 'Ubah Data Saksi' : 'Tambah Saksi'}
+              </p>
+              <p className="text-xs text-gray-500">
+                Umur, pekerjaan dan alamat dicetak pada SPPTG
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="saksiNama">
+                  Nama Saksi <span className="text-red-600">*</span>
+                </Label>
+                <Input
+                  id="saksiNama"
+                  placeholder="Nama lengkap saksi"
+                  value={newWitness.nama || ''}
+                  onChange={(e) =>
+                    setNewWitness({ ...newWitness, nama: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="saksiSisi">
+                  Sisi Batas <span className="text-red-600">*</span>
+                </Label>
+                <SearchableSelect
+                  id="saksiSisi"
+                  options={BOUNDARY_DIRECTION_OPTIONS}
+                  value={newWitness.sisi}
+                  onValueChange={(value) =>
+                    setNewWitness({ ...newWitness, sisi: value as BoundaryDirection })
+                  }
+                  placeholder="Pilih sisi batas"
+                  searchPlaceholder="Cari sisi batas..."
+                  emptyText="Sisi batas tidak ditemukan."
+                  disabled={readOnly}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="saksiPenggunaan">
+                  Penggunaan Batas <span className="text-red-600">*</span>
+                </Label>
+                <Input
+                  id="saksiPenggunaan"
+                  placeholder="Contoh: Sawah, Jalan desa"
+                  value={newWitness.penggunaanLahanBatas || ''}
+                  onChange={(e) =>
+                    setNewWitness({
+                      ...newWitness,
+                      penggunaanLahanBatas: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="saksiUmur">Umur</Label>
+                <Input
+                  id="saksiUmur"
+                  type="number"
+                  placeholder="Contoh: 45"
+                  min={1}
+                  max={150}
+                  value={newWitness.umur || ''}
+                  onChange={(e) =>
+                    setNewWitness({ ...newWitness, umur: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="saksiPekerjaan">Pekerjaan</Label>
+                <Input
+                  id="saksiPekerjaan"
+                  placeholder="Contoh: Petani"
+                  value={newWitness.pekerjaan || ''}
+                  onChange={(e) =>
+                    setNewWitness({ ...newWitness, pekerjaan: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="saksiAlamat">Alamat</Label>
+                <Input
+                  id="saksiAlamat"
+                  placeholder="Alamat sesuai KTP"
+                  value={newWitness.alamat || ''}
+                  onChange={(e) =>
+                    setNewWitness({ ...newWitness, alamat: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap justify-end gap-2">
+              {editingWitnessId && (
+                <Button type="button" variant="outline" onClick={resetWitnessForm}>
+                  <X className="w-4 h-4 mr-2" />
+                  Batal
+                </Button>
+              )}
+              <Button type="button" onClick={handleSaveWitness}>
+                {editingWitnessId ? (
+                  <>
+                    <Check className="w-4 h-4 mr-2" />
+                    Simpan Perubahan
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Tambah
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
         )}
 
         {draft.saksiList.length > 0 && (
@@ -700,25 +846,46 @@ export function Step2FieldValidation({
                   <TableHead>Nama Saksi</TableHead>
                   <TableHead>Sisi Batas</TableHead>
                   <TableHead>Penggunaan Batas</TableHead>
+                  <TableHead>Umur</TableHead>
+                  <TableHead>Pekerjaan</TableHead>
+                  <TableHead>Alamat</TableHead>
                   {!readOnly && <TableHead className="text-right">Aksi</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {draft.saksiList.map((witness,i) => {
                   return (
-                  <TableRow key={`${witness.id}-${i}`}>
+                  <TableRow
+                    key={`${witness.id}-${i}`}
+                    className={
+                      editingWitnessId === witness.id ? 'bg-blue-50' : undefined
+                    }
+                  >
                     <TableCell>{witness.nama}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{witness.sisi}</Badge>
                     </TableCell>
                     <TableCell>{witness.penggunaanLahanBatas || '-'}</TableCell>
+                    <TableCell>{witness.umur || '-'}</TableCell>
+                    <TableCell>{witness.pekerjaan || '-'}</TableCell>
+                    <TableCell>{witness.alamat || '-'}</TableCell>
                     {!readOnly && (
-                      <TableCell className="text-right">
+                      <TableCell className="text-right whitespace-nowrap">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEditWitness(witness)}
+                          className="text-blue-600 hover:text-blue-700"
+                          aria-label={`Ubah data saksi ${witness.nama}`}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => handleRemoveWitness(witness.id)}
                           className="text-red-600 hover:text-red-700"
+                          aria-label={`Hapus saksi ${witness.nama}`}
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
@@ -827,6 +994,48 @@ export function Step2FieldValidation({
               max={new Date().getFullYear()}
             />
           </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="statusTanah">Status Tanah</Label>
+            <Input
+              id="statusTanah"
+              value={draft.statusTanah || ''}
+              onChange={(e) => onUpdateDraft({ statusTanah: e.target.value })}
+              placeholder="Contoh: Tanah Negara, Tanah Ulayat"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="tahunPerolehan">Tahun Perolehan</Label>
+            <Input
+              id="tahunPerolehan"
+              type="number"
+              value={draft.tahunPerolehan || ''}
+              onChange={(e) => {
+                const value = e.target.value ? parseInt(e.target.value) : undefined;
+                onUpdateDraft({ tahunPerolehan: value });
+              }}
+              placeholder="Contoh: 2005"
+              min={1900}
+              max={new Date().getFullYear()}
+            />
+          </div>
+        </div>
+
+        <div>
+          <Label htmlFor="asalPerolehan">Asal Perolehan</Label>
+          <Input
+            id="asalPerolehan"
+            value={draft.asalPerolehan || ''}
+            onChange={(e) => onUpdateDraft({ asalPerolehan: e.target.value })}
+            placeholder="Contoh: jual beli dengan Bapak Ahmad, warisan orang tua"
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            Dicetak pada SPPTG: &quot;saya peroleh dari ... sejak tahun ...&quot;.
+            Kosongkan bila akan diisi manual.
+          </p>
         </div>
       </fieldset>
 

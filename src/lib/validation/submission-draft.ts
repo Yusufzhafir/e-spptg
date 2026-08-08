@@ -39,6 +39,10 @@ export const boundaryWitnessSchema = z.object({
     .string()
     .trim()
     .min(2, 'Penggunaan batas lahan minimal 2 karakter'),
+  // Optional identity data, printed on the SPPTG witness block
+  umur: z.number().int().min(1).max(150).optional(),
+  pekerjaan: z.string().trim().optional(),
+  alamat: z.string().trim().optional(),
 });
 
 export type BoundaryWitness = z.infer<typeof boundaryWitnessSchema>;
@@ -251,6 +255,9 @@ export const submissionDraftPayloadSchema = z.object({
   kabupaten: z.string().optional(),
   penggunaanLahan: z.string().optional(),
   tahunAwalGarap: z.number().optional(),
+  statusTanah: z.string().optional(),
+  asalPerolehan: z.string().optional(),
+  tahunPerolehan: z.number().optional(),
   namaKepalaDesa: z.string().optional(),
   juruUkur: researchTeamMemberSchema.optional(),
   pihakBPD: researchTeamMemberSchema.optional(),

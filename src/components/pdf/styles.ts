@@ -225,6 +225,92 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
+  // Witness identity block ("1. Nama / Umur / Pekerjaan / Alamat")
+  witnessIdentity: {
+    flexDirection: 'row',
+    marginBottom: 10,
+  },
+
+  identityRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginBottom: 3,
+  },
+
+  identityLabel: {
+    fontFamily: FONTS.serif,
+    fontSize: FONT_SIZES.text,
+    width: 70,
+  },
+
+  identityColon: {
+    width: 14,
+  },
+
+  identityValue: {
+    fontFamily: FONTS.serif,
+    fontSize: FONT_SIZES.text,
+  },
+
+  // Dotted fill-in line
+  dottedLine: {
+    flex: 1,
+    borderBottomWidth: 1,
+    borderBottomStyle: 'dotted',
+    borderBottomColor: COLORS.border,
+  },
+
+  // Signature area split into two columns
+  signatureColumns: {
+    flexDirection: 'row',
+    marginTop: 6,
+  },
+
+  signatureColumnLeft: {
+    flex: 1,
+    paddingRight: 16,
+  },
+
+  signatureColumnRight: {
+    flex: 1,
+    alignItems: 'center',
+  },
+
+  signatureCentered: {
+    fontFamily: FONTS.serif,
+    fontSize: FONT_SIZES.text,
+    textAlign: 'center',
+  },
+
+  signatureName: {
+    marginTop: 6,
+  },
+
+  witnessSignature: {
+    marginTop: 14,
+  },
+
+  witnessSignatureNumber: {
+    fontFamily: FONTS.serif,
+    fontSize: FONT_SIZES.text,
+    width: 16,
+  },
+
+  // Boundary side the witness signs for, printed where the form has dots
+  witnessSignatureSide: {
+    fontFamily: FONTS.serif,
+    fontSize: FONT_SIZES.text,
+    flex: 1,
+  },
+
+  // Signing room between the boundary side and the witness name
+  witnessSignatureName: {
+    fontFamily: FONTS.serif,
+    fontSize: FONT_SIZES.text,
+    marginTop: 38,
+    paddingLeft: 16,
+  },
+
   meteraiBox: {
     width: 96,
     height: 96,
@@ -232,6 +318,7 @@ export const styles = StyleSheet.create({
     borderColor: COLORS.border,
     paddingVertical: 10,
     paddingHorizontal: 8,
+    marginTop: 10,
     justifyContent: 'center',
   },
 

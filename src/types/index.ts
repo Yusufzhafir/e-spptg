@@ -208,6 +208,9 @@ export interface BoundaryWitness {
   nama: string;
   sisi: BoundaryDirection;
   penggunaanLahanBatas: string; // Land use at boundary
+  umur?: number; // Age, printed on the SPPTG witness block
+  pekerjaan?: string; // Occupation, printed on the SPPTG witness block
+  alamat?: string; // Address, printed on the SPPTG witness block
 }
 
 export interface GeographicCoordinate {
@@ -265,6 +268,9 @@ export interface SubmissionDraft {
   kabupaten?: string; // Regency
   penggunaanLahan?: string; // Land use
   tahunAwalGarap?: number; // Year cultivation started
+  statusTanah?: string; // Land status (Tanah Negara / Tanah Ulayat / other)
+  asalPerolehan?: string; // Where the land was acquired from
+  tahunPerolehan?: number; // Year the land was acquired
   namaKepalaDesa?: string; // Village head name
   
   juruUkur?: ResearchTeamMember;

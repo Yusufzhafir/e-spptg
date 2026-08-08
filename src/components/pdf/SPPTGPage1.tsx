@@ -4,16 +4,19 @@
  * This component renders the first page of the SPPTG document containing:
  * - Document title and registration number
  * - Personal information section
- * - Statements 1, 2, and 3
+ * - Statement 1 (data fisik bidang tanah)
  * - Land location details (1.a)
  * - Land measurements (1.b)
  * - Land use (1.c)
  * - Map reference (1.d)
+ *
+ * Statements 2-14 continue on page 2 (SPPTGPage2).
  */
 
 import React from 'react';
 import { Page, Text, View } from '@react-pdf/renderer';
 import { styles, formatIndonesianDate, formatLuas } from './styles';
+import { DocumentFooter } from './DocumentFooter';
 import { PageProps } from './types';
 
 /**
@@ -93,7 +96,7 @@ export const SPPTGPage1: React.FC<PageProps> = ({ data }) => {
 
       {/* Declaration */}
       <Text style={[styles.text, { marginTop: 12, marginBottom: 12 }]}>
-        Dengan ini menyatakan hal-hal sebagai berikut:
+        Dengan ini menyatakan dengan sebenarnya hal-hal sebagai berikut:
       </Text>
 
       {/* Statement 1 */}
@@ -208,34 +211,9 @@ export const SPPTGPage1: React.FC<PageProps> = ({ data }) => {
 
       <View style={styles.spacerSmall} />
 
-      {/* Statement 2 */}
-      <Statement number="2.">
-        <Text style={styles.text}>
-          Lahan tersebut telah saya kuasai, saya gunakan dan saya pelihara secara
-          terus menerus sejak{' '}
-          <Text style={{ fontFamily: 'Times-Bold' }}>
-            {data.tahunAwalGarap || '-'}
-          </Text>{' '}
-          sampai dengan sekarang.
-        </Text>
-      </Statement>
+      {/* Statements 2-14 continue on page 2 */}
 
-      {/* Statement 3 */}
-      <Statement number="3.">
-        <Text style={styles.text}>
-          Lahan tersebut telah saya pasangi patok/pal batas pada bagian batas
-          sudut-sudut dan telah mendapat persetujuan dari semua pihak yang
-          berbatasan, di mana mereka membubuhkan tanda tangan pada surat
-          pernyataan ini.
-        </Text>
-      </Statement>
-
-      {/* Footer */}
-      <View style={styles.footer} fixed>
-        <Text>
-          Surat Pernyataan Penguasaan Tanah Garapan - Halaman 1
-        </Text>
-      </View>
+      <DocumentFooter page={1} />
     </Page>
   );
 };
