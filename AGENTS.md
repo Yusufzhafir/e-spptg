@@ -475,4 +475,11 @@ AWS_REGION=
 S3_BUCKET_NAME=
 S3_ENDPOINT=            # For R2 or custom S3
 S3_PUBLIC_URL=          # Public URL prefix for files
+
+# Web Push (browser + installed PWA notifications). Optional: with these unset
+# the in-app bell still works and no device notifications are sent.
+# Generate the pair once with `npx web-push generate-vapid-keys`.
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=          # Contact for the push services, e.g. mailto:admin@…
 ```

@@ -621,7 +621,7 @@ export function UsersTab({
                 type="email"
                 value={formData.email || ''}
                 onChange={(e) => { setFormData({ ...formData, email: e.target.value }); clearError('email'); }}
-                placeholder="nama@pemda.go.id"
+                placeholder="nama@gmail.com"
                 className={errorClass('email')}
               />
               <FieldError message={errors.email} />

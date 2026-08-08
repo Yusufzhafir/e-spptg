@@ -17,7 +17,7 @@ import { invalidateUser } from '@/server/redis/cache';
 
 /**
  * Look a user up by their login identifier. Emails are compared
- * case-insensitively — people type "Budi@Pemda.go.id" and expect to get in —
+ * case-insensitively — people type "Budi@gmail.com" and expect to get in —
  * while the stored value keeps whatever casing they registered with.
  */
 export async function getUserByEmail(email: string, tx?: DBTransaction) {

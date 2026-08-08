@@ -11,6 +11,7 @@
 import React from 'react';
 import { Page, Text, View, Image } from '@react-pdf/renderer';
 import { styles } from './styles';
+import { DocumentFooter } from './DocumentFooter';
 import { PageProps } from './types';
 
 function formatCoordinate(value: number): string {
@@ -146,12 +147,7 @@ export const SPPTGPage4: React.FC<PageProps> = ({ data, config }) => {
         </Text>
       )}
 
-      {/* Footer */}
-      <View style={styles.footer} fixed>
-        <Text>
-          Surat Pernyataan Penguasaan Tanah Garapan - Halaman 3
-        </Text>
-      </View>
+      <DocumentFooter page={4} />
     </Page>
   );
 };

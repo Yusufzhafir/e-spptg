@@ -189,7 +189,7 @@ export function SignUpForm() {
           id="email"
           type="email"
           autoComplete="email"
-          placeholder="nama@pemda.go.id"
+          placeholder="nama@gmail.com"
           value={form.email}
           onChange={(event) => set('email', event.target.value)}
           className={errorClass('email')}

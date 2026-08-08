@@ -26,6 +26,68 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+/* ------------------------------------------------------------------ *
+ * Web Push — notifications for new/updated pengajuan.
+ * The payload is JSON produced by `src/server/push/notify.ts`.
+ * ------------------------------------------------------------------ */
+
+self.addEventListener('push', (event) => {
+  let payload = {};
+  if (event.data) {
+    try {
+      payload = event.data.json();
+    } catch {
+      // A push service test payload, or a future sender that posts plain text.
+      payload = { body: event.data.text() };
+    }
+  }
+
+  const title = payload.title || 'SIAPTAH';
+  const url = payload.url || '/app';
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: payload.body || '',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      // Repeated events about the same pengajuan replace each other instead of
+      // stacking up on the lock screen.
+      tag: payload.tag || 'siaptah',
+      renotify: Boolean(payload.tag),
+      data: { url },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = new URL(
+    (event.notification.data && event.notification.data.url) || '/app',
+    self.location.origin
+  ).href;
+
+  // Focus an open tab of the app if there is one — opening a second window for
+  // an app people keep open all day is the wrong behaviour.
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
+      .then((clientList) => {
+        for (const client of clientList) {
+          if (new URL(client.url).origin !== self.location.origin) continue;
+          if ('focus' in client) {
+            if ('navigate' in client && client.url !== targetUrl) {
+              return client.navigate(targetUrl).then((navigated) =>
+                navigated ? navigated.focus() : client.focus()
+              );
+            }
+            return client.focus();
+          }
+        }
+        return self.clients.openWindow(targetUrl);
+      })
+  );
+});
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   if (request.method !== 'GET') return;

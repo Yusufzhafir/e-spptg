@@ -55,4 +55,19 @@ describe('buildSPPTGPDFData', () => {
     expect(pdfData.batasUtara).toBe('Utara');
     expect(pdfData.penggunaanBatasUtara).toBe('Sawah');
   });
+
+  it('carries the land status and acquisition fields used by statements 2 and 4', () => {
+    const draft: SubmissionDraft = {
+      ...createDraftFixture(),
+      statusTanah: 'Tanah Negara',
+      asalPerolehan: 'jual beli dengan Bapak Ahmad',
+      tahunPerolehan: 2004,
+    };
+
+    const pdfData = buildSPPTGPDFData(draft, null, { mapUrlGenerator: () => null });
+
+    expect(pdfData.statusTanah).toBe('Tanah Negara');
+    expect(pdfData.asalPerolehan).toBe('jual beli dengan Bapak Ahmad');
+    expect(pdfData.tahunPerolehan).toBe(2004);
+  });
 });

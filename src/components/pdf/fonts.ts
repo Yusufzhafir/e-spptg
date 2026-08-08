@@ -24,6 +24,8 @@
 
 // Fonts are standard PDF fonts and don't need explicit registration
 
+import { Font } from '@react-pdf/renderer';
+
 /**
  * Font family constants
  */
@@ -59,7 +61,11 @@ export const FONT_WEIGHTS = {
 export function registerFonts(): void {
   // Standard fonts are already available in React-PDF
   // No registration needed for Times-Roman, Helvetica, etc.
-  
+
+  // React-PDF hyphenates with English rules, which breaks Indonesian words in
+  // the wrong place ("men-gajukan", "perse-tujuan"). Keep words whole instead.
+  Font.registerHyphenationCallback((word) => [word]);
+
   // If you need custom fonts in the future, register them here:
   // Font.register({
   //   family: 'CustomFont',

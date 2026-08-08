@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bell } from 'lucide-react';
+import { Bell, BellOff, BellRing, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { trpc } from '@/trpc/client';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { StatusBadge } from './StatusBadge';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 
 const SEEN_KEY = 'spptg:notif-seen-at';
 
@@ -29,6 +31,24 @@ export function NotificationBell() {
     refetchInterval: 30000,
     refetchOnWindowFocus: true,
   });
+
+  const push = usePushNotifications();
+
+  const handleTogglePush = async () => {
+    try {
+      if (push.isSubscribed) {
+        await push.unsubscribe();
+        toast.info('Notifikasi perangkat dinonaktifkan.');
+      } else {
+        await push.subscribe();
+        toast.success('Notifikasi perangkat diaktifkan.');
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Gagal mengubah pengaturan notifikasi.'
+      );
+    }
+  };
 
   // Load / initialise the "last seen" baseline from localStorage after mount
   useEffect(() => {
@@ -83,9 +103,42 @@ export function NotificationBell() {
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-0">
-        <div className="border-b px-4 py-3">
+        <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
           <p className="text-sm font-semibold text-gray-900">Notifikasi</p>
+
+          {/* Only offered where it can actually work: a browser with the Push
+              API, over a registered service worker, on a deployment that has
+              VAPID keys. Otherwise the list below is the whole feature. */}
+          {push.isSupported && push.isConfigured && (
+            <button
+              type="button"
+              onClick={() => void handleTogglePush()}
+              disabled={push.isBusy}
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:opacity-50"
+              title={
+                push.isSubscribed
+                  ? 'Berhenti menerima notifikasi di perangkat ini'
+                  : 'Terima notifikasi di perangkat ini, termasuk saat aplikasi ditutup'
+              }
+            >
+              {push.isBusy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : push.isSubscribed ? (
+                <BellRing className="h-3.5 w-3.5" />
+              ) : (
+                <BellOff className="h-3.5 w-3.5" />
+              )}
+              {push.isSubscribed ? 'Aktif di perangkat ini' : 'Aktifkan di perangkat ini'}
+            </button>
+          )}
         </div>
+
+        {push.isSupported && push.isConfigured && push.permission === 'denied' && (
+          <p className="border-b bg-amber-50 px-4 py-2 text-xs text-amber-800">
+            Notifikasi diblokir untuk situs ini. Ubah izin notifikasi di
+            pengaturan peramban Anda untuk mengaktifkannya.
+          </p>
+        )}
         <div className="max-h-96 overflow-y-auto">
           {items.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-gray-500">

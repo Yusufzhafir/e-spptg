@@ -10,6 +10,7 @@ export { SPPTGPage1 } from './SPPTGPage1';
 export { SPPTGPage2 } from './SPPTGPage2';
 export { SPPTGPage3 } from './SPPTGPage3';
 export { SPPTGPage4 } from './SPPTGPage4';
+export { DocumentFooter } from './DocumentFooter';
 export { PDFDownloadButton } from './PDFDownloadButton';
 
 // Types

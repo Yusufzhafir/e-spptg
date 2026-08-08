@@ -634,3 +634,41 @@ export const notifications = pgTable(
     index('notifications_village_idx').on(t.villageId),
   ]
 );
+
+// ============================================================================
+// PUSH SUBSCRIPTIONS TABLE (Web Push / PWA notifications)
+// ============================================================================
+
+/**
+ * One row per browser/PWA install that agreed to receive notifications. The
+ * endpoint is the push service URL the browser handed us and is globally
+ * unique, so re-subscribing the same install updates the row instead of piling
+ * duplicates up (and sending the same notification several times).
+ *
+ * `p256dh` and `auth` are the browser's public encryption material — not
+ * secrets of ours, but they are what lets the push payload be encrypted, so
+ * they are never returned to any client.
+ */
+export const pushSubscriptions = pgTable(
+  'push_subscriptions',
+  {
+    id: bigint({ mode: 'number' }).primaryKey().generatedByDefaultAsIdentity({
+      name: 'push_subscriptions_id_seq',
+      startWith: 1,
+      increment: 1,
+      minValue: 1,
+      maxValue: (9223372036854775807n) as unknown as number,
+      cache: 1,
+    }),
+    userId: bigint('user_id', { mode: 'number' }).notNull(),
+    endpoint: text('endpoint').notNull().unique(),
+    p256dh: text('p256dh').notNull(),
+    auth: text('auth').notNull(),
+    userAgent: varchar('user_agent', { length: 500 }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    lastUsedAt: timestamp('last_used_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('push_subscriptions_user_idx').on(t.userId),
+  ]
+);

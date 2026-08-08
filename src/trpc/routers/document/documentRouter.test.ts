@@ -58,9 +58,10 @@ type SubmissionDocuments = Awaited<
 >;
 
 function createCtx(
-  peran: 'Viewer' | 'Admin',
+  peran: 'Viewer' | 'Admin' | 'Superadmin' | 'Kecamatan',
   userId: number,
-  assignedVillageId: number | null = null
+  assignedVillageId: number | null = null,
+  assignedKecamatan: string | null = null
 ) {
   const appUser: NonNullable<TRPCContext['appUser']> = {
     id: userId,
@@ -70,7 +71,7 @@ function createCtx(
     nipNik: '12345',
     peran,
     assignedVillageId,
-    assignedKecamatan: null,
+    assignedKecamatan,
     status: 'Aktif',
     nomorHP: null,
     // Verified: these fixtures stand in for existing, usable accounts.
@@ -175,6 +176,62 @@ describe('documentsRouter.listBySubmission', () => {
       caller.listBySubmission({ submissionId: 9999 })
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(listDocumentsBySubmissionMock).not.toHaveBeenCalled();
+  });
+
+  // Oversight roles confirm the certificate exists; they have no business with
+  // the applicant's identity papers.
+  describe.each([
+    ['Superadmin' as const, null],
+    ['Kecamatan' as const, 'Sangatta Utara'],
+  ])('for %s', (peran, assignedKecamatan) => {
+    const mixedDocuments = [
+      {
+        id: 1,
+        filename: 'ktp.pdf',
+        fileType: 'application/pdf',
+        size: 1024,
+        url: 'https://example.com/ktp.pdf',
+        category: 'KTP',
+        uploadedAt: new Date('2026-01-10T00:00:00.000Z'),
+      },
+      {
+        id: 2,
+        filename: 'kk.pdf',
+        fileType: 'application/pdf',
+        size: 2048,
+        url: 'https://example.com/kk.pdf',
+        category: 'KK',
+        uploadedAt: new Date('2026-01-10T00:00:00.000Z'),
+      },
+      {
+        id: 3,
+        filename: 'spptg.pdf',
+        fileType: 'application/pdf',
+        size: 4096,
+        url: 'https://example.com/spptg.pdf',
+        category: 'SPPG',
+        uploadedAt: new Date('2026-01-12T00:00:00.000Z'),
+      },
+    ] as SubmissionDocuments;
+
+    it('returns only the SPPTG document', async () => {
+      getSubmissionByIdMock.mockResolvedValue({
+        id: 30,
+        ownerUserId: 100,
+        villageId: 55,
+        desaKecamatan: 'Sangatta Utara',
+        verifikator: 100,
+      } as SubmissionRecord);
+      listDocumentsBySubmissionMock.mockResolvedValue(mixedDocuments);
+
+      const caller = documentsRouter.createCaller(
+        createCtx(peran, 500, null, assignedKecamatan)
+      );
+      const result = await caller.listBySubmission({ submissionId: 30 });
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.category).toBe('SPPG');
+    });
   });
 });
 
@@ -400,6 +457,60 @@ describe('documentsRouter.getSignedDownloadUrl', () => {
 
     await expect(promise).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(getDownloadUrlMock).not.toHaveBeenCalled();
+  });
+
+  describe.each([
+    ['Superadmin' as const, null],
+    ['Kecamatan' as const, 'Sangatta Utara'],
+  ])('for %s', (peran, assignedKecamatan) => {
+    beforeEach(() => {
+      getSubmissionByIdMock.mockResolvedValue({
+        id: 40,
+        ownerUserId: 100,
+        villageId: 55,
+        desaKecamatan: 'Sangatta Utara',
+        verifikator: 100,
+      } as SubmissionRecord);
+      extractS3KeyFromDocumentUrlMock.mockReturnValue('submissions/SPPG/file.pdf');
+      getDownloadUrlMock.mockResolvedValue('https://signed.example.com/file.pdf');
+    });
+
+    it('refuses to sign a URL for a non-SPPTG document', async () => {
+      getDocumentByIdMock.mockResolvedValue({
+        id: 41,
+        submissionId: 40,
+        category: 'KTP',
+        uploadedBy: 1,
+        url: 'https://example.com/bucket/ktp.pdf',
+      } as DocumentRecord);
+
+      const caller = documentsRouter.createCaller(
+        createCtx(peran, 500, null, assignedKecamatan)
+      );
+      const promise = caller.getSignedDownloadUrl({ documentId: 41 });
+
+      await expect(promise).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      expect(getDownloadUrlMock).not.toHaveBeenCalled();
+    });
+
+    it('still signs a URL for the SPPTG document', async () => {
+      getDocumentByIdMock.mockResolvedValue({
+        id: 42,
+        submissionId: 40,
+        category: 'SPPG',
+        filename: 'spptg.pdf',
+        uploadedBy: 1,
+        url: 'https://example.com/bucket/spptg.pdf',
+      } as DocumentRecord);
+
+      const caller = documentsRouter.createCaller(
+        createCtx(peran, 500, null, assignedKecamatan)
+      );
+
+      await expect(
+        caller.getSignedDownloadUrl({ documentId: 42 })
+      ).resolves.toMatchObject({ signedUrl: 'https://signed.example.com/file.pdf' });
+    });
   });
 });
 

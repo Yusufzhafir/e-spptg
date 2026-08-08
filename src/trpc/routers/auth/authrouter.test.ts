@@ -80,7 +80,7 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
   return {
     id: 7,
     nama: 'Budi Santoso',
-    email: 'budi@pemda.go.id',
+    email: 'budi@gmail.com',
     passwordHash: PASSWORD_HASH,
     nipNik: '3201010101010001',
     peran: 'Viewer',
@@ -169,7 +169,7 @@ describe('auth.login', () => {
 
     const result = await authRouter
       .createCaller(ctx)
-      .login({ email: 'budi@pemda.go.id', password: PASSWORD });
+      .login({ email: 'budi@gmail.com', password: PASSWORD });
 
     expect(result.user.id).toBe(7);
     expect(createSessionMock).toHaveBeenCalledWith(7, ctx.requestMeta);
@@ -181,7 +181,7 @@ describe('auth.login', () => {
     getUserByEmailMock.mockResolvedValue(userRow());
     const result = await authRouter
       .createCaller(anonCtx())
-      .login({ email: 'budi@pemda.go.id', password: PASSWORD });
+      .login({ email: 'budi@gmail.com', password: PASSWORD });
 
     expect(result.user).not.toHaveProperty('passwordHash');
     expect(JSON.stringify(result)).not.toContain('scrypt');
@@ -191,13 +191,13 @@ describe('auth.login', () => {
     getUserByEmailMock.mockResolvedValue(undefined);
     const unknown = await authRouter
       .createCaller(anonCtx())
-      .login({ email: 'tidak-ada@pemda.go.id', password: PASSWORD })
+      .login({ email: 'tidak-ada@gmail.com', password: PASSWORD })
       .catch((error: Error) => error);
 
     getUserByEmailMock.mockResolvedValue(userRow());
     const wrong = await authRouter
       .createCaller(anonCtx())
-      .login({ email: 'budi@pemda.go.id', password: 'SalahSekali9' })
+      .login({ email: 'budi@gmail.com', password: 'SalahSekali9' })
       .catch((error: Error) => error);
 
     // Same code and same wording — otherwise the form enumerates accounts.
@@ -211,7 +211,7 @@ describe('auth.login', () => {
     getUserByEmailMock.mockResolvedValue(userRow({ passwordHash: null }));
 
     await expect(
-      authRouter.createCaller(anonCtx()).login({ email: 'budi@pemda.go.id', password: PASSWORD })
+      authRouter.createCaller(anonCtx()).login({ email: 'budi@gmail.com', password: PASSWORD })
     ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
     expect(createSessionMock).not.toHaveBeenCalled();
   });
@@ -220,7 +220,7 @@ describe('auth.login', () => {
     getUserByEmailMock.mockResolvedValue(userRow({ status: 'Nonaktif' }));
 
     await expect(
-      authRouter.createCaller(anonCtx()).login({ email: 'budi@pemda.go.id', password: PASSWORD })
+      authRouter.createCaller(anonCtx()).login({ email: 'budi@gmail.com', password: PASSWORD })
     ).rejects.toMatchObject({
       code: 'FORBIDDEN',
       message: ACCOUNT_DEACTIVATED_MESSAGE,
@@ -234,7 +234,7 @@ describe('auth.login', () => {
     const batas = await hitungBatas(() =>
       authRouter
         .createCaller(anonCtx())
-        .login({ email: 'budi@pemda.go.id', password: 'Salah123x' })
+        .login({ email: 'budi@gmail.com', password: 'Salah123x' })
     );
 
     expect(batas, 'batas login berubah dari 10 percobaan').toBe(10);
@@ -244,10 +244,10 @@ describe('auth.login', () => {
     getUserByEmailMock.mockResolvedValue(userRow());
     await authRouter
       .createCaller(anonCtx())
-      .login({ email: 'Budi@Pemda.go.id', password: PASSWORD });
+      .login({ email: 'Budi@gmail.com', password: PASSWORD });
 
     // Case folding is the query's job; the router must pass the address through.
-    expect(getUserByEmailMock).toHaveBeenCalledWith('Budi@Pemda.go.id');
+    expect(getUserByEmailMock).toHaveBeenCalledWith('Budi@gmail.com');
   });
 });
 
@@ -257,7 +257,7 @@ describe('auth.checkEmail', () => {
     getUserByEmailMock.mockResolvedValue(userRow());
 
     await expect(
-      authRouter.createCaller(anonCtx()).checkEmail({ email: 'budi@pemda.go.id' })
+      authRouter.createCaller(anonCtx()).checkEmail({ email: 'budi@gmail.com' })
     ).resolves.toEqual({ next: 'password' });
   });
 
@@ -265,7 +265,7 @@ describe('auth.checkEmail', () => {
     getUserByEmailMock.mockResolvedValue(userRow({ passwordHash: null }));
 
     await expect(
-      authRouter.createCaller(anonCtx()).checkEmail({ email: 'budi@pemda.go.id' })
+      authRouter.createCaller(anonCtx()).checkEmail({ email: 'budi@gmail.com' })
     ).resolves.toEqual({ next: 'reset' });
   });
 
@@ -275,14 +275,14 @@ describe('auth.checkEmail', () => {
     // Indistinguishable from a real account with a password; the failure comes
     // later from login's generic message.
     await expect(
-      authRouter.createCaller(anonCtx()).checkEmail({ email: 'hantu@pemda.go.id' })
+      authRouter.createCaller(anonCtx()).checkEmail({ email: 'hantu@gmail.com' })
     ).resolves.toEqual({ next: 'password' });
   });
 
   it('does not reveal that an account is deactivated', async () => {
     getUserByEmailMock.mockResolvedValue(userRow({ status: 'Nonaktif' }));
     await expect(
-      authRouter.createCaller(anonCtx()).checkEmail({ email: 'budi@pemda.go.id' })
+      authRouter.createCaller(anonCtx()).checkEmail({ email: 'budi@gmail.com' })
     ).resolves.toEqual({ next: 'password' });
 
     // Even the deactivated-and-password-less combination stays on 'password':
@@ -290,7 +290,7 @@ describe('auth.checkEmail', () => {
     __clearRateLimits();
     getUserByEmailMock.mockResolvedValue(userRow({ status: 'Nonaktif', passwordHash: null }));
     await expect(
-      authRouter.createCaller(anonCtx()).checkEmail({ email: 'budi@pemda.go.id' })
+      authRouter.createCaller(anonCtx()).checkEmail({ email: 'budi@gmail.com' })
     ).resolves.toEqual({ next: 'password' });
   });
 
@@ -298,7 +298,7 @@ describe('auth.checkEmail', () => {
     getUserByEmailMock.mockResolvedValue(userRow());
 
     const batas = await hitungBatas(() =>
-      authRouter.createCaller(anonCtx()).checkEmail({ email: 'budi@pemda.go.id' })
+      authRouter.createCaller(anonCtx()).checkEmail({ email: 'budi@gmail.com' })
     );
 
     // Shares the login bucket size: both are guesses against the same address.
@@ -309,7 +309,7 @@ describe('auth.checkEmail', () => {
     getUserByEmailMock.mockResolvedValue(userRow());
     const ctx = anonCtx();
 
-    await authRouter.createCaller(ctx).checkEmail({ email: 'budi@pemda.go.id' });
+    await authRouter.createCaller(ctx).checkEmail({ email: 'budi@gmail.com' });
 
     expect(createSessionMock).not.toHaveBeenCalled();
     expect(setCookieHeader(ctx)).toBeNull();
@@ -321,7 +321,7 @@ describe('auth.register', () => {
   const payload = {
     nama: 'Siti Rahayu',
     nipNik: '3201010101010002',
-    email: 'siti@pemda.go.id',
+    email: 'siti@gmail.com',
     password: PASSWORD,
   };
 
@@ -453,14 +453,14 @@ describe('auth.register', () => {
 // ---------------------------------------------------------------------------
 describe('auth email verification', () => {
   const unverified = () =>
-    userRow({ id: 30, email: 'baru@pemda.go.id', emailVerifiedAt: null });
+    userRow({ id: 30, email: 'baru@gmail.com', emailVerifiedAt: null });
 
   it('login refuses an unverified account, with its own message', async () => {
     getUserByEmailMock.mockResolvedValue(unverified());
 
     const call = authRouter
       .createCaller(anonCtx())
-      .login({ email: 'baru@pemda.go.id', password: PASSWORD });
+      .login({ email: 'baru@gmail.com', password: PASSWORD });
 
     await expect(call).rejects.toMatchObject({
       code: 'FORBIDDEN',
@@ -529,19 +529,19 @@ describe('auth email verification', () => {
     const caller = authRouter.createCaller(anonCtx());
 
     getUserByEmailMock.mockResolvedValue(unverified());
-    const pending = await caller.resendVerificationEmail({ email: 'baru@pemda.go.id' });
+    const pending = await caller.resendVerificationEmail({ email: 'baru@gmail.com' });
 
     __clearRateLimits();
     getUserByEmailMock.mockResolvedValue(userRow({ emailVerifiedAt: new Date() }));
     const sudah = await authRouter
       .createCaller(anonCtx())
-      .resendVerificationEmail({ email: 'lama@pemda.go.id' });
+      .resendVerificationEmail({ email: 'lama@gmail.com' });
 
     __clearRateLimits();
     getUserByEmailMock.mockResolvedValue(undefined);
     const takAda = await authRouter
       .createCaller(anonCtx())
-      .resendVerificationEmail({ email: 'hantu@pemda.go.id' });
+      .resendVerificationEmail({ email: 'hantu@gmail.com' });
 
     expect(pending.message).toBe(sudah.message);
     expect(sudah.message).toBe(takAda.message);
@@ -556,7 +556,7 @@ describe('auth email verification', () => {
     for (let i = 0; i < 8; i += 1) {
       const error = await authRouter
         .createCaller(anonCtx())
-        .resendVerificationEmail({ email: 'baru@pemda.go.id' })
+        .resendVerificationEmail({ email: 'baru@gmail.com' })
         .catch((e: { code: string }) => e);
       if ('code' in error && error.code === 'TOO_MANY_REQUESTS') {
         throttled = true;
@@ -629,13 +629,13 @@ describe('auth.requestPasswordReset', () => {
     });
     const known = await authRouter
       .createCaller(anonCtx())
-      .requestPasswordReset({ email: 'budi@pemda.go.id' });
+      .requestPasswordReset({ email: 'budi@gmail.com' });
 
     __clearRateLimits();
     getUserByEmailMock.mockResolvedValue(undefined);
     const unknown = await authRouter
       .createCaller(anonCtx())
-      .requestPasswordReset({ email: 'hantu@pemda.go.id' });
+      .requestPasswordReset({ email: 'hantu@gmail.com' });
 
     expect(known).toEqual(unknown);
     // ...and no mail went to the address that has no account.
@@ -645,7 +645,7 @@ describe('auth.requestPasswordReset', () => {
   it('sends no link to a deactivated account', async () => {
     getUserByEmailMock.mockResolvedValue(userRow({ status: 'Nonaktif' }));
 
-    await authRouter.createCaller(anonCtx()).requestPasswordReset({ email: 'budi@pemda.go.id' });
+    await authRouter.createCaller(anonCtx()).requestPasswordReset({ email: 'budi@gmail.com' });
 
     expect(createPasswordResetTokenMock).not.toHaveBeenCalled();
     expect(sendPasswordResetEmailMock).not.toHaveBeenCalled();
@@ -655,7 +655,7 @@ describe('auth.requestPasswordReset', () => {
     isMailerConfiguredMock.mockReturnValue(false);
 
     await expect(
-      authRouter.createCaller(anonCtx()).requestPasswordReset({ email: 'budi@pemda.go.id' })
+      authRouter.createCaller(anonCtx()).requestPasswordReset({ email: 'budi@gmail.com' })
     ).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
   });
 
@@ -669,12 +669,12 @@ describe('auth.requestPasswordReset', () => {
     const batas = await hitungBatas(() =>
       authRouter
         .createCaller(anonCtx())
-        .requestPasswordReset({ email: 'budi@pemda.go.id' })
+        .requestPasswordReset({ email: 'budi@gmail.com' })
     );
     expect(batas, 'batas lupa sandi berubah dari 5 permintaan').toBe(5);
 
     await expect(
-      authRouter.createCaller(anonCtx()).requestPasswordReset({ email: 'budi@pemda.go.id' })
+      authRouter.createCaller(anonCtx()).requestPasswordReset({ email: 'budi@gmail.com' })
     ).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS' });
   });
 });

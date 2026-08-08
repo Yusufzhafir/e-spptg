@@ -13,6 +13,7 @@ import {
   File,
   Download,
   Loader2,
+  Map as MapIcon,
   Trash2,
   Send,
 } from 'lucide-react';
@@ -25,6 +26,12 @@ import { findCenter } from '@/lib/utils';
 import { trpc } from '@/trpc/client';
 import { formatDate } from '@/lib/format-date';
 import { keepLatestPerCategory } from '@/lib/document-list';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface DetailPageProps {
   submission: Submission;
@@ -37,6 +44,7 @@ const orEmpty = (value?: string | null) => (value && value.trim() ? value : '-')
 export function DetailPage({ submission, onBack }: DetailPageProps) {
   const [openingDocumentId, setOpeningDocumentId] = useState<number | null>(null);
   const [newComment, setNewComment] = useState('');
+  const [isExportingGeo, setIsExportingGeo] = useState(false);
 
   // Applicant details live only in the draft payload snapshot — the submissions
   // table has no column for tempat/tanggal lahir, pekerjaan, or alamat KTP.
@@ -84,6 +92,15 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
   });
 
   const canWriteComment = currentUser ? currentUser.peran !== 'Kecamatan' : false;
+
+  // Oversight roles only ever get the SPPTG certificate — the server strips the
+  // rest out of `documents.listBySubmission` and refuses to sign a URL for them
+  // (`canViewSubmissionDocumentCategory` in `src/server/authz.ts`). Mirror that
+  // here so the UI explains the gap instead of offering buttons that 403.
+  const isCertificateOnlyViewer =
+    currentUser?.peran === 'Superadmin' || currentUser?.peran === 'Kecamatan';
+
+  const hasPolygon = (submission.geoJSON?.coordinates?.[0]?.length ?? 0) >= 3;
 
   const canDeleteComment = (commentUserId: number) => {
     if (!currentUser) return false;
@@ -174,6 +191,66 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
   };
 
   /**
+   * Hand the parcel boundary to a GIS tool (Google Earth, QGIS, BPN). The whole
+   * submission is already in memory, so the file is built and downloaded in the
+   * browser — `jszip` for KMZ is only pulled in when someone asks for it.
+   */
+  const handleExportGeo = async (format: 'kml' | 'kmz') => {
+    setIsExportingGeo(true);
+    let objectUrl: string | null = null;
+
+    try {
+      const { buildSubmissionKML, submissionExportFilename } = await import(
+        '@/lib/kml-export'
+      );
+      const kml = buildSubmissionKML({
+        id: submission.id,
+        namaPemilik: submission.namaPemilik,
+        nik: submission.nik,
+        desaNama: submission.desaNama,
+        desaKecamatan: submission.desaKecamatan,
+        kecamatan: submission.kecamatan,
+        kabupaten: submission.kabupaten,
+        luas: submission.luas,
+        luasManual: submission.luasManual,
+        penggunaanLahan: submission.penggunaanLahan,
+        status: submission.status,
+        tanggalPengajuan: submission.tanggalPengajuan,
+        geoJSON: submission.geoJSON,
+      });
+
+      let blob: Blob;
+      if (format === 'kmz') {
+        const { buildSubmissionKMZ } = await import('@/lib/kml-export');
+        blob = await buildSubmissionKMZ(kml);
+      } else {
+        blob = new Blob([kml], {
+          type: 'application/vnd.google-earth.kml+xml;charset=utf-8',
+        });
+      }
+
+      objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = submissionExportFilename(submission, format);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      toast.success(`Berkas ${format.toUpperCase()} berhasil diunduh.`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : `Gagal membuat berkas ${format.toUpperCase()}.`
+      );
+    } finally {
+      // Revoking straight away can cancel the download in Safari; give it a tick.
+      if (objectUrl) setTimeout(() => URL.revokeObjectURL(objectUrl!), 10_000);
+      setIsExportingGeo(false);
+    }
+  };
+
+  /**
    * The feedback attachment may predate document records — older drafts stored
    * only a blob/public URL. Prefer the signed download when we have an id.
    */
@@ -191,11 +268,37 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Button variant="ghost" onClick={onBack}>
           <ChevronLeft className="w-4 h-4 mr-2" />
           Kembali ke Dashboard
         </Button>
+
+        {/* Without a polygon there is nothing to write into the file. */}
+        {hasPolygon && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" disabled={isExportingGeo}>
+                {isExportingGeo ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <MapIcon className="mr-2 h-4 w-4" />
+                )}
+                Unduh Peta Lahan
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => void handleExportGeo('kmz')}>
+                <Download className="mr-2 h-4 w-4" />
+                Format KMZ (Google Earth)
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void handleExportGeo('kml')}>
+                <Download className="mr-2 h-4 w-4" />
+                Format KML
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       {/* Header */}
@@ -349,7 +452,7 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
               )}
             </div>
 
-            {feedback.lampiranFeedback && (
+            {feedback.lampiranFeedback && !isCertificateOnlyViewer && (
               <div>
                 <p className="mb-2 text-sm text-gray-600">Lampiran Feedback</p>
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-3">
@@ -489,7 +592,16 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
 
             <TabsContent value="dokumen" className="mt-4">
               <div className="bg-gray-50 rounded-lg p-6">
-                <h3 className="mb-4 text-gray-900">Dokumen pendukung</h3>
+                <h3 className="mb-4 text-gray-900">
+                  {isCertificateOnlyViewer ? 'Dokumen SPPTG' : 'Dokumen pendukung'}
+                </h3>
+
+                {isCertificateOnlyViewer && (
+                  <p className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                    Peran Anda hanya dapat melihat dokumen SPPTG. Berkas pribadi
+                    pemohon (KTP, KK, dan lampiran lainnya) tidak ditampilkan.
+                  </p>
+                )}
 
                 {isDocumentsLoading && (
                   <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -518,7 +630,9 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
                   <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center">
                     <FileText className="mx-auto mb-2 h-10 w-10 text-gray-400" />
                     <p className="text-sm text-gray-600">
-                      Belum ada dokumen untuk pengajuan ini.
+                      {isCertificateOnlyViewer
+                        ? 'SPPTG untuk pengajuan ini belum diterbitkan.'
+                        : 'Belum ada dokumen untuk pengajuan ini.'}
                     </p>
                   </div>
                 )}

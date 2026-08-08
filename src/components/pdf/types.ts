@@ -52,6 +52,12 @@ export interface SPPTGPDFData {
   penggunaanLahan?: string;
   /** Year cultivation started */
   tahunAwalGarap?: number;
+  /** Land status (Tanah Negara / Tanah Ulayat / other) */
+  statusTanah?: string;
+  /** Where the land was acquired from */
+  asalPerolehan?: string;
+  /** Year the land was acquired */
+  tahunPerolehan?: number;
 
   // Location Details
   /** Street name */
@@ -114,6 +120,12 @@ export interface SPPTGPDFData {
     sisi: string;
     /** Land use at this boundary */
     penggunaanLahanBatas?: string;
+    /** Age */
+    umur?: number;
+    /** Occupation */
+    pekerjaan?: string;
+    /** Address */
+    alamat?: string;
   }>;
 
   // Administrative Information

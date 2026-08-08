@@ -117,7 +117,7 @@ export function ForgotPasswordForm() {
           type="email"
           autoComplete="email"
           autoFocus
-          placeholder="nama@pemda.go.id"
+          placeholder="nama@gmail.com"
           value={email}
           onChange={(event) => {
             setEmail(event.target.value);

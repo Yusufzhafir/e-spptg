@@ -19,6 +19,7 @@ import React from 'react';
 import { Document } from '@react-pdf/renderer';
 import { SPPTGPage1 } from './SPPTGPage1';
 import { SPPTGPage2 } from './SPPTGPage2';
+import { SPPTGPage3 } from './SPPTGPage3';
 import { SPPTGPage4 } from './SPPTGPage4';
 import { SPPTGPDFData, PDFGenerationConfig } from './types';
 import { registerFonts } from './fonts';
@@ -38,9 +39,10 @@ interface SPPTGDocumentProps {
  * 
  * Renders a complete SPPTG document with all sections.
  * The document includes:
- * - Page 1: Personal info, land details with 8 boundary positions, statements 1-3
- * - Page 2: Statements 4-5, declarant signature, witnesses table, administrative signature
- * - Page 3: Map attachment
+ * - Page 1: Personal info, statement 1 (data fisik) with 8 boundary positions
+ * - Page 2: Statements 2-14 and the closing statement
+ * - Page 3: Declarant signature, witnesses table, administrative signature
+ * - Page 4: Map attachment
  */
 export const SPPTGDocument: React.FC<SPPTGDocumentProps> = ({
   data,
@@ -50,6 +52,7 @@ export const SPPTGDocument: React.FC<SPPTGDocumentProps> = ({
     <Document>
       <SPPTGPage1 data={data} config={config} />
       <SPPTGPage2 data={data} config={config} />
+      <SPPTGPage3 data={data} config={config} />
       <SPPTGPage4 data={data} config={config} />
     </Document>
   );
