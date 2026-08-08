@@ -21,6 +21,7 @@ import {
   canViewSubmissionDocumentCategory,
   isPrivilegedProcessor,
   isSuperadmin,
+  requireAssignedVillageId,
 } from '@/server/authz';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -331,10 +332,18 @@ export const documentsRouter = router({
    */
   listAll: adminProcedure
     .input(listDocumentsSchema)
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
+      // An Admin is desa-scoped like everywhere else: without this filter the
+      // file-management listing hands them every berkas in the system, other
+      // desa included. Superadmin is the only role that sees all of it.
+      const villageId = isSuperadmin(ctx.appUser!)
+        ? undefined
+        : requireAssignedVillageId(ctx.appUser!);
+
       const documents = await queries.listAllDocuments({
         category: input.category,
         isTemporary: input.isTemporary,
+        villageId,
         limit: input.limit,
         offset: input.offset,
       });

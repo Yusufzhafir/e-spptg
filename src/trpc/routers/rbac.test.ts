@@ -31,6 +31,9 @@ vi.mock('@/server/db/queries/villages', () => ({
   createVillage: vi.fn(),
   updateVillage: vi.fn(),
   deleteVillage: vi.fn(),
+  // Delete refuses while a desa is still referenced; default to "unused" here so
+  // these cases keep testing the role guard rather than the in-use guard.
+  countVillageReferences: vi.fn(async () => ({ pengguna: 0, pengajuan: 0, draf: 0 })),
 }));
 vi.mock('@/server/db/queries/prohibitedAreas', () => ({
   listProhibitedAreas: vi.fn(),

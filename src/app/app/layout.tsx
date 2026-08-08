@@ -121,7 +121,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
     setSubmissions((prev) => [newSubmission, ...prev]);
     router.push('/app');
-    toast.success('Pengajuan SKT berhasil diselesaikan');
+    toast.success('Pengajuan SPPTG berhasil diselesaikan');
   };
 
   const contextValue: AppStateContextValue = {

@@ -61,6 +61,42 @@ export async function updateVillage(
   return result[0];
 }
 
+/**
+ * How many rows still point at this desa.
+ *
+ * None of these columns carry a foreign key, so deleting a desa that is still
+ * in use does not fail — it silently orphans the rows: staff assigned to it keep
+ * a scope that resolves to nothing (empty dashboard, no error), and its
+ * pengajuan drop out of every kecamatan-scoped view.
+ */
+export async function countVillageReferences(id: number, tx?: DBTransaction) {
+  const queryDb = tx || db;
+
+  // NB: the submissions village column is the legacy mixed-case "villageId".
+  const rows = await queryDb.execute<{
+    pengguna: number;
+    pengajuan: number;
+    draf: number;
+  }>(sql`
+    SELECT
+      (SELECT COUNT(*)::int FROM users WHERE assigned_village_id = ${id}) AS pengguna,
+      (SELECT COUNT(*)::int FROM submissions WHERE "villageId" = ${id}) AS pengajuan,
+      (SELECT COUNT(*)::int FROM submission_drafts WHERE village_id = ${id}) AS draf
+  `);
+
+  const row = (Array.isArray(rows) ? rows[0] : rows?.rows?.[0]) ?? {
+    pengguna: 0,
+    pengajuan: 0,
+    draf: 0,
+  };
+
+  return {
+    pengguna: Number(row.pengguna) || 0,
+    pengajuan: Number(row.pengajuan) || 0,
+    draf: Number(row.draf) || 0,
+  };
+}
+
 export async function deleteVillage(id: number, tx?: DBTransaction) {
   const queryDb = tx || db;
   const result = await queryDb

@@ -10,6 +10,7 @@ import * as submissionQueries from '@/server/db/queries/submissions';
 import * as draftQueries from '@/server/db/queries/drafts';
 import * as documentQueries from '@/server/db/queries/documents';
 import * as notificationQueries from '@/server/db/queries/notifications';
+import * as villageQueries from '@/server/db/queries/villages';
 import { pushSubmissionEvent, type SubmissionPushEvent } from '@/server/push/notify';
 import { computeOverlaps } from '@/server/postgis';
 import { sql, eq } from 'drizzle-orm';
@@ -129,9 +130,15 @@ export const submissionsRouter = router({
                     }
 
                     // Build submission data. See deriveSubmissionStatus: a
-                    // completed Step 4 issues the certificate ('Terbit SPPTG'),
+                    // completed Step 4 keeps the pengajuan on 'SPPTG terdaftar'
+                    // (issuance is the outcome of approval, not its own bucket),
                     // otherwise the Step 3 decision applies.
                     const submissionStatus = deriveSubmissionStatus(payload);
+
+                    // Wilayah falls back to the desa master data rather than a
+                    // hardcoded kabupaten: a draft that never filled Step 2 used
+                    // to be filed under the wrong kabupaten entirely.
+                    const village = await villageQueries.getVillageById(draftVillageId, tx);
 
                     const submissionData = {
                         namaPemilik: payload.namaPemohon,
@@ -144,8 +151,8 @@ export const submissionsRouter = router({
                         nomorHP: normalizePhoneNumber(payload.nomorHP || ''),
                         email: payload.email || '',
                         villageId: draftVillageId,
-                        kecamatan: payload.kecamatan || '',
-                        kabupaten: payload.kabupaten || 'Cirebon',
+                        kecamatan: payload.kecamatan || village?.kecamatan || '',
+                        kabupaten: payload.kabupaten || village?.kabupaten || '',
                         luas: payload.luasLahan || 0,
                         luasManual: payload.luasManual || 0,
                         penggunaanLahan: payload.penggunaanLahan || '',
