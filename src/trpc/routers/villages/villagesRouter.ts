@@ -92,6 +92,28 @@ export const villagesRouter = router({
     .input(z.object({ id: z.number().int() }))
     .mutation(async ({ ctx, input }) => {
       const sebelum = await queries.getVillageById(input.id);
+
+      // None of the village_id columns carry a foreign key, so the delete would
+      // succeed and orphan whatever still points at the desa: its Admin and
+      // Verifikator keep a scope that matches nothing (empty dashboard, no
+      // error at all), and its pengajuan vanish from every kecamatan view.
+      // Refuse while anything is still attached and say what is in the way.
+      const refs = await queries.countVillageReferences(input.id);
+      const inUse = [
+        refs.pengguna > 0 ? `${refs.pengguna} pengguna` : null,
+        refs.pengajuan > 0 ? `${refs.pengajuan} pengajuan` : null,
+        refs.draf > 0 ? `${refs.draf} draft` : null,
+      ].filter(Boolean);
+
+      if (inUse.length > 0) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message:
+            `Desa ${sebelum?.namaDesa ?? input.id} masih dipakai oleh ${inUse.join(', ')}. ` +
+            'Pindahkan atau hapus data tersebut terlebih dahulu.',
+        });
+      }
+
       const result = await queries.deleteVillage(input.id);
       await invalidateVillages();
       ctx.audit.set({

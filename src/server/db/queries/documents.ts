@@ -1,7 +1,7 @@
 import { DocumentCategoryEnum } from '@/types';
 import { db, DBTransaction } from '../db';
 import { submissions_documents } from '../schema';
-import { eq, and, isNull, desc } from 'drizzle-orm';
+import { eq, and, isNull, desc, sql } from 'drizzle-orm';
 
 export async function createDocument(
   data: typeof submissions_documents.$inferInsert,
@@ -71,12 +71,18 @@ export async function updateDocumentSubmissionId(
 export async function listAllDocuments(filters: {
   category?: DocumentCategoryEnum;
   isTemporary?: boolean;
+  /**
+   * Restricts the listing to files attached to a pengajuan or draft of this
+   * desa. Required for desa-scoped callers (Admin): without it this endpoint
+   * enumerates every berkas in the system, other desa included.
+   */
+  villageId?: number;
   limit?: number;
   offset?: number;
 }, tx?: DBTransaction) {
   const queryDb = tx || db;
 
-  const { category, isTemporary, limit = 50, offset = 0 } = filters;
+  const { category, isTemporary, villageId, limit = 50, offset = 0 } = filters;
   const conditions = [];
 
   if (category) {
@@ -85,6 +91,21 @@ export async function listAllDocuments(filters: {
 
   if (isTemporary !== undefined) {
     conditions.push(eq(submissions_documents.isTemporary, isTemporary));
+  }
+
+  if (villageId !== undefined) {
+    // A document hangs off either a submission or a draft; both carry the desa.
+    // NB: the submissions village column is the legacy mixed-case "villageId".
+    conditions.push(
+      sql`(
+        ${submissions_documents.submissionId} IN (
+          SELECT id FROM submissions WHERE "villageId" = ${villageId}
+        )
+        OR ${submissions_documents.draftId} IN (
+          SELECT id FROM submission_drafts WHERE village_id = ${villageId}
+        )
+      )`
+    );
   }
 
   return queryDb.query.submissions_documents.findMany({
