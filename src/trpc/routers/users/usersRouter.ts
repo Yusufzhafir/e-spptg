@@ -134,9 +134,10 @@ export const usersRouter = router({
           .enum(['nama', 'nipNik', 'email', 'peran', 'status', 'terakhirMasuk', 'updatedAt'])
           .optional(),
         sortDir: z.enum(['asc', 'desc']).optional(),
-        // 1000 stays allowed while the Pengguna tab still pages in the browser;
-        // it asks for the whole list in one go.
-        limit: z.number().int().positive().max(1000).default(10),
+        // The Pengguna tab pages in Postgres, so nothing asks for the whole
+        // list any more. 200 is the largest page the pager offers, doubled;
+        // 0 asks for `total` without any rows (the nav's count pill).
+        limit: z.number().int().nonnegative().max(200).default(10),
         offset: z.number().int().nonnegative().default(0),
       })
     )

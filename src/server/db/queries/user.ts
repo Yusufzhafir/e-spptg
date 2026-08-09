@@ -179,14 +179,19 @@ export async function listUsersPaged(
   const column = USER_SORT_COLUMNS[params.sortKey ?? 'updatedAt'];
   const orderBy = params.sortDir === 'asc' ? asc(column) : desc(column);
 
-  const items = await queryDb
-    .select()
-    .from(users)
-    .where(where)
-    // `id` as a tiebreak so equal values cannot swap between pages.
-    .orderBy(orderBy, desc(users.id))
-    .limit(params.limit ?? 50)
-    .offset(params.offset ?? 0);
+  // `limit: 0` asks for the count alone — what the Pengaturan nav needs for its
+  // record-count pill.
+  const items =
+    params.limit === 0
+      ? []
+      : await queryDb
+          .select()
+          .from(users)
+          .where(where)
+          // `id` as a tiebreak so equal values cannot swap between pages.
+          .orderBy(orderBy, desc(users.id))
+          .limit(params.limit ?? 50)
+          .offset(params.offset ?? 0);
 
   const [counted] = await queryDb
     .select({ count: sql<number>`count(*)::int` })

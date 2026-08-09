@@ -51,19 +51,23 @@ export const prohibitedAreasRouter = router({
       z.object({
         search: z.string().optional(),
         jenisKawasan: z.string().optional(),
+        statusValidasi: z.string().optional(),
         sortKey: z
           .enum([
             'namaKawasan',
             'jenisKawasan',
             'sumberData',
+            'dasarHukum',
             'tanggalEfektif',
+            'diunggahOleh',
             'statusValidasi',
             'aktifDiValidasi',
             'updatedAt',
           ])
           .optional(),
         sortDir: z.enum(['asc', 'desc']).optional(),
-        limit: z.number().int().positive().max(200).default(10),
+        /** 0 asks for `total` without any rows — the nav's count pill. */
+        limit: z.number().int().nonnegative().max(200).default(10),
         offset: z.number().int().nonnegative().default(0),
       })
     )

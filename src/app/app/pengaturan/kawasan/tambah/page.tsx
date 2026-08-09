@@ -14,7 +14,7 @@ export default function TambahKawasanPage() {
     onSuccess: async () => {
       await utils.prohibitedAreas.list.invalidate();
       toast.success('Kawasan Non-SPPTG berhasil ditambahkan.');
-      router.push('/app/pengaturan?tab=prohibited');
+      router.push('/app/pengaturan/kawasan');
     },
     onError: (error) => {
       toast.error(error.message || 'Gagal menambahkan kawasan Non-SPPTG.');

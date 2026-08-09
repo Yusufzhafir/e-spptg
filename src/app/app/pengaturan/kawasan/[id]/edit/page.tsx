@@ -27,7 +27,7 @@ export default function EditKawasanPage() {
       // until a hard refresh.
       await utils.prohibitedAreas.invalidate();
       toast.success('Kawasan Non-SPPTG berhasil diperbarui.');
-      router.push('/app/pengaturan?tab=prohibited');
+      router.push('/app/pengaturan/kawasan');
     },
     onError: (error) => {
       toast.error(error.message || 'Gagal memperbarui kawasan Non-SPPTG.');

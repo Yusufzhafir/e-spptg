@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from './ui/button';
 import {
@@ -31,45 +30,13 @@ export type ServerPagination = {
 };
 
 /**
- * Client-side paging for a list already held in memory.
- *
- * The current page is clamped while rendering rather than corrected by an
- * effect: filtering a list down while sitting on page 3, or switching from 10
- * rows per page to 100, would otherwise leave the reader staring at an empty
- * table until something else triggered a re-render.
- */
-export function useTablePagination<T>(rows: T[], initialPageSize = DEFAULT_PAGE_SIZE) {
-  const [pageSize, setPageSizeState] = useState<number>(initialPageSize);
-  const [page, setPage] = useState(0);
-
-  const total = rows.length;
-  const lastPage = Math.max(0, Math.ceil(total / pageSize) - 1);
-  const currentPage = Math.min(page, lastPage);
-
-  return {
-    page: currentPage,
-    setPage,
-    pageSize,
-    /** Changing the size restarts at page 1 — the old offset means nothing now. */
-    setPageSize: (next: number) => {
-      setPageSizeState(next);
-      setPage(0);
-    },
-    lastPage,
-    total,
-    pageRows: rows.slice(currentPage * pageSize, (currentPage + 1) * pageSize),
-    /** Call after any filter or search change so the reader is not left past the end. */
-    resetPage: () => setPage(0),
-  };
-}
-
-/**
  * The footer under a table: how many rows to show, which rows these are, and
  * the way to the next page.
  *
  * Shared so every table in the app offers the same choices and reads the same
- * way. Server-paged tables (the audit log) pass the same props from their own
- * state instead of using the hook above.
+ * way. Every table it sits under is paged in Postgres — most of them build
+ * these props with `useTableUrlState` + `useServerPagination`; the audit log
+ * keeps its own state.
  */
 export function TablePager({
   page,

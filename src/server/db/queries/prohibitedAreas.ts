@@ -14,12 +14,21 @@ export async function listProhibitedAreas(limit = 100, offset = 0) {
     .limit(limit).offset(offset)
 }
 
-/** Columns the Kawasan table may be ordered by, sorted in Postgres. */
+/**
+ * Columns the Kawasan table may be ordered by, sorted in Postgres — one entry
+ * per sortable header in the tab.
+ *
+ * `diunggahOleh` orders by the uploader's *name* rather than their id: the
+ * column shows the name, so ordering by the number behind it would look
+ * arbitrary. The join is already there for the same reason.
+ */
 const AREA_SORT_COLUMNS = {
   namaKawasan: prohibitedAreas.namaKawasan,
   jenisKawasan: prohibitedAreas.jenisKawasan,
   sumberData: prohibitedAreas.sumberData,
+  dasarHukum: prohibitedAreas.dasarHukum,
   tanggalEfektif: prohibitedAreas.tanggalEfektif,
+  diunggahOleh: users.nama,
   statusValidasi: prohibitedAreas.statusValidasi,
   aktifDiValidasi: prohibitedAreas.aktifDiValidasi,
   updatedAt: prohibitedAreas.updatedAt,
@@ -37,6 +46,7 @@ export async function listProhibitedAreasPaged(
   params: {
     search?: string;
     jenisKawasan?: string;
+    statusValidasi?: string;
     sortKey?: AreaSortKey;
     sortDir?: 'asc' | 'desc';
     limit?: number;
@@ -48,6 +58,9 @@ export async function listProhibitedAreasPaged(
 
   if (params.jenisKawasan) {
     conditions.push(eq(prohibitedAreas.jenisKawasan, params.jenisKawasan as never));
+  }
+  if (params.statusValidasi) {
+    conditions.push(eq(prohibitedAreas.statusValidasi, params.statusValidasi as never));
   }
   if (params.search?.trim()) {
     const pattern = `%${params.search.trim().toLowerCase()}%`;
@@ -63,15 +76,21 @@ export async function listProhibitedAreasPaged(
   const column = AREA_SORT_COLUMNS[params.sortKey ?? 'updatedAt'];
   const orderBy = params.sortDir === 'asc' ? asc(column) : desc(column);
 
-  const items = await db
-    .select({ ...rest, geom: sql`ST_AsGeoJSON(geom)`, diunggahOlehNama: users.nama })
-    .from(prohibitedAreas)
-    .leftJoin(users, eq(prohibitedAreas.diunggahOleh, users.id))
-    .where(where)
-    // `id` as a tiebreak so equal values cannot swap between pages.
-    .orderBy(orderBy, desc(prohibitedAreas.id))
-    .limit(params.limit ?? 50)
-    .offset(params.offset ?? 0);
+  // `limit: 0` asks for the count alone — what the Pengaturan nav needs for its
+  // record-count pill. Worth skipping the row entirely here: every kawasan
+  // carries its whole boundary as GeoJSON.
+  const items =
+    params.limit === 0
+      ? []
+      : await db
+          .select({ ...rest, geom: sql`ST_AsGeoJSON(geom)`, diunggahOlehNama: users.nama })
+          .from(prohibitedAreas)
+          .leftJoin(users, eq(prohibitedAreas.diunggahOleh, users.id))
+          .where(where)
+          // `id` as a tiebreak so equal values cannot swap between pages.
+          .orderBy(orderBy, desc(prohibitedAreas.id))
+          .limit(params.limit ?? 50)
+          .offset(params.offset ?? 0);
 
   const [counted] = await db
     .select({ count: sql<number>`count(*)::int` })

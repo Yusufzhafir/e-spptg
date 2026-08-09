@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { User, UserRole, UserStatus, Village } from '../types';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -11,7 +11,9 @@ import {
   TableHeader,
   TableRow,
 } from './ui/table';
-import { useTableSort, SortableHead } from './table-sort';
+import { SortableHead } from './table-sort';
+import { useServerPagination, useTableUrlState } from './table-url-state';
+import { trpc } from '@/trpc/client';
 import { formatDateTime } from '@/lib/format-date';
 import { useAuthRole } from './AuthRoleProvider';
 import { canManageUser, canViewUser, canViewUserDetail } from '@/lib/user-access';
@@ -49,14 +51,26 @@ import { Badge } from './ui/badge';
 import { Search, Plus, Edit, Eye, Power, KeyRound, Mail, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { UserAvatar } from './UserAvatar';
-import { TablePager, useTablePagination } from './table-pagination';
+import { TablePager } from './table-pagination';
 import { toast } from 'sonner';
 
+/** Filters this table keeps in the URL, beside the search box. */
+const USER_FILTER_KEYS = ['peran', 'status'] as const;
+
+/** Columns `users.list` can order by — must match the router's enum. */
+type UserSortKey =
+  | 'nama'
+  | 'nipNik'
+  | 'email'
+  | 'peran'
+  | 'status'
+  | 'terakhirMasuk'
+  | 'updatedAt';
+
 interface UsersTabProps {
-  users: User[];
+  /** Reference list for the desa/kecamatan pickers in the dialogs — all of them. */
   villages: Village[];
   canManageVillageAssignment?: boolean;
-  onUpdateUsers?: (users: User[]) => void;
   /**
    * The server mails an invite link; no password is ever sent from here.
    * Returning a promise keeps the dialog open — and the Simpan button in its
@@ -75,10 +89,8 @@ interface UsersTabProps {
 }
 
 export function UsersTab({
-  users,
   villages,
   canManageVillageAssignment = false,
-  onUpdateUsers,
   onCreateUser,
   onUpdateUser,
   onToggleUserStatus,
@@ -93,9 +105,57 @@ export function UsersTab({
     canManageVillageAssignment || (isAdminActor && role === 'Verifikator');
   // Kecamatan options come from the villages reference data.
   const kecamatanOptions = Array.from(new Set(villages.map((v) => v.kecamatan))).sort();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+
+  // Search, filters, paging and sort are all decided in Postgres: the table
+  // only ever holds the rows on screen, so sorting or filtering here would
+  // reorder ten rows out of however many there are.
+  const table = useTableUrlState<UserSortKey>(USER_FILTER_KEYS, {
+    key: 'updatedAt',
+    dir: 'desc',
+  });
+
+  const {
+    data: usersPage,
+    isLoading,
+    isFetching,
+    error,
+  } = trpc.users.list.useQuery(
+    {
+      search: table.appliedSearch || undefined,
+      peran: table.filters.peran || undefined,
+      status: table.filters.status || undefined,
+      sortKey: table.sortKey,
+      sortDir: table.sortDir,
+      limit: table.pageSize,
+      offset: table.page * table.pageSize,
+    },
+    // Keep the previous page on screen while the next one loads, so paging and
+    // typing do not blank the table between requests.
+    { placeholderData: (previous) => previous }
+  );
+
+  const pagination = useServerPagination(table, usersPage?.total ?? 0);
+
+  const users: User[] = useMemo(
+    () =>
+      (usersPage?.items ?? []).map((u) => ({
+        id: u.id,
+        hasPassword: u.hasPassword,
+        nama: u.nama,
+        nipNik: u.nipNik,
+        email: u.email,
+        peran: u.peran,
+        assignedVillageId: u.assignedVillageId ?? null,
+        assignedKecamatan: u.assignedKecamatan ?? null,
+        status: u.status,
+        nomorHP: u.nomorHP || null,
+        fotoProfilUrl: u.fotoProfilUrl ?? null,
+        terakhirMasuk: u.terakhirMasuk ? new Date(u.terakhirMasuk) : null,
+        updatedAt: u.updatedAt ?? null,
+      })),
+    [usersPage]
+  );
+
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeactivateDialogOpen, setIsDeactivateDialogOpen] = useState(false);
@@ -124,51 +184,12 @@ export function UsersTab({
     }
   };
 
-  // Filter users
-  const filteredUsers = users.filter((user) => {
-    // Defense-in-depth: the server already scopes the list, but never render a
-    // row the current user isn't allowed to see.
-    const matchesVisibility = !currentUser || canViewUser(currentUser, user);
-
-    const matchesSearch =
-      !searchQuery ||
-      user.nama.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.nipNik.includes(searchQuery);
-
-    const matchesRole = roleFilter === 'all' || user.peran === roleFilter;
-    const matchesStatus = statusFilter === 'all' || user.status === statusFilter;
-
-    return matchesVisibility && matchesSearch && matchesRole && matchesStatus;
-  });
-
-  const {
-    sorted: sortedUsers,
-    sortKey,
-    sortDir,
-    toggleSort,
-  } = useTableSort<User>(filteredUsers, (user, key) => {
-    switch (key) {
-      case 'nama':
-        return user.nama?.toLowerCase();
-      case 'nipNik':
-        return user.nipNik;
-      case 'email':
-        return user.email?.toLowerCase();
-      case 'peran':
-        return user.peran;
-      case 'status':
-        return user.status;
-      case 'terakhirMasuk':
-        return user.terakhirMasuk ? new Date(user.terakhirMasuk).getTime() : 0;
-      case 'updatedAt':
-        return user.updatedAt ? new Date(user.updatedAt).getTime() : 0;
-      default:
-        return '';
-    }
-  }, { key: 'updatedAt', dir: 'desc' });
-
-  const pagination = useTablePagination(sortedUsers);
+  // Defense-in-depth: the server already scopes the list, but never render a
+  // row the current user isn't allowed to see.
+  const visibleUsers = useMemo(
+    () => (currentUser ? users.filter((user) => canViewUser(currentUser, user)) : users),
+    [users, currentUser]
+  );
 
   const handleAddUser = () => {
     setErrors({});
@@ -261,21 +282,6 @@ export function UsersTab({
       } finally {
         setIsSavingUser(false);
       }
-    } else if (onUpdateUsers) {
-      const newUser: User = {
-        id: new Date().getTime(),
-        nama: formData.nama ?? '',
-        nipNik: formData.nipNik ?? '',
-        email: formData.email ?? '',
-        peran: formData.peran as UserRole,
-        assignedVillageId: formData.assignedVillageId ?? null,
-        status: (formData.status as UserStatus) || 'Aktif',
-        nomorHP: formData.nomorHP || null,
-        // Every new account starts without one — it is set from the invite link.
-        hasPassword: false,
-        terakhirMasuk: null,
-      };
-      onUpdateUsers([...users, newUser]);
     } else {
       toast.error('Penambahan pengguna tidak tersedia.');
       return;
@@ -329,13 +335,6 @@ export function UsersTab({
       });
       // Success toast comes from the update mutation's onSuccess — toasting
       // here as well showed it twice, and did so even when the save failed.
-    } else if (onUpdateUsers) {
-      const updatedUsers = users.map((u) =>
-        u.id === selectedUser.id ? { ...u, ...formData } : u
-      );
-      onUpdateUsers(updatedUsers);
-      // Local-only fallback has no mutation, so it reports success itself.
-      toast.success('Pengguna berhasil diperbarui.');
     } else {
       toast.error('Pembaruan pengguna tidak tersedia');
       return;
@@ -350,31 +349,14 @@ export function UsersTab({
   const confirmDeactivate = () => {
     if (!selectedUser) return;
 
-    if (onToggleUserStatus) {
-      onToggleUserStatus(selectedUser.id);
-      setIsDeactivateDialogOpen(false);
-      setSelectedUser(null);
-      return;
-    }
-
-    if (!onUpdateUsers) {
+    if (!onToggleUserStatus) {
       toast.error('Perubahan status pengguna tidak tersedia');
       return;
     }
 
-    const newStatus: UserStatus = selectedUser.status === 'Aktif' ? 'Nonaktif' : 'Aktif';
-    const updatedUsers = users.map((u) =>
-      u.id === selectedUser.id ? { ...u, status: newStatus } : u
-    );
-
-    onUpdateUsers(updatedUsers);
+    onToggleUserStatus(selectedUser.id);
     setIsDeactivateDialogOpen(false);
     setSelectedUser(null);
-    toast.success(
-      newStatus === 'Aktif'
-        ? 'Pengguna berhasil diaktifkan.'
-        : 'Pengguna berhasil dinonaktifkan.'
-    );
   };
 
   const confirmSendPasswordReset = () => {
@@ -398,13 +380,16 @@ export function UsersTab({
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input
               placeholder="Cari pengguna (nama, email, NIK)…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={table.search}
+              onChange={(e) => table.setSearch(e.target.value)}
               className="pl-10"
             />
           </div>
 
-          <Select value={roleFilter} onValueChange={setRoleFilter}>
+          <Select
+            value={table.filters.peran || 'all'}
+            onValueChange={(value) => table.setFilter('peran', value === 'all' ? '' : value)}
+          >
             <SelectTrigger className="w-full sm:w-[180px]">
               <SelectValue placeholder="Semua Peran" />
             </SelectTrigger>
@@ -417,7 +402,10 @@ export function UsersTab({
             </SelectContent>
           </Select>
 
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select
+            value={table.filters.status || 'all'}
+            onValueChange={(value) => table.setFilter('status', value === 'all' ? '' : value)}
+          >
             <SelectTrigger className="w-full sm:w-[180px]">
               <SelectValue placeholder="Semua Status" />
             </SelectTrigger>
@@ -454,25 +442,31 @@ export function UsersTab({
         <Table className="min-w-250">
           <TableHeader>
             <TableRow className="bg-gray-50">
-              <SortableHead label="Nama" sortKey="nama" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
-              <SortableHead label="NIP/NIK" sortKey="nipNik" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
-              <SortableHead label="Email" sortKey="email" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
-              <SortableHead label="Peran" sortKey="peran" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
-              <SortableHead label="Status" sortKey="status" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+              <SortableHead label="Nama" sortKey="nama" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
+              <SortableHead label="NIP/NIK" sortKey="nipNik" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
+              <SortableHead label="Email" sortKey="email" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
+              <SortableHead label="Peran" sortKey="peran" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
+              <SortableHead label="Status" sortKey="status" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
               <TableHead>Kata Sandi</TableHead>
-              <SortableHead label="Terakhir Masuk" sortKey="terakhirMasuk" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+              <SortableHead label="Terakhir Masuk" sortKey="terakhirMasuk" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
               <TableHead className="text-right">Aksi</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sortedUsers.length === 0 ? (
+            {visibleUsers.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="text-center py-8 text-gray-500">
-                  Tidak ada pengguna yang ditemukan
+                  {isLoading
+                    ? 'Memuat pengguna…'
+                    : error
+                    ? error.message
+                    : table.hasFilter
+                    ? 'Tidak ada pengguna yang cocok dengan pencarian atau filter.'
+                    : 'Belum ada pengguna.'}
                 </TableCell>
               </TableRow>
             ) : (
-              pagination.pageRows.map((user) => (
+              visibleUsers.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell>
                     <div className="flex items-center gap-2.5">
@@ -591,15 +585,7 @@ export function UsersTab({
         </Table>
 
         <div className="border-t border-gray-200 px-4 py-3">
-          <TablePager
-            page={pagination.page}
-            setPage={pagination.setPage}
-            pageSize={pagination.pageSize}
-            setPageSize={pagination.setPageSize}
-            total={pagination.total}
-            lastPage={pagination.lastPage}
-            noun="pengguna"
-          />
+          <TablePager {...pagination} noun="pengguna" isBusy={isFetching} />
         </div>
       </div>
 

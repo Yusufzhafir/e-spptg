@@ -2,6 +2,18 @@ import { and, asc, desc, eq, ilike, sql, getTableColumns } from 'drizzle-orm';
 import { db, DBTransaction } from '../db';
 import { villages } from '../schema';
 
+/**
+ * How many pengajuan point at a desa. Written once and used both as a selected
+ * column and as a sort key — the Desa table offers "Jumlah Pengajuan" as a
+ * sortable header, and sorting has to happen in Postgres now that the browser
+ * only ever holds one page.
+ *
+ * NB: the outer column is referenced by table name; see `listVillages` below.
+ */
+const villageSubmissionCount = sql<number>`(
+  SELECT COUNT(*)::int FROM submissions AS sub WHERE sub."villageId" = "villages"."id"
+)`;
+
 /** Columns the Desa table may be ordered by, sorted in Postgres. */
 const VILLAGE_SORT_COLUMNS = {
   kodeDesa: villages.kodeDesa,
@@ -10,6 +22,7 @@ const VILLAGE_SORT_COLUMNS = {
   kecamatan: villages.kecamatan,
   kabupaten: villages.kabupaten,
   provinsi: villages.provinsi,
+  jumlahPengajuan: villageSubmissionCount,
   updatedAt: villages.updatedAt,
 } as const;
 
@@ -46,19 +59,22 @@ export async function listVillagesPaged(
   const column = VILLAGE_SORT_COLUMNS[params.sortKey ?? 'updatedAt'];
   const orderBy = params.sortDir === 'asc' ? asc(column) : desc(column);
 
-  const items = await queryDb
-    .select({
-      ...getTableColumns(villages),
-      jumlahPengajuan: sql<number>`(
-        SELECT COUNT(*)::int FROM submissions AS sub WHERE sub."villageId" = "villages"."id"
-      )`,
-    })
-    .from(villages)
-    .where(where)
-    // `id` as a tiebreak so equal values cannot swap between pages.
-    .orderBy(orderBy, desc(villages.id))
-    .limit(params.limit ?? 50)
-    .offset(params.offset ?? 0);
+  // `limit: 0` asks for the count alone — what the Pengaturan nav needs for its
+  // record-count pill.
+  const items =
+    params.limit === 0
+      ? []
+      : await queryDb
+          .select({
+            ...getTableColumns(villages),
+            jumlahPengajuan: villageSubmissionCount,
+          })
+          .from(villages)
+          .where(where)
+          // `id` as a tiebreak so equal values cannot swap between pages.
+          .orderBy(orderBy, desc(villages.id))
+          .limit(params.limit ?? 50)
+          .offset(params.offset ?? 0);
 
   const [counted] = await queryDb
     .select({ count: sql<number>`count(*)::int` })

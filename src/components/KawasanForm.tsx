@@ -121,7 +121,7 @@ export function KawasanForm({ mode, initialArea, isSubmitting, onSubmit }: Kawas
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" onClick={() => router.push('/app/pengaturan?tab=prohibited')}>
+        <Button variant="ghost" size="sm" onClick={() => router.push('/app/pengaturan/kawasan')}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Kembali
         </Button>
@@ -262,7 +262,7 @@ export function KawasanForm({ mode, initialArea, isSubmitting, onSubmit }: Kawas
       <div className="flex justify-end gap-2">
         <Button
           variant="outline"
-          onClick={() => router.push('/app/pengaturan?tab=prohibited')}
+          onClick={() => router.push('/app/pengaturan/kawasan')}
           disabled={isSubmitting}
         >
           Batal
