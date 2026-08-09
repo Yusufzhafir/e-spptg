@@ -103,6 +103,20 @@ export function UsersTab({
   const isAdminActor = currentUser?.peran === 'Admin';
   const canAssignRole = (role: UserRole) =>
     canManageVillageAssignment || (isAdminActor && role === 'Verifikator');
+  // Which roles the Peran filter may offer. It has to mirror what `users.list`
+  // can actually return, or the filter hands out options that always come back
+  // empty: the desa scope is `assigned_village_id = <desa>`, and only
+  // Admin/Verifikator ever carry one — Superadmin, Kecamatan and Viewer are all
+  // stored with a null desa, so a desa-scoped actor can never see them.
+  const roleFilterOptions: UserRole[] =
+    currentUser?.peran === 'Superadmin'
+      ? ['Superadmin', 'Admin', 'Verifikator', 'Kecamatan', 'Viewer']
+      : currentUser?.peran === 'Admin' || currentUser?.peran === 'Verifikator'
+        ? ['Admin', 'Verifikator']
+        : // Everyone else only ever sees their own row.
+          currentUser
+          ? [currentUser.peran as UserRole]
+          : [];
   // Kecamatan options come from the villages reference data.
   const kecamatanOptions = Array.from(new Set(villages.map((v) => v.kecamatan))).sort();
 
@@ -114,6 +128,13 @@ export function UsersTab({
     dir: 'desc',
   });
 
+  // Filters live in the URL, so a role that is no longer offered can arrive by
+  // link or by back-button. Drop it rather than querying for something the
+  // dropdown cannot show as selected.
+  const peranFilter = roleFilterOptions.includes(table.filters.peran as UserRole)
+    ? table.filters.peran
+    : '';
+
   const {
     data: usersPage,
     isLoading,
@@ -122,7 +143,7 @@ export function UsersTab({
   } = trpc.users.list.useQuery(
     {
       search: table.appliedSearch || undefined,
-      peran: table.filters.peran || undefined,
+      peran: peranFilter || undefined,
       status: table.filters.status || undefined,
       sortKey: table.sortKey,
       sortDir: table.sortDir,
@@ -387,7 +408,7 @@ export function UsersTab({
           </div>
 
           <Select
-            value={table.filters.peran || 'all'}
+            value={peranFilter || 'all'}
             onValueChange={(value) => table.setFilter('peran', value === 'all' ? '' : value)}
           >
             <SelectTrigger className="w-full sm:w-[180px]">
@@ -395,10 +416,11 @@ export function UsersTab({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Semua Peran</SelectItem>
-              <SelectItem value="Superadmin">Superadmin</SelectItem>
-              <SelectItem value="Admin">Admin</SelectItem>
-              <SelectItem value="Verifikator">Verifikator</SelectItem>
-              <SelectItem value="Viewer">Viewer</SelectItem>
+              {roleFilterOptions.map((role) => (
+                <SelectItem key={role} value={role}>
+                  {role}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
 

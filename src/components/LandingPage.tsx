@@ -17,6 +17,7 @@ import { SignedIn, SignedOut } from "./auth/SessionGate";
 import Link from "next/link";
 import Image from "next/image";
 import { Reveal } from "./Reveal";
+import { Parallax } from "./Parallax";
 
 /** The four wizard stages a pengajuan moves through. */
 const steps = [
@@ -124,34 +125,25 @@ export function LandingPage() {
       {/* ---------------------------------------------------------------- Header */}
       <header className="sticky top-0 z-50 border-b border-gray-200/70 bg-white/70 shadow-[0_1px_3px_rgb(0_0_0/0.04)] backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:h-[4.5rem] sm:px-6 lg:px-8">
+          {/* The lockup already carries the name and the tagline, so the link
+              needs no text of its own — the aria-label speaks for it. */}
           <Link
             href="/"
             aria-label="SIAPTAH — kembali ke beranda"
-            className="group flex min-w-0 items-center gap-2.5 rounded-lg outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            className="flex min-w-0 items-center rounded-lg outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
           >
-            <span className="relative shrink-0">
-              {/* Soft halo that warms up on hover */}
-              <span
-                aria-hidden
-                className="absolute -inset-1 rounded-xl bg-blue-500/0 transition-colors group-hover:bg-blue-500/10"
-              />
-              <Image
-                src="/SIPETA_LOGO.png"
-                alt="SIAPTAH logo"
-                width={40}
-                height={40}
-                className="relative h-9 w-9 sm:h-10 sm:w-10"
-                priority
-              />
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate text-base font-bold tracking-tight text-gray-900 sm:text-lg">
-                SIAPTAH
-              </span>
-              <span className="hidden truncate text-xs leading-tight text-gray-500 sm:block">
-                Sistem Informasi Administrasi Pertanahan
-              </span>
-            </span>
+            <Image
+              src="/SIPETA_LOGO_NAVBAR.png"
+              alt=""
+              width={1492}
+              height={559}
+              // Without this Next assumes the image may fill the viewport and
+              // serves the 1920px variant for a ~150px slot — 80 KB instead of
+              // 14 KB, preloaded, competing with the LCP image for bandwidth.
+              sizes="(min-width: 640px) 150px, 120px"
+              className="h-11 w-auto sm:h-14"
+              priority
+            />
           </Link>
 
           {/* No navigation links by design — the only actions are sign in / sign up. */}
@@ -199,8 +191,11 @@ export function LandingPage() {
             <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">
               Pemerintah Kabupaten Kutai Timur
             </p>
+            {/* The `{' '}` is load-bearing: the span is `block`, so browsers and
+                Google render a line break, but a parser reading `textContent`
+                would otherwise see "InformasiAdministrasi" as one token. */}
             <h1 className="mt-3 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl lg:text-5xl">
-              Sistem Informasi
+              Sistem Informasi{' '}
               <span className="mt-1 block bg-gradient-to-r from-blue-600 to-sky-500 bg-clip-text text-transparent">
                 Administrasi Pertanahan
               </span>
@@ -251,64 +246,24 @@ export function LandingPage() {
             </div>
           </div>
 
-          {/* Stylised product preview (pure CSS — no screenshot needed).
-              Above the fold as well, so it skips <Reveal> for the same reason. */}
+          {/* Hero illustration. Above the fold as well, so it skips <Reveal>
+              for the same reason as the copy block, and is marked priority
+              because it is the other LCP candidate. */}
           <div className="relative">
-            <div className="rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl shadow-blue-900/10 sm:p-4">
-              <div className="mb-3 flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
-                <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
-                <span className="h-2.5 w-2.5 rounded-full bg-green-400" />
-              </div>
-
-              {/* Faux map with an overlapping prohibited zone */}
-              <div className="relative h-44 overflow-hidden rounded-xl bg-gradient-to-br from-emerald-50 via-sky-50 to-blue-100 sm:h-56">
-                <svg
-                  className="absolute inset-0 h-full w-full"
-                  viewBox="0 0 400 220"
-                  aria-hidden
-                >
-                  <defs>
-                    <pattern
-                      id="grid"
-                      width="28"
-                      height="28"
-                      patternUnits="userSpaceOnUse"
-                    >
-                      <path
-                        d="M28 0H0V28"
-                        fill="none"
-                        stroke="rgb(148 163 184 / 0.25)"
-                      />
-                    </pattern>
-                  </defs>
-                  <rect width="400" height="220" fill="url(#grid)" />
-                  <polygon
-                    points="60,150 130,60 250,80 230,180 110,190"
-                    fill="rgb(37 99 235 / 0.22)"
-                    stroke="#2563eb"
-                    strokeWidth="2.5"
-                  />
-                  <polygon
-                    points="210,40 340,60 320,150 220,130"
-                    fill="rgb(239 68 68 / 0.18)"
-                    stroke="#ef4444"
-                    strokeWidth="2"
-                    strokeDasharray="6 4"
-                  />
-                </svg>
-                <div className="absolute bottom-2 left-2 flex flex-wrap gap-1.5 text-[10px]">
-                  <span className="inline-flex items-center gap-1 rounded bg-white/90 px-1.5 py-0.5 font-medium text-gray-700 shadow-sm">
-                    <span className="h-2 w-2 rounded-sm bg-blue-600" /> Bidang
-                    tanah
-                  </span>
-                  <span className="inline-flex items-center gap-1 rounded bg-white/90 px-1.5 py-0.5 font-medium text-gray-700 shadow-sm">
-                    <span className="h-2 w-2 rounded-sm bg-red-500" /> Kawasan
-                    Non-SPPTG
-                  </span>
-                </div>
-              </div>
-            </div>
+            {/* Soft halo so the illustration's faded edges sit on something */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-6 -z-10 rounded-full bg-blue-200/40 blur-3xl"
+            />
+            <Image
+              src="/imgs/illustrator-1.png"
+              alt="Petugas desa memverifikasi bidang tanah lewat peta digital, dokumen berkas, dan sertifikat SPPTG"
+              width={1536}
+              height={1024}
+              sizes="(min-width: 1024px) 40rem, 100vw"
+              className="h-auto w-full max-w-xl mx-auto lg:max-w-none"
+              priority
+            />
           </div>
         </div>
       </section>
@@ -323,6 +278,124 @@ export function LandingPage() {
           aria-hidden
           className="pointer-events-none absolute -left-24 top-1/2 h-64 w-64 -translate-y-1/2 rounded-full bg-blue-500/20 blur-3xl"
         />
+      </section>
+
+      {/* ------------------------------------------------------- Tentang SPPTG */}
+      {/* Answers the questions people (and answer engines) actually ask before
+          "how does the wizard work": what the document is, who may apply, and
+          what to bring. Every claim here is drawn from the wizard's own rules. */}
+      {/* `bg-gray-50/60` stays as the paint-behind: the artwork is opaque, so it
+          covers this entirely once loaded, but the section keeps its tint while
+          the (lazy, below-fold) image is still on the wire. */}
+      <section
+        id="tentang-spptg"
+        className="relative overflow-hidden bg-gray-50/60"
+      >
+        {/* Two layers, not one: the globe half stays put while the satellite
+            drifts and parallaxes. Separate files because a single <img> cannot
+            move one of its own regions. */}
+        <Image
+          src="/imgs/illustrator-layanan-bumi.png"
+          alt=""
+          aria-hidden
+          width={1536}
+          height={1024}
+          sizes="100vw"
+          className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover"
+        />
+
+        {/* Positioned against the section, not against the base image: the base
+            is `object-cover`, so its crop shifts with the viewport and anything
+            pinned to image coordinates would drift out of place. The satellite
+            was erased from the base, so there is no hole to line up with — only
+            empty wash, which reads correctly wherever this lands up here. */}
+        {/* `top-16` is not arbitrary: the section clips overflow and the
+            parallax lifts this by up to `distance`, so the resting offset has
+            to exceed that or the satellite shears off at the top edge. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute top-10 -right-10 w-[56%] opacity-45 sm:top-20 sm:right-[6%] sm:w-[24%] sm:max-w-[280px] sm:opacity-100"
+        >
+          <Parallax distance={-40}>
+            <Image
+              src="/imgs/illustrator-layanan-satelit.png"
+              alt=""
+              width={383}
+              height={312}
+              sizes="(min-width: 640px) 400px, 44vw"
+              className="animate-satellite-drift h-auto w-full select-none"
+            />
+          </Parallax>
+        </div>
+
+        {/* The artwork is already near-white; this only lifts the globe corner
+            enough that body copy keeps its contrast where the two overlap. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-white/45"
+        />
+
+        <div className="relative mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-36 lg:px-8">
+          <Reveal className="mx-auto max-w-3xl text-center">
+            <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">
+              Tentang Layanan
+            </p>
+            <h2 className="mt-2 text-2xl font-bold text-gray-900 sm:text-3xl">
+              Apa itu SPPTG?
+            </h2>
+            <p className="mt-4 text-base leading-relaxed text-gray-600">
+              <strong className="font-semibold text-gray-900">
+                SPPTG — Surat Pernyataan Penguasaan Tanah Garapan
+              </strong>{' '}
+              adalah dokumen resmi yang diterbitkan Pemerintah Kabupaten Kutai
+              Timur untuk mencatat penguasaan sebidang tanah garapan oleh warga.
+              Dokumen ini menerangkan siapa yang menguasai lahan, di mana
+              letaknya, dan berapa luasnya — lengkap dengan batas bidang yang
+              sudah diukur dan diperiksa terhadap kawasan yang tidak boleh
+              diterbitkan SPPTG.
+            </p>
+            <p className="mt-3 text-base leading-relaxed text-gray-600">
+              SIAPTAH memindahkan seluruh prosesnya ke satu alur digital, dari
+              pengunggahan berkas sampai sertifikat SPPTG siap unduh, sehingga
+              pemohon tidak perlu bolak-balik hanya untuk menanyakan posisi
+              berkasnya.
+            </p>
+          </Reveal>
+
+          <dl className="mx-auto mt-12 grid max-w-5xl gap-6 md:grid-cols-3">
+            <Reveal className="rounded-2xl border border-gray-200 bg-white/90 p-6 backdrop-blur-sm">
+              <dt className="font-semibold text-gray-900">Siapa yang bisa mengajukan</dt>
+              <dd className="mt-2 text-sm leading-relaxed text-gray-600">
+                Warga Kabupaten Kutai Timur yang menggarap tanah dan membutuhkan
+                bukti tertulis atas penguasaannya. Anda dapat mendaftar sendiri
+                lewat tombol Daftar, atau memakai akun yang dibuatkan admin desa
+                bila pengajuan dibantu aparatur desa.
+              </dd>
+            </Reveal>
+
+            <Reveal delay={80} className="rounded-2xl border border-gray-200 bg-white/90 p-6 backdrop-blur-sm">
+              <dt className="font-semibold text-gray-900">Dokumen yang disiapkan</dt>
+              <dd className="mt-2 text-sm leading-relaxed text-gray-600">
+                <span className="font-medium text-gray-900">KTP</span> dan{' '}
+                <span className="font-medium text-gray-900">Kartu Keluarga</span>{' '}
+                wajib diunggah. Siapkan pula kwitansi, surat permohonan, dan
+                surat pernyataan tidak sengketa — templat ketiganya bisa diunduh
+                langsung dari dalam aplikasi.
+              </dd>
+            </Reveal>
+
+            <Reveal delay={160} className="rounded-2xl border border-gray-200 bg-white/90 p-6 backdrop-blur-sm">
+              <dt className="font-semibold text-gray-900">Cara batas lahan dicatat</dt>
+              <dd className="mt-2 text-sm leading-relaxed text-gray-600">
+                Batas bidang digambar langsung di peta, diimpor dari berkas
+                KML/KMZ hasil pengukuran, atau diketik sebagai koordinat
+                geografis maupun UTM. Sistem lalu memeriksa tumpang tindih
+                dengan Hutan Lindung, Sempadan Sungai, Tanah Pemerintah, dan
+                kawasan Non-SPPTG lain, serta menghitung luasnya dalam m².
+              </dd>
+            </Reveal>
+          </dl>
+        </div>
       </section>
 
       {/* ------------------------------------------------------------- Alur kerja */}
@@ -382,42 +455,63 @@ export function LandingPage() {
       </section>
 
       {/* ---------------------------------------------------------------- Fitur */}
-      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
-        <div className="mx-auto max-w-2xl text-center">
-          <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">
-            Kemampuan
-          </p>
-          <h2 className="mt-2 text-2xl font-bold text-gray-900 sm:text-3xl">
-            Dibangun untuk pekerjaan pertanahan yang sebenarnya
-          </h2>
-          <p className="mt-3 text-gray-600">
-            Bukan sekadar formulir digital — setiap fitur menjawab kebutuhan
-            verifikasi di lapangan.
-          </p>
-        </div>
+      <section className="relative overflow-hidden">
+        {/* Illustration backdrop. Its subjects sit at the far left/right and the
+            middle is transparent, so the heading stays on clean white; the scrim
+            below keeps the cards readable where they overlap the artwork. */}
+        <Image
+          src="/imgs/illustrator-2.png"
+          alt=""
+          aria-hidden
+          width={1536}
+          height={1024}
+          sizes="100vw"
+          className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover opacity-60"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-white/55"
+        />
 
-        {/* Bento layout: the differentiator gets a wide dark tile, the rest follow */}
-        <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {features.map((feature, index) => {
-            const Icon = feature.icon;
-            return (
-              <Reveal
-                key={feature.title}
-                delay={index * 80}
-                className="group rounded-2xl border border-gray-200 bg-white p-6 transition-all hover:-translate-y-1 hover:shadow-xl"
-              >
-                <div
-                  className={`mb-4 inline-flex h-11 w-11 items-center justify-center rounded-lg transition-colors group-hover:text-white ${feature.accent}`}
+        <div className="relative mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">
+              Kemampuan
+            </p>
+            <h2 className="mt-2 text-2xl font-bold text-gray-900 sm:text-3xl">
+              Dibangun untuk pekerjaan pertanahan yang sebenarnya
+            </h2>
+            <p className="mt-3 text-gray-600">
+              Bukan sekadar formulir digital — setiap fitur menjawab kebutuhan
+              verifikasi di lapangan.
+            </p>
+          </div>
+
+          {/* Bento layout: the differentiator gets a wide dark tile, the rest follow */}
+          <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {features.map((feature, index) => {
+              const Icon = feature.icon;
+              return (
+                <Reveal
+                  key={feature.title}
+                  delay={index * 80}
+                  className="group rounded-2xl border border-gray-200 bg-white/90 p-6 backdrop-blur-sm transition-all hover:-translate-y-1 hover:bg-white hover:shadow-xl"
                 >
-                  <Icon className="h-5 w-5" />
-                </div>
-                <h3 className="font-semibold text-gray-900">{feature.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-gray-600">
-                  {feature.description}
-                </p>
-              </Reveal>
-            );
-          })}
+                  <div
+                    className={`mb-4 inline-flex h-11 w-11 items-center justify-center rounded-lg transition-colors group-hover:text-white ${feature.accent}`}
+                  >
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <h3 className="font-semibold text-gray-900">
+                    {feature.title}
+                  </h3>
+                  <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                    {feature.description}
+                  </p>
+                </Reveal>
+              );
+            })}
+          </div>
         </div>
       </section>
 
@@ -459,10 +553,22 @@ export function LandingPage() {
       </section>
 
       {/* ------------------------------------------------------------------ CTA */}
+      {/* The gradient stays as the paint-behind: the illustration is blue edge
+          to edge, so the section never flashes white while it loads. */}
       <section className="relative overflow-hidden bg-gradient-to-br from-blue-700 via-blue-600 to-sky-500">
+        <Image
+          src="/imgs/illustrator-3.png"
+          alt=""
+          aria-hidden
+          width={1536}
+          height={1024}
+          sizes="100vw"
+          className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover"
+        />
+        {/* Darkens the artwork just enough for white copy to stay legible */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-20 [background-image:radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] [background-size:22px_22px]"
+          className="pointer-events-none absolute inset-0 bg-blue-700/25"
         />
         <Reveal className="relative mx-auto max-w-3xl px-4 py-16 text-center sm:px-6 sm:py-20 lg:px-8">
           <h2 className="text-2xl font-bold text-white sm:text-3xl">
@@ -506,25 +612,33 @@ export function LandingPage() {
       {/* --------------------------------------------------------------- Footer */}
       <footer className="bg-gray-900 py-10 text-gray-400">
         <div className="mx-auto flex max-w-7xl flex-col items-center gap-4 px-4 text-center sm:px-6 md:flex-row md:justify-between md:text-left lg:px-8">
-          <div className="flex items-center gap-3">
+          {/* The lockup's wordmark and tagline are dark navy, which all but
+              disappears on gray-900. The light plate is what keeps it legible
+              without a separate inverted artwork. */}
+          <span className="inline-flex rounded-xl bg-white px-3 py-2">
             <Image
-              src="/SIPETA_LOGO.png"
-              alt="SIAPTAH logo"
-              width={36}
-              height={36}
-              className="h-9 w-9"
+              src="/SIPETA_LOGO_NAVBAR.png"
+              alt="SIAPTAH — Sistem Informasi Administrasi Pertanahan"
+              width={1492}
+              height={559}
+              sizes="160px"
+              className="h-8 w-auto sm:h-9"
             />
-            <div>
-              <p className="font-semibold text-white">SIAPTAH</p>
-              <p className="text-xs">
-                Sistem Informasi Administrasi Pertanahan
-              </p>
-            </div>
+          </span>
+          <div className="text-sm">
+            {/* The only outbound link on the page. A service run by a pemda that
+                cites no authority at all is a weak trust signal. */}
+            <a
+              href="https://kutaitimurkab.go.id"
+              className="underline decoration-gray-600 underline-offset-4 transition-colors hover:text-white"
+            >
+              Situs resmi Pemerintah Kabupaten Kutai Timur
+            </a>
+            <p className="mt-2">
+              &copy; {new Date().getFullYear()} Pemerintah Kabupaten Kutai Timur.
+              Hak Cipta Dilindungi.
+            </p>
           </div>
-          <p className="text-sm">
-            &copy; {new Date().getFullYear()} Pemerintah Daerah. Hak Cipta
-            Dilindungi.
-          </p>
         </div>
       </footer>
     </div>

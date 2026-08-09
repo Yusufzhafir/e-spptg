@@ -2,7 +2,13 @@ import './globals.css';
 import type { Metadata, Viewport } from 'next';
 import { ReactNode } from 'react';
 import { Providers } from './providers';
-import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL } from '@/lib/site';
+import {
+  SITE_DESCRIPTION,
+  SITE_META_DESCRIPTION,
+  SITE_NAME,
+  SITE_TAGLINE,
+  SITE_URL,
+} from '@/lib/site';
 
 export const metadata: Metadata = {
   // Makes every relative URL below — canonical, OG image, manifest — resolve to
@@ -14,7 +20,8 @@ export const metadata: Metadata = {
     default: `${SITE_NAME} — ${SITE_TAGLINE}`,
     template: `%s | ${SITE_NAME}`,
   },
-  description: SITE_DESCRIPTION,
+  // The short form: this one becomes <meta name="description">, which Google clips.
+  description: SITE_META_DESCRIPTION,
   applicationName: SITE_NAME,
   manifest: '/manifest.webmanifest',
   // Public by default; the private routes each opt out, and robots.ts disallows

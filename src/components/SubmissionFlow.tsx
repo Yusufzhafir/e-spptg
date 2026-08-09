@@ -36,6 +36,7 @@ import {
   CheckCircle2,
   HelpCircle,
   Eye,
+  Lock,
 } from 'lucide-react';
 import { StatusSPPTG, SubmissionDraft } from '../types';
 import { Step1DocumentUpload } from './submission-steps/Step1DocumentUpload';
@@ -675,6 +676,27 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     window.scrollTo(0, 0);
   };
 
+  /** Why a stage is out of reach, or null when it is open. */
+  const lockedHint = (stepId: number): string | null => {
+    if (isViewer) {
+      if (stepId <= viewerMaxStep) return null;
+      return stepId === 4
+        ? 'Tahap penerbitan diproses oleh petugas'
+        : 'Terbuka setelah petugas menyelesaikan tahap ini';
+    }
+    if (stepId === 4 && !canAccessStep4) {
+      return 'Hanya tersedia jika status "SPPTG terdaftar"';
+    }
+    return null;
+  };
+
+  // Below `sm` the hints move out of the columns and are listed under the row —
+  // four of them side by side is what used to force the stepper off-screen.
+  // Duplicates collapse because consecutive locked stages share a reason.
+  const mobileLockedHints = Array.from(
+    new Set(steps.map((step) => lockedHint(step.id)).filter((hint): hint is string => hint !== null))
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -714,21 +736,23 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
 
       {/* Stepper */}
       <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6">
-        <div className="flex items-center justify-between gap-2 overflow-x-auto min-w-0">
+        {/* Sized down rather than scrolled on phones: the four stages are the
+            page's orientation, so a stepper you have to swipe sideways to read
+            defeats the point. Everything below scales at `sm`. */}
+        <div className="flex items-center justify-between gap-1 sm:gap-2 min-w-0">
           {steps.map((step, index) => {
             const Icon = step.icon;
             const isCompleted = currentStep > step.id;
             const isActive = currentStep === step.id;
-            const isLocked = isViewer
-              ? step.id > viewerMaxStep
-              : step.id === 4 && !canAccessStep4;
+            const hint = lockedHint(step.id);
+            const isLocked = hint !== null;
 
             return (
               <div key={step.id} className="flex items-center flex-1">
-                <div className="flex flex-col items-center flex-1">
+                <div className="flex flex-col items-center flex-1 px-0.5">
                   <div
                     className={cn(
-                      'w-12 h-12 rounded-full flex items-center justify-center border-2 transition-colors',
+                      'w-9 h-9 sm:w-12 sm:h-12 shrink-0 rounded-full flex items-center justify-center border-2 transition-colors',
                       isCompleted
                         ? 'bg-green-600 border-green-600'
                         : isActive
@@ -739,11 +763,11 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                     )}
                   >
                     {isCompleted ? (
-                      <Check className="w-6 h-6 text-white" />
+                      <Check className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
                     ) : (
                       <Icon
                         className={cn(
-                          'w-6 h-6',
+                          'w-4 h-4 sm:w-6 sm:h-6',
                           isActive
                             ? 'text-white'
                             : isLocked
@@ -755,7 +779,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                   </div>
                   <p
                     className={cn(
-                      'text-sm mt-2',
+                      'text-[10px] leading-tight text-center mt-1.5 sm:text-sm sm:mt-2',
                       isActive
                         ? 'text-blue-700'
                         : isLocked
@@ -765,13 +789,9 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                   >
                     {step.label}
                   </p>
-                  {isLocked && (
-                    <p className="text-xs text-gray-500 mt-1 text-center max-w-[100px]">
-                      {!isViewer
-                        ? 'Hanya tersedia jika status "SPPTG terdaftar"'
-                        : step.id === 4
-                          ? 'Tahap penerbitan diproses oleh petugas'
-                          : 'Terbuka setelah petugas menyelesaikan tahap ini'}
+                  {hint && (
+                    <p className="hidden sm:block text-xs text-gray-500 mt-1 text-center max-w-[100px]">
+                      {hint}
                     </p>
                   )}
                 </div>
@@ -779,7 +799,9 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                 {index < steps.length - 1 && (
                   <div
                     className={cn(
-                      'flex-1 h-0.5 mx-4 transition-colors',
+                      // Grows into whatever the labels leave over, but never
+                      // collapses to nothing on the narrowest phones.
+                      'flex-1 min-w-3 sm:min-w-0 h-0.5 mx-1 sm:mx-4 transition-colors',
                       currentStep > step.id ? 'bg-green-600' : 'bg-gray-300'
                     )}
                   />
@@ -788,6 +810,17 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
             );
           })}
         </div>
+
+        {mobileLockedHints.length > 0 && (
+          <ul className="sm:hidden mt-3 space-y-1 border-t border-gray-100 pt-3">
+            {mobileLockedHints.map((hint) => (
+              <li key={hint} className="flex gap-1.5 text-xs leading-snug text-gray-500">
+                <Lock className="mt-0.5 h-3 w-3 shrink-0" />
+                <span>{hint}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {/* Step Content */}

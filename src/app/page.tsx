@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { LandingPage } from '@/components/LandingPage';
 import { RedirectSignedInHome } from '@/components/RedirectSignedInHome';
 import { landingStructuredData } from '@/lib/structured-data';
-import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE } from '@/lib/site';
+import { SITE_META_DESCRIPTION, SITE_TITLE } from '@/lib/site';
 
 /**
  * The landing page is a **server component on purpose**.
@@ -16,10 +16,8 @@ import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE } from '@/lib/site';
  */
 export const metadata: Metadata = {
   // `absolute` so the root page is not titled "… | SIAPTAH" twice over.
-  title: {
-    absolute: `${SITE_NAME} — ${SITE_TAGLINE} Kabupaten Kutai Timur`,
-  },
-  description: SITE_DESCRIPTION,
+  title: { absolute: SITE_TITLE },
+  description: SITE_META_DESCRIPTION,
   alternates: { canonical: '/' },
   keywords: [
     'SPPTG',
