@@ -124,34 +124,21 @@ export function LandingPage() {
       {/* ---------------------------------------------------------------- Header */}
       <header className="sticky top-0 z-50 border-b border-gray-200/70 bg-white/70 shadow-[0_1px_3px_rgb(0_0_0/0.04)] backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:h-[4.5rem] sm:px-6 lg:px-8">
+          {/* The lockup already carries the name and the tagline, so the link
+              needs no text of its own — the aria-label speaks for it. */}
           <Link
             href="/"
             aria-label="SIAPTAH — kembali ke beranda"
-            className="group flex min-w-0 items-center gap-2.5 rounded-lg outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            className="flex min-w-0 items-center rounded-lg outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
           >
-            <span className="relative shrink-0">
-              {/* Soft halo that warms up on hover */}
-              <span
-                aria-hidden
-                className="absolute -inset-1 rounded-xl bg-blue-500/0 transition-colors group-hover:bg-blue-500/10"
-              />
-              <Image
-                src="/SIPETA_LOGO.png"
-                alt="SIAPTAH logo"
-                width={40}
-                height={40}
-                className="relative h-9 w-9 sm:h-10 sm:w-10"
-                priority
-              />
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate text-base font-bold tracking-tight text-gray-900 sm:text-lg">
-                SIAPTAH
-              </span>
-              <span className="hidden truncate text-xs leading-tight text-gray-500 sm:block">
-                Sistem Informasi Administrasi Pertanahan
-              </span>
-            </span>
+            <Image
+              src="/SIPETA_LOGO_NAVBAR.png"
+              alt=""
+              width={1492}
+              height={559}
+              className="h-11 w-auto sm:h-14"
+              priority
+            />
           </Link>
 
           {/* No navigation links by design — the only actions are sign in / sign up. */}
@@ -251,64 +238,24 @@ export function LandingPage() {
             </div>
           </div>
 
-          {/* Stylised product preview (pure CSS — no screenshot needed).
-              Above the fold as well, so it skips <Reveal> for the same reason. */}
+          {/* Hero illustration. Above the fold as well, so it skips <Reveal>
+              for the same reason as the copy block, and is marked priority
+              because it is the other LCP candidate. */}
           <div className="relative">
-            <div className="rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl shadow-blue-900/10 sm:p-4">
-              <div className="mb-3 flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
-                <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
-                <span className="h-2.5 w-2.5 rounded-full bg-green-400" />
-              </div>
-
-              {/* Faux map with an overlapping prohibited zone */}
-              <div className="relative h-44 overflow-hidden rounded-xl bg-gradient-to-br from-emerald-50 via-sky-50 to-blue-100 sm:h-56">
-                <svg
-                  className="absolute inset-0 h-full w-full"
-                  viewBox="0 0 400 220"
-                  aria-hidden
-                >
-                  <defs>
-                    <pattern
-                      id="grid"
-                      width="28"
-                      height="28"
-                      patternUnits="userSpaceOnUse"
-                    >
-                      <path
-                        d="M28 0H0V28"
-                        fill="none"
-                        stroke="rgb(148 163 184 / 0.25)"
-                      />
-                    </pattern>
-                  </defs>
-                  <rect width="400" height="220" fill="url(#grid)" />
-                  <polygon
-                    points="60,150 130,60 250,80 230,180 110,190"
-                    fill="rgb(37 99 235 / 0.22)"
-                    stroke="#2563eb"
-                    strokeWidth="2.5"
-                  />
-                  <polygon
-                    points="210,40 340,60 320,150 220,130"
-                    fill="rgb(239 68 68 / 0.18)"
-                    stroke="#ef4444"
-                    strokeWidth="2"
-                    strokeDasharray="6 4"
-                  />
-                </svg>
-                <div className="absolute bottom-2 left-2 flex flex-wrap gap-1.5 text-[10px]">
-                  <span className="inline-flex items-center gap-1 rounded bg-white/90 px-1.5 py-0.5 font-medium text-gray-700 shadow-sm">
-                    <span className="h-2 w-2 rounded-sm bg-blue-600" /> Bidang
-                    tanah
-                  </span>
-                  <span className="inline-flex items-center gap-1 rounded bg-white/90 px-1.5 py-0.5 font-medium text-gray-700 shadow-sm">
-                    <span className="h-2 w-2 rounded-sm bg-red-500" /> Kawasan
-                    Non-SPPTG
-                  </span>
-                </div>
-              </div>
-            </div>
+            {/* Soft halo so the illustration's faded edges sit on something */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-6 -z-10 rounded-full bg-blue-200/40 blur-3xl"
+            />
+            <Image
+              src="/imgs/illustrator-1.png"
+              alt="Petugas desa memverifikasi bidang tanah lewat peta digital, dokumen berkas, dan sertifikat SPPTG"
+              width={1536}
+              height={1024}
+              sizes="(min-width: 1024px) 40rem, 100vw"
+              className="h-auto w-full max-w-xl mx-auto lg:max-w-none"
+              priority
+            />
           </div>
         </div>
       </section>
@@ -382,42 +329,63 @@ export function LandingPage() {
       </section>
 
       {/* ---------------------------------------------------------------- Fitur */}
-      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
-        <div className="mx-auto max-w-2xl text-center">
-          <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">
-            Kemampuan
-          </p>
-          <h2 className="mt-2 text-2xl font-bold text-gray-900 sm:text-3xl">
-            Dibangun untuk pekerjaan pertanahan yang sebenarnya
-          </h2>
-          <p className="mt-3 text-gray-600">
-            Bukan sekadar formulir digital — setiap fitur menjawab kebutuhan
-            verifikasi di lapangan.
-          </p>
-        </div>
+      <section className="relative overflow-hidden">
+        {/* Illustration backdrop. Its subjects sit at the far left/right and the
+            middle is transparent, so the heading stays on clean white; the scrim
+            below keeps the cards readable where they overlap the artwork. */}
+        <Image
+          src="/imgs/illustrator-2.png"
+          alt=""
+          aria-hidden
+          width={1536}
+          height={1024}
+          sizes="100vw"
+          className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover opacity-60"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-white/55"
+        />
 
-        {/* Bento layout: the differentiator gets a wide dark tile, the rest follow */}
-        <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {features.map((feature, index) => {
-            const Icon = feature.icon;
-            return (
-              <Reveal
-                key={feature.title}
-                delay={index * 80}
-                className="group rounded-2xl border border-gray-200 bg-white p-6 transition-all hover:-translate-y-1 hover:shadow-xl"
-              >
-                <div
-                  className={`mb-4 inline-flex h-11 w-11 items-center justify-center rounded-lg transition-colors group-hover:text-white ${feature.accent}`}
+        <div className="relative mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">
+              Kemampuan
+            </p>
+            <h2 className="mt-2 text-2xl font-bold text-gray-900 sm:text-3xl">
+              Dibangun untuk pekerjaan pertanahan yang sebenarnya
+            </h2>
+            <p className="mt-3 text-gray-600">
+              Bukan sekadar formulir digital — setiap fitur menjawab kebutuhan
+              verifikasi di lapangan.
+            </p>
+          </div>
+
+          {/* Bento layout: the differentiator gets a wide dark tile, the rest follow */}
+          <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {features.map((feature, index) => {
+              const Icon = feature.icon;
+              return (
+                <Reveal
+                  key={feature.title}
+                  delay={index * 80}
+                  className="group rounded-2xl border border-gray-200 bg-white/90 p-6 backdrop-blur-sm transition-all hover:-translate-y-1 hover:bg-white hover:shadow-xl"
                 >
-                  <Icon className="h-5 w-5" />
-                </div>
-                <h3 className="font-semibold text-gray-900">{feature.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-gray-600">
-                  {feature.description}
-                </p>
-              </Reveal>
-            );
-          })}
+                  <div
+                    className={`mb-4 inline-flex h-11 w-11 items-center justify-center rounded-lg transition-colors group-hover:text-white ${feature.accent}`}
+                  >
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <h3 className="font-semibold text-gray-900">
+                    {feature.title}
+                  </h3>
+                  <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                    {feature.description}
+                  </p>
+                </Reveal>
+              );
+            })}
+          </div>
         </div>
       </section>
 
@@ -459,10 +427,22 @@ export function LandingPage() {
       </section>
 
       {/* ------------------------------------------------------------------ CTA */}
+      {/* The gradient stays as the paint-behind: the illustration is blue edge
+          to edge, so the section never flashes white while it loads. */}
       <section className="relative overflow-hidden bg-gradient-to-br from-blue-700 via-blue-600 to-sky-500">
+        <Image
+          src="/imgs/illustrator-3.png"
+          alt=""
+          aria-hidden
+          width={1536}
+          height={1024}
+          sizes="100vw"
+          className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover"
+        />
+        {/* Darkens the artwork just enough for white copy to stay legible */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-20 [background-image:radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] [background-size:22px_22px]"
+          className="pointer-events-none absolute inset-0 bg-blue-700/25"
         />
         <Reveal className="relative mx-auto max-w-3xl px-4 py-16 text-center sm:px-6 sm:py-20 lg:px-8">
           <h2 className="text-2xl font-bold text-white sm:text-3xl">

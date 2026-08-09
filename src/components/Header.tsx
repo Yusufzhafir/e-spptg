@@ -21,11 +21,11 @@ export function Header({ title = 'Dashboard' }: HeaderProps) {
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           {/* Brand stands in for the removed hamburger on small screens */}
           <Image
-            src="/SIPETA_LOGO.png"
-            alt="SIAPTAH logo"
-            width={32}
-            height={32}
-            className="h-8 w-8 shrink-0 lg:hidden"
+            src="/SIPETA_LOGO_NAVBAR.png"
+            alt="SIAPTAH — Sistem Informasi Administrasi Pertanahan"
+            width={1492}
+            height={559}
+            className="h-7 w-auto shrink-0 lg:hidden"
           />
           <h1 className="truncate text-lg sm:text-xl md:text-2xl text-gray-900">{title}</h1>
         </div>

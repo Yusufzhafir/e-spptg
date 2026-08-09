@@ -24,21 +24,19 @@ export function AuthShell({ title, subtitle, points, children }: AuthShellProps)
       {/* ------------------------------------------------------------ Form side */}
       <div className="flex w-full flex-col px-5 py-8 sm:px-8 lg:w-1/2 lg:px-12 xl:px-20">
         <div className="flex items-center justify-between gap-4">
-          <Link href="/" className="flex items-center gap-2.5">
+          <Link
+            href="/"
+            aria-label="SIAPTAH — kembali ke beranda"
+            className="flex min-w-0 items-center"
+          >
             <Image
-              src="/SIPETA_LOGO.png"
-              alt="SIAPTAH logo"
-              width={40}
-              height={40}
-              className="h-9 w-9"
+              src="/SIPETA_LOGO_NAVBAR.png"
+              alt=""
+              width={1492}
+              height={559}
+              className="h-11 w-auto sm:h-14"
               priority
             />
-            <div className="leading-tight">
-              <p className="font-semibold text-gray-900">SIAPTAH</p>
-              <p className="hidden text-xs text-gray-500 sm:block">
-                Sistem Informasi Administrasi Pertanahan
-              </p>
-            </div>
           </Link>
           <Link
             href="/"

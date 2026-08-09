@@ -16,21 +16,19 @@ export default function NotFound() {
       />
 
       <header className="relative mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
-        <Link href="/" className="inline-flex items-center gap-2.5">
+        <Link
+          href="/"
+          aria-label="SIAPTAH — kembali ke beranda"
+          className="inline-flex items-center"
+        >
           <Image
-            src="/SIPETA_LOGO.png"
-            alt="SIAPTAH logo"
-            width={40}
-            height={40}
-            className="h-9 w-9"
+            src="/SIPETA_LOGO_NAVBAR.png"
+            alt=""
+            width={1492}
+            height={559}
+            className="h-11 w-auto sm:h-14"
             priority
           />
-          <div className="leading-tight">
-            <p className="font-semibold text-gray-900">SIAPTAH</p>
-            <p className="hidden text-xs text-gray-500 sm:block">
-              Sistem Informasi Administrasi Pertanahan
-            </p>
-          </div>
         </Link>
       </header>
 

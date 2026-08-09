@@ -3,7 +3,9 @@
  * responses are never cached. Only static assets are cached, plus an offline
  * fallback page for navigations.
  */
-const CACHE = 'siaptah-v1';
+// Bump this whenever cached assets must be discarded — `activate` deletes every
+// cache whose key is not the current one.
+const CACHE = 'siaptah-v2';
 const OFFLINE_URL = '/offline.html';
 
 self.addEventListener('install', (event) => {
@@ -104,16 +106,27 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Static assets: serve from cache, refresh in the background.
+  //
+  // The refresh is the point. Cache-first *without* it pins the first copy of
+  // every icon and logo forever — replacing public/icon-192.png or a logo would
+  // never reach anyone who had already loaded the old one, because the filename
+  // never changes. So always re-fetch, and update the cache for the next load.
   if (/\.(?:png|jpg|jpeg|svg|webp|ico|woff2?)$/.test(url.pathname)) {
     event.respondWith(
-      caches.match(request).then(
-        (cached) =>
-          cached ||
-          fetch(request).then((response) => {
-            const copy = response.clone();
-            caches.open(CACHE).then((cache) => cache.put(request, copy));
-            return response;
-          })
+      caches.open(CACHE).then((cache) =>
+        cache.match(request).then((cached) => {
+          const fresh = fetch(request)
+            .then((response) => {
+              if (response && response.status === 200) {
+                cache.put(request, response.clone());
+              }
+              return response;
+            })
+            // Offline: the cached copy is better than nothing.
+            .catch(() => cached);
+
+          return cached || fresh;
+        })
       )
     );
   }
