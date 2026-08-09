@@ -79,12 +79,15 @@ services:
       # Supaya upload/presign server-side ke domain sendiri tidak keluar ke
       # internet dan balik lagi (hairpin NAT) — cukup ke nginx di host.
       - "siaptah.kutaitimurkab.go.id:host-gateway"
+    # /api/health menyentuh Postgres; "/" tidak. Probe lama pernah melaporkan
+    # healthy 24 jam sementara database tidak terjangkau sama sekali, karena
+    # landing page memang tidak butuh database untuk render.
     healthcheck:
       test:
         - CMD
         - node
         - -e
-        - "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
+        - "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"
       interval: 30s
       timeout: 5s
       start_period: 40s

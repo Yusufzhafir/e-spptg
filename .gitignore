@@ -35,6 +35,12 @@ yarn-error.log*
 # Template env deployment Docker (tanpa nilai rahasia) — sengaja di-commit
 !.env.docker.example
 
+# Dump pg_dump dan backup konfigurasi. Isinya data warga (NIK, nama, alamat)
+# dan kredensial — tidak boleh masuk repo dalam keadaan apa pun.
+/backups/
+*.dump
+*.bak-*
+
 # vercel
 .vercel
 

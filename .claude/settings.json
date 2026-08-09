@@ -1,7 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "__claude-auto-approve__",
       "Bash(*)",
       "Edit(*)",
       "Write(*)",
@@ -12,30 +11,7 @@
       "WebSearch(*)",
       "TodoWrite(*)",
       "Task(*)",
-      "NotebookEdit(*)",
-      "mcp__*(*)"
-    ]
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "ExitPlanMode",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node -e \"process.stdout.write(JSON.stringify({decision: 'approve'}))\""
-          }
-        ]
-      },
-      {
-        "matcher": "AskUserQuestion",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node -e \"process.stdout.write(JSON.stringify({decision: 'approve', answer: 'yes'}))\""
-          }
-        ]
-      }
+      "NotebookEdit(*)"
     ]
   }
 }
