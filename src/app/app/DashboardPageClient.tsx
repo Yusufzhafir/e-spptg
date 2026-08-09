@@ -3,8 +3,10 @@
 import { Dashboard } from '@/components/Dashboard';
 import { buildDashboardSearchParams, type DashboardFilterPatch, parseDashboardFilters } from '@/lib/dashboard-filters';
 import { trpc } from '@/trpc/client';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { DEFAULT_PAGE_SIZE } from '@/components/table-pagination';
+import type { SubmissionSortKey } from '@/lib/validation';
 import { KPIData, Submission } from '@/types';
 import { toast } from 'sonner';
 
@@ -56,11 +58,28 @@ export default function DashboardPageClient() {
   const focusParam = searchParams.get('focus');
   const urlFocusId = focusParam ? Number(focusParam) : null;
 
+  // "SPPTG berhasil diterbitkan" belongs here, not on the wizard the user is
+  // leaving: it should land with them, once the dashboard is on screen. The
+  // flag is then stripped so a refresh or a shared link cannot replay it.
+  const announcedIssuedSPPTG = useRef(false);
+  const hasIssuedSPPTG = searchParams.get('terbit') === '1';
+
+  useEffect(() => {
+    if (!hasIssuedSPPTG || announcedIssuedSPPTG.current) return;
+    announcedIssuedSPPTG.current = true;
+    toast.success('SPPTG berhasil diterbitkan.');
+    router.replace(pathname, { scroll: false });
+  }, [hasIssuedSPPTG, pathname, router]);
+
   const updateFilterParams = useCallback(
     (patch: DashboardFilterPatch) => {
       const nextParams = buildDashboardSearchParams(searchParams, patch);
       const queryString = nextParams.toString();
       router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
+      // Back to page 1: with paging done in Postgres, keeping the old offset
+      // against a narrower result set asks for rows that no longer exist and
+      // leaves an empty table with no obvious way back.
+      setPage(0);
     },
     [pathname, router, searchParams]
   );
@@ -99,6 +118,49 @@ export default function DashboardPageClient() {
     [updateFilterParams]
   );
 
+  // Server-side paging, sorting and searching: the table only ever holds the
+  // rows on screen, so all three have to be decided in Postgres — sorting ten
+  // rows out of four thousand would order the wrong ten.
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSizeState] = useState<number>(DEFAULT_PAGE_SIZE);
+  const [sortKey, setSortKey] = useState<SubmissionSortKey>('updatedAt');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  /**
+   * The row someone asked to see — a clicked map polygon, or `?focus=` from a
+   * notification. It lives here rather than in the table because finding it is
+   * a server question now: the table holds one page and cannot see the rest.
+   */
+  const [focusRequest, setFocusRequest] = useState<{ id: number; nonce: number } | null>(
+    urlFocusId ? { id: urlFocusId, nonce: 0 } : null
+  );
+  useEffect(() => {
+    if (urlFocusId == null) return;
+     
+    setFocusRequest({ id: urlFocusId, nonce: 0 });
+  }, [urlFocusId]);
+
+  /**
+   * Every click gets a fresh nonce. Storing the id alone means clicking the
+   * same polygon a second time — after paging away, or after landing on
+   * `?focus=123` and then clicking 123 on the map — writes the value the state
+   * already held: no re-render, no effect, and the button looks dead.
+   */
+  const requestFocusRow = useCallback((id: number) => {
+    setFocusRequest({ id, nonce: Date.now() });
+    setPendingFocusId(id);
+  }, []);
+
+  /**
+   * Set while a jump is in flight so the map popup can spin instead of closing
+   * on a click that has visibly done nothing yet. Cleared by the table the
+   * moment the row is on screen.
+   */
+  const [pendingFocusId, setPendingFocusId] = useState<number | null>(null);
+  const handleFocusSettled = useCallback(() => setPendingFocusId(null), []);
+
+  const focusRequestId = focusRequest?.id ?? null;
+
   const submissionsListInput = useMemo(
     () => ({
       status: filters.status === 'all' ? undefined : filters.status,
@@ -107,10 +169,27 @@ export default function DashboardPageClient() {
       kecamatan: !filters.desaId && filters.kecamatan ? filters.kecamatan : undefined,
       dateFrom: filters.dateFrom || undefined,
       dateTo: filters.dateTo || undefined,
-      limit: 1000,
-      offset: 0,
+      sortKey,
+      sortDir,
+      // Asked for only while a row is being jumped to; the server answers with
+      // its position so we know which page to open.
+      focusId: focusRequestId ?? undefined,
+      limit: pageSize,
+      offset: page * pageSize,
     }),
-    [filters.dateFrom, filters.dateTo, filters.desaId, filters.kecamatan, filters.search, filters.status]
+    [
+      filters.dateFrom,
+      filters.dateTo,
+      filters.desaId,
+      filters.kecamatan,
+      filters.search,
+      filters.status,
+      sortKey,
+      sortDir,
+      focusRequestId,
+      page,
+      pageSize,
+    ]
   );
 
   // Fetch submissions from backend
@@ -123,6 +202,34 @@ export default function DashboardPageClient() {
   } = trpc.submissions.list.useQuery(submissionsListInput, {
     placeholderData: (previous) => previous,
   });
+
+  // A row that the active filter excludes has no position, so the table will
+  // never report it as settled. Stop waiting and say why, rather than leaving
+  // the popup spinning forever.
+  useEffect(() => {
+    if (pendingFocusId == null || isFetchingSubmissions) return;
+    if (submissionsData?.focusPosition != null) return;
+     
+    setPendingFocusId(null);
+    toast.info('Pengajuan itu tidak termasuk dalam filter yang sedang aktif.');
+  }, [pendingFocusId, isFetchingSubmissions, submissionsData?.focusPosition]);
+
+  /** Any change to what is being listed sends the reader back to page 1. */
+  const goToFirstPage = useCallback(() => setPage(0), []);
+
+  const handleSortChange = useCallback(
+    (key: SubmissionSortKey) => {
+      setSortDir((current) => (key === sortKey && current === 'asc' ? 'desc' : 'asc'));
+      setSortKey(key);
+      goToFirstPage();
+    },
+    [sortKey, goToFirstPage]
+  );
+
+  const setPageSize = useCallback((size: number) => {
+    setPageSizeState(size);
+    setPage(0);
+  }, []);
 
   const updateValidityMutation = trpc.submissions.updateValidity.useMutation({
     onSuccess: (_data, variables) => {
@@ -164,6 +271,14 @@ export default function DashboardPageClient() {
       dateTo: filters.dateTo || undefined,
     }),
     [filters.dateFrom, filters.dateTo, filters.desaId, filters.kecamatan, filters.search, filters.status]
+  );
+
+  // The map has its own feed: it draws every polygon in scope, while the table
+  // holds one page. Same filters as the charts, so map, table and charts always
+  // describe the same set.
+  const { data: mapSubmissionsData } = trpc.submissions.listForMap.useQuery(
+    chartFilterInput,
+    { placeholderData: (previous) => previous }
   );
 
   // Fetch KPI data
@@ -214,6 +329,43 @@ export default function DashboardPageClient() {
     updatedAt: new Date(s.updatedAt),
   }));
 
+  /**
+   * Map polygons, padded out to the `Submission` shape the map component
+   * expects. The blanks are fields the map never reads — identity details stay
+   * on the server rather than being shipped for every polygon.
+   */
+  const mapSubmissions = useMemo(
+    () =>
+      (mapSubmissionsData ?? []).map((s) => ({
+        id: s.id,
+        namaPemilik: s.namaPemilik,
+        nik: '',
+        alamat: '',
+        nomorHP: '',
+        email: '',
+        villageId: s.villageId,
+        desaNama: s.desaNama ?? null,
+        desaKecamatan: s.desaKecamatan ?? null,
+        kecamatan: s.desaKecamatan ?? '',
+        kabupaten: '',
+        luas: s.luas,
+        penggunaanLahan: '',
+        catatan: null,
+        geoJSON: s.geoJSON,
+        status: s.status,
+        isValid: s.isValid ?? true,
+        tanggalPengajuan: new Date(),
+        ownerUserId: null,
+        verifikator: null,
+        verifikatorName: null,
+        riwayat: [],
+        feedback: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })) as unknown as Submission[],
+    [mapSubmissionsData]
+  );
+
   // Use KPI data directly (no transformation needed)
   const transformedKpiData: KPIData = {
     'SPPTG terdata': kpiData?.['SPPTG terdata'] || 0,
@@ -237,11 +389,42 @@ export default function DashboardPageClient() {
     .map((village) => ({ id: village.id, namaDesa: village.namaDesa }))
     .sort((a, b) => a.namaDesa.localeCompare(b.namaDesa));
 
-  const handleExportCsv = useCallback(() => {
-    if (submissions.length === 0) {
+  const handleExportCsv = useCallback(async () => {
+    if ((submissionsData?.total ?? 0) === 0) {
       toast.info('Tidak ada data untuk diekspor.');
       return;
     }
+
+    /**
+     * The export covers the whole filtered result, not the page on screen.
+     * Since the table went server-paged, `submissions` is only the rows in
+     * view — exporting that would silently hand someone ten rows and call it
+     * the report. Pulled in batches so one huge query never has to succeed.
+     */
+    const BATCH = 200;
+    const exported: SubmissionListItem[] = [];
+    const toastId = toast.loading('Menyiapkan ekspor…');
+    try {
+      for (let offset = 0; ; offset += BATCH) {
+        const batch = await utils.submissions.list.fetch({
+          ...submissionsListInput,
+          focusId: undefined,
+          limit: BATCH,
+          offset,
+        });
+        exported.push(...((batch.items ?? []) as SubmissionListItem[]));
+        if (exported.length >= (batch.total ?? 0) || (batch.items ?? []).length === 0) {
+          break;
+        }
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Gagal menyiapkan data ekspor.',
+        { id: toastId }
+      );
+      return;
+    }
+    toast.dismiss(toastId);
     const headers = [
       'ID',
       'Nama Pemilik',
@@ -260,7 +443,7 @@ export default function DashboardPageClient() {
       const s = value == null ? '' : String(value);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const rows = submissions.map((s) =>
+    const rows = exported.map((s) =>
       [
         s.id,
         s.namaPemilik,
@@ -289,8 +472,8 @@ export default function DashboardPageClient() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    toast.success(`${submissions.length} pengajuan diekspor ke CSV.`);
-  }, [submissions]);
+    toast.success(`${exported.length} pengajuan diekspor ke CSV.`);
+  }, [submissionsData?.total, submissionsListInput, utils]);
 
   const handleViewDetail = (submission: Submission) => {
     router.push(`/app/pengajuan/${submission.id}`);
@@ -350,7 +533,29 @@ export default function DashboardPageClient() {
       onToggleValidity={handleToggleValidity}
       isTogglingValidity={updateValidityMutation.isPending}
       onExportCsv={handleExportCsv}
-      urlFocusId={urlFocusId}
+      focusSubmissionId={focusRequestId}
+      focusNonce={focusRequest?.nonce ?? 0}
+      onFocusRow={requestFocusRow}
+      pendingFocusId={pendingFocusId}
+      onFocusSettled={handleFocusSettled}
+      mapSubmissions={mapSubmissions}
+      pagination={{
+        // Clamped so a shrinking result set can never strand the reader on a
+        // page that no longer exists.
+        page: Math.min(page, Math.max(0, Math.ceil((submissionsData?.total ?? 0) / pageSize) - 1)),
+        setPage,
+        pageSize,
+        setPageSize,
+        total: submissionsData?.total ?? 0,
+        lastPage: Math.max(
+          0,
+          Math.ceil((submissionsData?.total ?? 0) / pageSize) - 1
+        ),
+      }}
+      sortKey={sortKey}
+      sortDir={sortDir}
+      onSortChange={handleSortChange}
+      focusPosition={submissionsData?.focusPosition ?? null}
     />
   );
 }

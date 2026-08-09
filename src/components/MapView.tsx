@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Submission } from '../types';
 import { ReadOnlyMap } from './maps/ReadOnlyMap';
 import { StatusBadge } from './StatusBadge';
 import { Button } from './ui/button';
-import { X, ArrowRight } from 'lucide-react';
+import { X, ArrowRight, Loader2 } from 'lucide-react';
 
 interface MapViewProps {
   submissions: Submission[];
@@ -18,6 +18,12 @@ interface MapViewProps {
   zoom?: number;
   onPolygonClick?: (submission: Submission) => void;
   onViewInTable?: (submission: Submission) => void;
+  /**
+   * The row currently being jumped to, or null once it has landed. Finding a
+   * row means a round trip and usually a page change, so the button waits on it
+   * instead of the popup vanishing while nothing visible has happened yet.
+   */
+  pendingFocusId?: number | null;
 }
 
 export function MapView({
@@ -31,8 +37,23 @@ export function MapView({
   zoom = 13,
   onPolygonClick,
   onViewInTable,
+  pendingFocusId,
 }: MapViewProps) {
   const [activeSubmission, setActiveSubmission] = useState<Submission | null>(null);
+  /** The id this popup asked for, so it only closes on its own request. */
+  const requestedId = useRef<number | null>(null);
+
+  const isFocusing =
+    pendingFocusId != null && activeSubmission?.id === pendingFocusId;
+
+  // Close once the jump has landed — the row is highlighted and scrolled to by
+  // then, so the popup has nothing left to say.
+  useEffect(() => {
+    if (requestedId.current == null || pendingFocusId != null) return;
+    requestedId.current = null;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- close on an external signal
+    setActiveSubmission(null);
+  }, [pendingFocusId]);
 
   return (
     <div className="relative">
@@ -96,13 +117,23 @@ export function MapView({
             <Button
               size="sm"
               className="mt-3 w-full bg-blue-600 hover:bg-blue-700"
+              disabled={isFocusing}
               onClick={() => {
+                requestedId.current = activeSubmission.id;
                 onViewInTable(activeSubmission);
-                setActiveSubmission(null);
               }}
             >
-              Lihat Detail Pengajuan
-              <ArrowRight className="ml-1 h-4 w-4" />
+              {isFocusing ? (
+                <>
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  Mencari baris…
+                </>
+              ) : (
+                <>
+                  Lihat Detail Pengajuan
+                  <ArrowRight className="ml-1 h-4 w-4" />
+                </>
+              )}
             </Button>
           )}
         </div>

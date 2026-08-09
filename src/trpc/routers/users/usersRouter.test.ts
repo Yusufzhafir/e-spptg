@@ -61,6 +61,7 @@ function ctx(peran: UserRole = 'Superadmin'): TRPCContext {
       assignedKecamatan: null,
       status: 'Aktif',
       nomorHP: null,
+      fotoProfil: null,
       emailVerifiedAt: new Date(),
       terakhirMasuk: null,
       createdAt: new Date(),

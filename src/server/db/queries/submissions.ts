@@ -1,5 +1,5 @@
 
-import { eq, desc, and, sql, getTableColumns } from 'drizzle-orm';
+import { eq, asc, desc, and, or, sql, getTableColumns } from 'drizzle-orm';
 import { db, type DBTransaction } from '../db';
 import {
     submissions,
@@ -125,6 +125,33 @@ export async function getSubmissionById(
     return result ?? null
 }
 
+/**
+ * Columns the pengajuan table may be ordered by.
+ *
+ * Sorting has to happen in Postgres, not in the browser: the table only ever
+ * holds one page, and sorting ten rows out of four thousand would put the wrong
+ * ten at the top. `desaKecamatan` and `verifikatorName` come from the joins, so
+ * they are ordered by the joined column rather than the (stale) local one.
+ */
+export const SUBMISSION_SORT_COLUMNS = {
+    id: submissions.id,
+    namaPemilik: submissions.namaPemilik,
+    kecamatan: villages.kecamatan,
+    luas: submissions.luas,
+    tanggalPengajuan: submissions.tanggalPengajuan,
+    status: submissions.status,
+    isValid: submissions.isValid,
+    verifikator: users.nama,
+    updatedAt: submissions.updatedAt,
+} as const;
+
+export type SubmissionSortKey = keyof typeof SUBMISSION_SORT_COLUMNS;
+
+function submissionOrderBy(sortKey: SubmissionSortKey = 'updatedAt', sortDir: 'asc' | 'desc' = 'desc') {
+    const column = SUBMISSION_SORT_COLUMNS[sortKey] ?? submissions.updatedAt;
+    return sortDir === 'asc' ? asc(column) : desc(column);
+}
+
 export async function listSubmissions(filters: {
     search?: string;
     status?: string;
@@ -135,6 +162,8 @@ export async function listSubmissions(filters: {
     ownerUserId?: number;
     villageId?: number;
     scopeKecamatan?: string;
+    sortKey?: SubmissionSortKey;
+    sortDir?: 'asc' | 'desc';
     limit?: number;
     offset?: number;
 },
@@ -151,6 +180,8 @@ export async function listSubmissions(filters: {
         ownerUserId,
         villageId,
         scopeKecamatan,
+        sortKey,
+        sortDir,
         limit = 50,
         offset = 0
     } = filters;
@@ -184,9 +215,10 @@ export async function listSubmissions(filters: {
             conditions.length > 0 ? and(...conditions) : undefined
         ).offset(offset)
         .limit(limit)
-        .orderBy(
-            desc(submissions.tanggalPengajuan)
-        )
+        // `id` as a tiebreak: without a unique second key, rows that share a
+        // value (same status, same date) can swap between pages on every query
+        // and appear twice or not at all.
+        .orderBy(submissionOrderBy(sortKey, sortDir), desc(submissions.id))
 
     const totalResult = await queryDb
         // ::int so this really is a number, matching the declared type
@@ -197,6 +229,237 @@ export async function listSubmissions(filters: {
     const total = totalResult[0]?.count ?? 0;
 
     return { items, total };
+}
+
+/**
+ * The dashboard map's own feed, deliberately separate from the table's.
+ *
+ * The two want opposite things: the table wants one page of full rows, the map
+ * wants every polygon in scope. Sharing one query meant either paging the map
+ * (polygons vanishing as you turn pages) or loading every row to draw a map.
+ *
+ * Carries only what the map itself renders — the polygon plus what the popup
+ * shows — so it stays light even at a few thousand rows, and honours the same
+ * filters the table has applied so map and table always describe the same set.
+ */
+export async function listSubmissionsForMap(
+    filters: {
+        search?: string;
+        status?: string;
+        desaId?: number;
+        kecamatan?: string;
+        dateFrom?: string;
+        dateTo?: string;
+        ownerUserId?: number;
+        villageId?: number;
+        scopeKecamatan?: string;
+        limit?: number;
+    },
+    tx?: DBTransaction
+) {
+    const queryDb = tx || db;
+    const conditions = buildSubmissionConditions(filters);
+    // Invalid rows are never drawn; excluding them here rather than in the
+    // browser keeps the payload to what actually reaches the canvas.
+    conditions.push(eq(submissions.isValid, true));
+
+    return queryDb
+        .select({
+            id: submissions.id,
+            namaPemilik: submissions.namaPemilik,
+            status: submissions.status,
+            luas: submissions.luas,
+            isValid: submissions.isValid,
+            villageId: submissions.villageId,
+            desaNama: villages.namaDesa,
+            desaKecamatan: villages.kecamatan,
+            geoJSON: submissions.geoJSON,
+        })
+        .from(submissions)
+        .leftJoin(villages, eq(submissions.villageId, villages.id))
+        .where(and(...conditions))
+        .limit(filters.limit ?? 5000);
+}
+
+/**
+ * Where one pengajuan sits in the current result set — its 0-based row number
+ * under the same filters and ordering the table is using.
+ *
+ * This is what keeps "buka pengajuan ini" (`?focus=`, a notification, a clicked
+ * map polygon) working once the table is paged on the server: the browser holds
+ * one page and cannot find a row on any other, so Postgres numbers the rows and
+ * the client turns that into a page number.
+ *
+ * Returns null when the row is outside the caller's scope or filtered out —
+ * the caller then leaves the table where it is instead of jumping nowhere.
+ */
+export async function findSubmissionPosition(
+    submissionId: number,
+    filters: {
+        search?: string;
+        status?: string;
+        desaId?: number;
+        kecamatan?: string;
+        dateFrom?: string;
+        dateTo?: string;
+        ownerUserId?: number;
+        villageId?: number;
+        scopeKecamatan?: string;
+        sortKey?: SubmissionSortKey;
+        sortDir?: 'asc' | 'desc';
+    },
+    tx?: DBTransaction
+): Promise<number | null> {
+    const queryDb = tx || db;
+    const conditions = buildSubmissionConditions(filters);
+
+    const numbered = queryDb
+        .select({
+            id: submissions.id,
+            // ROW_NUMBER is 1-based; the caller wants an index.
+            position: sql<number>`(ROW_NUMBER() OVER (ORDER BY ${submissionOrderBy(
+                filters.sortKey,
+                filters.sortDir
+            )}, ${desc(submissions.id)}) - 1)::int`.as('position'),
+        })
+        .from(submissions)
+        .leftJoin(users, eq(submissions.verifikator, users.id))
+        .leftJoin(villages, eq(submissions.villageId, villages.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .as('numbered');
+
+    const [row] = await queryDb
+        .select({ position: numbered.position })
+        .from(numbered)
+        .where(eq(numbered.id, submissionId))
+        .limit(1);
+
+    return row?.position ?? null;
+}
+
+/**
+ * Every pengajuan connected to one account, for the user detail page.
+ *
+ * Two connections count, because the roles use the system differently: a Viewer
+ * *owns* the pengajuan they filed (`owner_user_id`), while staff appear on the
+ * ones they processed (`verifikator`). Matching only the first would show an
+ * empty list for every Admin and Verifikator in the app.
+ */
+export async function listSubmissionsForUser(
+    userId: number,
+    params: {
+        search?: string;
+        status?: string;
+        keterkaitan?: 'Pemohon' | 'Verifikator';
+        limit?: number;
+        offset?: number;
+    } = {},
+    tx?: DBTransaction
+) {
+    const queryDb = tx || db;
+
+    const linked =
+        params.keterkaitan === 'Pemohon'
+            ? eq(submissions.ownerUserId, userId)
+            : params.keterkaitan === 'Verifikator'
+              ? eq(submissions.verifikator, userId)
+              : or(
+                    eq(submissions.ownerUserId, userId),
+                    eq(submissions.verifikator, userId)
+                );
+
+    const conditions = [linked];
+    if (params.status) conditions.push(eq(submissions.status, params.status as never));
+    if (params.search?.trim()) {
+        const pattern = `%${params.search.trim().toLowerCase()}%`;
+        conditions.push(
+            sql`(
+                LOWER(${submissions.namaPemilik}) LIKE ${pattern}
+                OR LOWER(COALESCE(${villages.namaDesa}, '')) LIKE ${pattern}
+            )`
+        );
+    }
+
+    const where = and(...conditions);
+
+    const items = await queryDb
+        .select({
+            id: submissions.id,
+            namaPemilik: submissions.namaPemilik,
+            status: submissions.status,
+            isValid: submissions.isValid,
+            luas: submissions.luas,
+            tanggalPengajuan: submissions.tanggalPengajuan,
+            ownerUserId: submissions.ownerUserId,
+            verifikator: submissions.verifikator,
+            desaNama: villages.namaDesa,
+            desaKecamatan: villages.kecamatan,
+        })
+        .from(submissions)
+        .leftJoin(villages, eq(submissions.villageId, villages.id))
+        .where(where)
+        // `id` as a tiebreak so equal dates cannot swap between pages.
+        .orderBy(desc(submissions.tanggalPengajuan), desc(submissions.id))
+        .limit(params.limit ?? 10)
+        .offset(params.offset ?? 0);
+
+    const [counted] = await queryDb
+        .select({ count: sql<number>`count(*)::int` })
+        .from(submissions)
+        .leftJoin(villages, eq(submissions.villageId, villages.id))
+        .where(where);
+
+    return { items, total: counted?.count ?? 0 };
+}
+
+/**
+ * Polygons for the wizard maps — every desa, deliberately unscoped.
+ *
+ * Drawing a parcel means seeing what is already registered *next to* it, and
+ * land does not stop at the desa boundary: an Admin or Verifikator who is shown
+ * only their own desa can draw straight over a neighbouring desa's plot and
+ * only find out from the overlap check, which has always run across every desa
+ * (`checkOverlapsFromCoordinates`).
+ *
+ * Only geometry and the desa name come back — never the applicant's name, NIK
+ * or contact — so widening the map does not widen access to personal data.
+ *
+ * The three filters match the overlap check exactly, so what the map draws and
+ * what the check reports can never disagree:
+ *   - `status IN ('SPPTG terdaftar', 'SPPTG terdata')` — a rejected or
+ *     under-review pengajuan claims no land, so it is neither drawn nor counted
+ *     as a conflict;
+ *   - `is_valid = true` — an entry flagged invalid is hidden everywhere else;
+ *   - a polygon must actually exist.
+ */
+export async function listSubmissionMapPolygons(tx?: DBTransaction) {
+    const queryDb = tx || db;
+
+    // `submissions."villageId"` is the legacy mixed-case column — quote it exactly.
+    const result = await queryDb.execute(sql`
+        SELECT
+            s.id,
+            s.status::text AS status,
+            s."villageId" AS village_id,
+            v.nama_desa,
+            ST_AsGeoJSON(s.geom) AS geo_json
+        FROM submissions s
+        LEFT JOIN villages v ON v.id = s."villageId"
+        WHERE s.status IN ('SPPTG terdaftar', 'SPPTG terdata')
+          AND s.is_valid = true
+          AND s.geom IS NOT NULL
+    `);
+
+    return (result.rows || []).map((row: unknown) => {
+        const r = row as Record<string, unknown>;
+        return {
+            id: Number(r.id),
+            status: String(r.status ?? ''),
+            villageId: r.village_id == null ? null : Number(r.village_id),
+            desaNama: r.nama_desa == null ? null : String(r.nama_desa),
+            geoJSON: r.geo_json == null ? null : String(r.geo_json),
+        };
+    });
 }
 
 export async function createSubmission(

@@ -1,6 +1,6 @@
 import { db, DBTransaction } from '../db';
 import { submissionDrafts, users, villages } from '../schema';
-import { and, desc, eq, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
 import {
   coordinatesNeedIdNormalization,
   normalizeCoordinateIds,
@@ -188,18 +188,38 @@ export async function saveDraftStep(
   return result[0];
 }
 
+/**
+ * Ordering the draft table may ask for. Sorting has to happen here rather than
+ * in the browser now that the list is paged: the page on screen is not the set
+ * being sorted.
+ */
+const DRAFT_SORT_COLUMNS = {
+  namaPemohon: sql`${submissionDrafts.payload}->>'namaPemohon'`,
+  nik: sql`${submissionDrafts.payload}->>'nik'`,
+  currentStep: submissionDrafts.currentStep,
+  lastSaved: submissionDrafts.lastSaved,
+} as const;
+
+export type DraftSortKey = keyof typeof DRAFT_SORT_COLUMNS;
+
 export async function listAccessibleDrafts(
   scope: {
     userId: number;
     role: 'Superadmin' | 'Admin' | 'Verifikator' | 'Kecamatan' | 'Viewer';
     assignedVillageId?: number;
+    search?: string;
+    step?: number;
+    sortKey?: DraftSortKey;
+    sortDir?: 'asc' | 'desc';
+    limit?: number;
+    offset?: number;
   },
   tx?: DBTransaction
 ) {
   const queryDb = tx || db;
   // 'Kecamatan' is read-only dashboard oversight and takes no part in the
   // pengajuan workflow, so it has no drafts at all.
-  if (scope.role === 'Kecamatan') return [];
+  if (scope.role === 'Kecamatan') return { items: [], total: 0 };
 
   const isSuperadmin = scope.role === 'Superadmin';
   const isViewer = scope.role === 'Viewer';
@@ -220,7 +240,29 @@ export async function listAccessibleDrafts(
     );
   }
 
-  return queryDb
+  // Searching the JSONB payload rather than a column: the applicant's name and
+  // NIK only exist inside the draft's payload until it is filed.
+  if (scope.search?.trim()) {
+    const pattern = `%${scope.search.trim().toLowerCase()}%`;
+    conditions.push(
+      sql`(
+        LOWER(COALESCE(${submissionDrafts.payload}->>'namaPemohon', '')) LIKE ${pattern}
+        OR LOWER(COALESCE(${submissionDrafts.payload}->>'nik', '')) LIKE ${pattern}
+        OR LOWER(COALESCE(${users.nama}, '')) LIKE ${pattern}
+        OR LOWER(COALESCE(${villages.namaDesa}, '')) LIKE ${pattern}
+      )`
+    );
+  }
+
+  if (scope.step != null) {
+    conditions.push(eq(submissionDrafts.currentStep, scope.step));
+  }
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const sortColumn = DRAFT_SORT_COLUMNS[scope.sortKey ?? 'lastSaved'];
+  const orderBy = scope.sortDir === 'asc' ? asc(sortColumn) : desc(sortColumn);
+
+  const items = await queryDb
     .select({
       id: submissionDrafts.id,
       ownerUserId: submissionDrafts.userId,
@@ -239,8 +281,20 @@ export async function listAccessibleDrafts(
     .from(submissionDrafts)
     .leftJoin(users, eq(users.id, submissionDrafts.userId))
     .leftJoin(villages, eq(villages.id, submissionDrafts.villageId))
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(desc(submissionDrafts.updatedAt));
+    .where(where)
+    // `id` as a tiebreak so rows sharing a value cannot swap between pages.
+    .orderBy(orderBy, desc(submissionDrafts.id))
+    .limit(scope.limit ?? 50)
+    .offset(scope.offset ?? 0);
+
+  const [counted] = await queryDb
+    .select({ count: sql<number>`count(*)::int` })
+    .from(submissionDrafts)
+    .leftJoin(users, eq(users.id, submissionDrafts.userId))
+    .leftJoin(villages, eq(villages.id, submissionDrafts.villageId))
+    .where(where);
+
+  return { items, total: counted?.count ?? 0 };
 }
 
 export async function deleteDraft(draftId: number, tx?: DBTransaction) {

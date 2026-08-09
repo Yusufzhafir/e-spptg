@@ -2,11 +2,15 @@ import { protectedProcedure, adminProcedure, router } from '../../init';
 import { z } from 'zod';
 import {
   createUserSchema,
+  optionalNomorHPSchema,
   updateUserSchema,
 } from '@/lib/validation';
 import * as queries from '@/server/db/queries/user';
+import * as submissionQueries from '@/server/db/queries/submissions';
+import { signAvatarUrl } from '@/server/avatar';
 import { users } from '@/server/db/schema';
 import { assertCanManageUser, requireAssignedVillageId } from '@/server/authz';
+import { canViewUserDetail } from '@/lib/user-access';
 import { TRPCError } from '@trpc/server';
 import { invalidateAllUserSessions } from '@/server/auth/session';
 import { clearedSessionCookie } from '@/server/auth/cookies';
@@ -86,35 +90,84 @@ function toClientUser(user: typeof users.$inferSelect) {
   return { ...rest, hasPassword: passwordHash !== null };
 }
 
+/**
+ * `toClientUser` plus a signed link for the profile photo. `fotoProfil` itself
+ * is a private-bucket object key and is useless (and meaningless) to the
+ * browser, so the readable link travels alongside it.
+ */
+async function toClientUserWithAvatar(user: typeof users.$inferSelect) {
+  return { ...toClientUser(user), fotoProfilUrl: await signAvatarUrl(user.fotoProfil) };
+}
+
+/**
+ * Who may read one account in full. The rule itself lives in
+ * `@/lib/user-access` so the server and the UI cannot drift: whatever hides the
+ * Lihat Detail button is exactly what refuses the request behind it.
+ *
+ * Refuses with NOT_FOUND rather than FORBIDDEN on purpose — "no such user" and
+ * "not yours to see" must be indistinguishable, or the error itself confirms
+ * which ids exist.
+ */
+function assertCanReadUser(
+  actor: typeof users.$inferSelect,
+  user: typeof users.$inferSelect
+) {
+  if (!canViewUserDetail(actor, user)) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Pengguna tidak ditemukan' });
+  }
+}
+
 export const usersRouter = router({
+  /**
+   * One page of accounts, paged/searched/sorted in Postgres. Read scope is
+   * unchanged: Superadmin sees everyone, Admin/Verifikator only their own desa,
+   * anyone else only themselves — the scope simply becomes part of the query
+   * rather than a choice of which function to call.
+   */
   list: protectedProcedure
     .input(
       z.object({
-        limit: z.number().int().positive().default(100),
+        search: z.string().optional(),
+        peran: z.string().optional(),
+        status: z.string().optional(),
+        sortKey: z
+          .enum(['nama', 'nipNik', 'email', 'peran', 'status', 'terakhirMasuk', 'updatedAt'])
+          .optional(),
+        sortDir: z.enum(['asc', 'desc']).optional(),
+        // 1000 stays allowed while the Pengguna tab still pages in the browser;
+        // it asks for the whole list in one go.
+        limit: z.number().int().positive().max(1000).default(10),
         offset: z.number().int().nonnegative().default(0),
       })
     )
     .query(async ({ ctx, input }) => {
       const actor = ctx.appUser!;
-      // Superadmin sees everyone; Admin/Verifikator only their own desa;
-      // anyone else (Viewer) only their own account.
-      if (actor.peran === 'Superadmin') {
-        const rows = await queries.listUsers(input.limit, input.offset);
-        return rows.map(toClientUser);
-      }
-      if (
+
+      const isDesaScoped =
         (actor.peran === 'Admin' || actor.peran === 'Verifikator') &&
-        actor.assignedVillageId != null
-      ) {
-        const rows = await queries.listUsersByVillage(
-          actor.assignedVillageId,
-          input.limit,
-          input.offset
-        );
-        return rows.map(toClientUser);
+        actor.assignedVillageId != null;
+
+      if (actor.peran !== 'Superadmin' && !isDesaScoped) {
+        // Viewer, Kecamatan, or staff with no desa yet: their own row only.
+        const self = await queries.getUserById(actor.id);
+        return {
+          items: self ? [await toClientUserWithAvatar(self)] : [],
+          total: self ? 1 : 0,
+        };
       }
-      const self = await queries.getUserById(actor.id);
-      return self ? [toClientUser(self)] : [];
+
+      const { items, total } = await queries.listUsersPaged({
+        villageId: isDesaScoped ? actor.assignedVillageId! : undefined,
+        search: input.search,
+        peran: input.peran,
+        status: input.status,
+        sortKey: input.sortKey,
+        sortDir: input.sortDir,
+        limit: input.limit,
+        offset: input.offset,
+      });
+
+      return { items: await Promise.all(items.map(toClientUserWithAvatar)), total };
     }),
 
   byId: protectedProcedure
@@ -128,24 +181,58 @@ export const usersRouter = router({
         });
       }
 
-      // Same read scope as `list`: yourself always, Superadmin anyone,
-      // Admin/Verifikator only their own desa. Without this, any signed-in
-      // account could enumerate every user's email, NIK and phone number.
-      const actor = ctx.appUser!;
-      const isSelf = user.id === actor.id;
-      const isSameVillage =
-        (actor.peran === 'Admin' || actor.peran === 'Verifikator') &&
-        actor.assignedVillageId != null &&
-        user.assignedVillageId === actor.assignedVillageId;
+      assertCanReadUser(ctx.appUser!, user);
+      return toClientUserWithAvatar(user);
+    }),
 
-      if (!isSelf && actor.peran !== 'Superadmin' && !isSameVillage) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Pengguna tidak ditemukan',
-        });
+  /**
+   * One account in full, for Pengaturan → Pengguna → Lihat Detail: the profile
+   * (photo included) plus every pengajuan connected to it.
+   *
+   * Read scope is the same as `byId` — a Verifikator cannot open an account
+   * outside their desa, and the pengajuan list follows the account, not the
+   * caller, so it is only ever reachable for an account they may already read.
+   */
+  detail: protectedProcedure
+    .input(
+      z.object({
+        id: z.number().int(),
+        search: z.string().optional(),
+        status: z.string().optional(),
+        keterkaitan: z.enum(['Pemohon', 'Verifikator']).optional(),
+        limit: z.number().int().positive().max(200).default(10),
+        offset: z.number().int().nonnegative().default(0),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const user = await queries.getUserById(input.id);
+      if (!user) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Pengguna tidak ditemukan' });
       }
 
-      return toClientUser(user);
+      assertCanReadUser(ctx.appUser!, user);
+
+      // Paged in Postgres: a long-serving verifikator accumulates thousands of
+      // pengajuan, and this page would otherwise load every one of them.
+      const { items, total } = await submissionQueries.listSubmissionsForUser(user.id, {
+        search: input.search,
+        status: input.status,
+        keterkaitan: input.keterkaitan,
+        limit: input.limit,
+        offset: input.offset,
+      });
+
+      return {
+        user: await toClientUserWithAvatar(user),
+        total,
+        submissions: items.map((row) => ({
+          ...row,
+          // How this account relates to the pengajuan — a Viewer files them, an
+          // Admin/Verifikator processes them, and the same person can do both.
+          keterkaitan:
+            row.ownerUserId === user.id ? ('Pemohon' as const) : ('Verifikator' as const),
+        })),
+      };
     }),
 
   /**
@@ -157,7 +244,7 @@ export const usersRouter = router({
   create: adminProcedure
     .input(
       createUserSchema.extend({
-        nomorHP: z.string().optional(),
+        nomorHP: optionalNomorHPSchema,
         status: z.enum(['Aktif', 'Nonaktif']).optional(),
       })
     )
@@ -276,7 +363,7 @@ export const usersRouter = router({
       z.object({
         id: z.number().int(),
         data: updateUserSchema.extend({
-          nomorHP: z.string().optional(),
+          nomorHP: optionalNomorHPSchema,
           status: z.enum(['Aktif', 'Nonaktif']).optional(),
         }),
       })

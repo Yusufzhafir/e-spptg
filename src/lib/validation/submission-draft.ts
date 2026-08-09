@@ -39,10 +39,15 @@ export const boundaryWitnessSchema = z.object({
     .string()
     .trim()
     .min(2, 'Penggunaan batas lahan minimal 2 karakter'),
-  // Optional identity data, printed on the SPPTG witness block
-  umur: z.number().int().min(1).max(150).optional(),
-  pekerjaan: z.string().trim().optional(),
-  alamat: z.string().trim().optional(),
+  // Identity data printed on the SPPTG witness block — the certificate names
+  // each saksi with their age, occupation and address, so all three are required.
+  umur: z
+    .number({ error: 'Umur saksi wajib diisi' })
+    .int('Umur saksi harus angka bulat')
+    .min(1, 'Umur saksi minimal 1')
+    .max(150, 'Umur saksi maksimal 150'),
+  pekerjaan: z.string().trim().min(1, 'Pekerjaan saksi wajib diisi'),
+  alamat: z.string().trim().min(1, 'Alamat saksi wajib diisi'),
 });
 
 export type BoundaryWitness = z.infer<typeof boundaryWitnessSchema>;
@@ -79,17 +84,23 @@ export const step1BerkasSchema = z.object({
 
   villageId: z.number().int('Desa harus dipilih'),
 
-  // Contact — optional, but validated once filled in.
+  // Identity as printed on the SPPTG — mandatory, mirroring validateStep1Fields.
+  tempatLahir: z.string().trim().min(1, 'Tempat lahir wajib diisi'),
+  tanggalLahir: z.string().trim().min(1, 'Tanggal lahir wajib diisi'),
+  pekerjaan: z.string().trim().min(1, 'Pekerjaan wajib diisi'),
+  alamatKTP: z.string().trim().min(1, 'Alamat KTP wajib diisi'),
+
+  // Contact — mandatory, and validated for shape on top of that.
   nomorHP: z
     .string()
-    .refine(isValidPhoneNumber, PHONE_NUMBER_ERROR)
-    .optional()
-    .or(z.literal('')),
+    .trim()
+    .min(1, 'Nomor HP wajib diisi')
+    .refine(isValidPhoneNumber, PHONE_NUMBER_ERROR),
   email: z
     .string()
-    .refine(isValidEmail, EMAIL_ERROR)
-    .optional()
-    .or(z.literal('')),
+    .trim()
+    .min(1, 'Email wajib diisi')
+    .refine(isValidEmail, EMAIL_ERROR),
 
   // Documents
   dokumenKTP: uploadedDocumentSchema,

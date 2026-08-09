@@ -15,9 +15,11 @@ import {
   CoordinateSystem,
 } from '../../types';
 import { trpc } from '@/trpc/client';
+import { useAuthRole } from '../AuthRoleProvider';
 import { DrawingMap, type ReferencePolygon } from '../maps/DrawingMap';
 import { geoJSONToPaths } from '@/lib/map-utils';
 import { overlapJenisBadgeClassName } from '@/lib/overlap-results';
+import { MAX_WITNESSES } from '@/lib/spptg-pdf-data';
 import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
 import { parseKMLFile } from '@/lib/kmz-parser';
 import {
@@ -162,6 +164,7 @@ export function Step2FieldValidation({
   errors = {},
   readOnly = false,
 }: Step2Props) {
+  const { hasAnyRole } = useAuthRole();
   const [isOverlapDialogOpen, setIsOverlapDialogOpen] = useState(false);
   const [isParsingKml, setIsParsingKml] = useState(false);
   const [recenterSignal, setRecenterSignal] = useState(() =>
@@ -204,7 +207,7 @@ export function Step2FieldValidation({
   // Sync UTM local state when switching to UTM mode or when draft coordinates change externally (e.g. map draw)
   useEffect(() => {
     if (coordinateSystem === 'utm' && !editingUtmField) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile local UTM state with external draft changes
+       
       setUtmCoordinates(draft.coordinatesGeografis.map(toLocalUtmCoordinate));
     }
   }, [draft.coordinatesGeografis, coordinateSystem, toLocalUtmCoordinate, editingUtmField]);
@@ -224,6 +227,13 @@ export function Step2FieldValidation({
 
   /** Adds a new witness, or saves the one currently being edited. */
   const handleSaveWitness = () => {
+    // The schema caps saksiList at 4 and the certificate prints at most 4, so a
+    // fifth would be dropped without a word — refuse it here instead.
+    if (!editingWitnessId && draft.saksiList.length >= MAX_WITNESSES) {
+      toast.error(`Maksimal ${MAX_WITNESSES} saksi batas lahan`);
+      return;
+    }
+
     if (!newWitness.nama?.trim()) {
       toast.error('Nama saksi harus diisi');
       return;
@@ -239,18 +249,33 @@ export function Step2FieldValidation({
       return;
     }
 
-    // Umur/pekerjaan/alamat are optional: they only fill in the witness block
-    // of the SPPTG, which falls back to blank lines when they are missing.
-    const umur = newWitness.umur ? parseInt(newWitness.umur, 10) : undefined;
+    // Umur/pekerjaan/alamat fill in the witness block of the SPPTG, which names
+    // each saksi in full — a blank line there is not acceptable on a
+    // certificate, so they are required just like the rest.
+    const umur = newWitness.umur ? parseInt(newWitness.umur, 10) : NaN;
+    if (!Number.isFinite(umur) || umur < 1 || umur > 150) {
+      toast.error('Umur saksi harus diisi antara 1 dan 150');
+      return;
+    }
+
+    if (!newWitness.pekerjaan?.trim()) {
+      toast.error('Pekerjaan saksi harus diisi');
+      return;
+    }
+
+    if (!newWitness.alamat?.trim()) {
+      toast.error('Alamat saksi harus diisi');
+      return;
+    }
 
     const witness: BoundaryWitness = {
       id: editingWitnessId || `W-${Date.now()}`,
       nama: newWitness.nama.trim(),
       sisi: newWitness.sisi,
       penggunaanLahanBatas: newWitness.penggunaanLahanBatas.trim(),
-      umur: Number.isFinite(umur) ? umur : undefined,
-      pekerjaan: newWitness.pekerjaan?.trim() || undefined,
-      alamat: newWitness.alamat?.trim() || undefined,
+      umur,
+      pekerjaan: newWitness.pekerjaan.trim(),
+      alamat: newWitness.alamat.trim(),
     };
 
     if (editingWitnessId) {
@@ -571,10 +596,21 @@ export function Step2FieldValidation({
     limit: 500,
     offset: 0,
   });
-  const { data: existingSubmissionsData } = trpc.submissions.list.useQuery({
-    limit: 500,
-    offset: 0,
-  });
+  /**
+   * The processing roles see every desa's polygons, not just their own: a plot
+   * can sit right on the desa boundary, and the overlap check has always looked
+   * across all of them. A Viewer opening this step read-only keeps the
+   * desa-scoped list — `listMapPolygons` is not theirs to call.
+   */
+  const canSeeAllVillages = hasAnyRole(['Superadmin', 'Admin', 'Verifikator']);
+  const { data: allVillagePolygons } = trpc.submissions.listMapPolygons.useQuery(
+    undefined,
+    { enabled: canSeeAllVillages }
+  );
+  const { data: existingSubmissionsData } = trpc.submissions.list.useQuery(
+    { limit: 500, offset: 0 },
+    { enabled: !canSeeAllVillages }
+  );
 
   const referencePolygons = useMemo<ReferencePolygon[]>(() => {
     const result: ReferencePolygon[] = [];
@@ -599,22 +635,43 @@ export function Step2FieldValidation({
       });
     });
 
-    // Existing SPPTG (terdaftar = green, terdata = blue)
-    const submissionItems = (existingSubmissionsData?.items ?? []) as Array<{
+    // Existing SPPTG (terdaftar = green, terdata = blue). `listMapPolygons` has
+    // already dropped the rejected, under-review and invalid ones server-side;
+    // the desa-scoped fallback still has to filter them here.
+    const submissionItems: Array<{
       id: number;
-      namaPemilik: string;
       status: string;
-      isValid?: boolean;
       geoJSON?: unknown;
-    }>;
+      label: string;
+    }> = canSeeAllVillages
+      ? (allVillagePolygons ?? []).map((sub) => ({
+          id: sub.id,
+          status: sub.status,
+          geoJSON: sub.geoJSON,
+          // No applicant name here: the desa is what tells a surveyor whose
+          // territory the neighbouring plot belongs to.
+          label: sub.desaNama ? `${sub.status} — ${sub.desaNama}` : sub.status,
+        }))
+      : ((existingSubmissionsData?.items ?? []) as Array<{
+          id: number;
+          namaPemilik: string;
+          status: string;
+          isValid?: boolean;
+          geoJSON?: unknown;
+        }>)
+          .filter(
+            (sub) =>
+              (sub.status === 'SPPTG terdaftar' || sub.status === 'SPPTG terdata') &&
+              sub.isValid !== false
+          )
+          .map((sub) => ({
+            id: sub.id,
+            status: sub.status,
+            geoJSON: sub.geoJSON,
+            label: `${sub.status}: ${sub.namaPemilik}`,
+          }));
+
     submissionItems.forEach((sub) => {
-      if (sub.status !== 'SPPTG terdaftar' && sub.status !== 'SPPTG terdata') {
-        return;
-      }
-      // Hide submissions marked invalid — only valid data is shown on the map.
-      if (sub.isValid === false) {
-        return;
-      }
       const color = sub.status === 'SPPTG terdaftar' ? '#22c55e' : '#3b82f6';
       geoJSONToPaths(sub.geoJSON).forEach((path, i) => {
         result.push({
@@ -622,13 +679,18 @@ export function Step2FieldValidation({
           path,
           strokeColor: color,
           fillColor: color,
-          label: `${sub.status}: ${sub.namaPemilik}`,
+          label: sub.label,
         });
       });
     });
 
     return result;
-  }, [prohibitedAreasData, existingSubmissionsData]);
+  }, [
+    prohibitedAreasData,
+    existingSubmissionsData,
+    allVillagePolygons,
+    canSeeAllVillages,
+  ]);
 
   const handleCheckOverlap = () => {
     if (draft.coordinatesGeografis.length < 3) {
@@ -719,9 +781,6 @@ export function Step2FieldValidation({
               <p className="text-sm font-medium text-gray-900">
                 {editingWitnessId ? 'Ubah Data Saksi' : 'Tambah Saksi'}
               </p>
-              <p className="text-xs text-gray-500">
-                Umur, pekerjaan dan alamat dicetak pada SPPTG
-              </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -775,7 +834,9 @@ export function Step2FieldValidation({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="saksiUmur">Umur</Label>
+                <Label htmlFor="saksiUmur">
+                  Umur <span className="text-red-600">*</span>
+                </Label>
                 <Input
                   id="saksiUmur"
                   type="number"
@@ -790,7 +851,9 @@ export function Step2FieldValidation({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="saksiPekerjaan">Pekerjaan</Label>
+                <Label htmlFor="saksiPekerjaan">
+                  Pekerjaan <span className="text-red-600">*</span>
+                </Label>
                 <Input
                   id="saksiPekerjaan"
                   placeholder="Contoh: Petani"
@@ -802,7 +865,9 @@ export function Step2FieldValidation({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="saksiAlamat">Alamat</Label>
+                <Label htmlFor="saksiAlamat">
+                  Alamat <span className="text-red-600">*</span>
+                </Label>
                 <Input
                   id="saksiAlamat"
                   placeholder="Alamat sesuai KTP"

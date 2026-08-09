@@ -16,6 +16,7 @@ import {
   TableRow,
 } from './ui/table';
 import { useTableSort, SortableHead } from './table-sort';
+import { TablePager, useTablePagination } from './table-pagination';
 import { RequiredMark } from './RequiredMark';
 import { FieldError } from './FieldError';
 import { createVillageSchema } from '@/lib/validation';
@@ -190,6 +191,8 @@ export function VillagesTab({
         return '';
     }
   }, { key: 'updatedAt', dir: 'desc' });
+
+  const pagination = useTablePagination(sortedVillages);
 
   const handleWilayahChange = (patch: WilayahValue) => {
     setFormData((prev) => ({ ...prev, ...patch }));
@@ -526,7 +529,7 @@ export function VillagesTab({
                 </TableCell>
               </TableRow>
             ) : (
-              sortedVillages.map((village) => (
+              pagination.pageRows.map((village) => (
                 <TableRow key={village.id}>
                   <TableCell className="text-gray-900">{village.kodeDesa}</TableCell>
                   <TableCell>{village.namaDesa}</TableCell>
@@ -576,6 +579,18 @@ export function VillagesTab({
             )}
           </TableBody>
         </Table>
+
+        <div className="border-t border-gray-200 px-4 py-3">
+          <TablePager
+            page={pagination.page}
+            setPage={pagination.setPage}
+            pageSize={pagination.pageSize}
+            setPageSize={pagination.setPageSize}
+            total={pagination.total}
+            lastPage={pagination.lastPage}
+            noun="desa"
+          />
+        </div>
       </div>
 
       {/* Add Village Dialog */}

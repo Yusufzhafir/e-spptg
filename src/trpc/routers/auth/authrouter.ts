@@ -1,7 +1,11 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { protectedProcedure, publicProcedure, router } from '@/trpc/init';
-import { createUserSchema } from '@/lib/validation';
+import {
+  createUserSchema,
+  nomorHPSchema,
+  optionalNomorHPSchema,
+} from '@/lib/validation';
 import { passwordSchema } from '@/lib/password-policy';
 import { isValidEmail, EMAIL_ERROR } from '@/lib/email-address';
 import * as queries from '@/server/db/queries/user';
@@ -39,6 +43,12 @@ import {
   EMAIL_NOT_VERIFIED_MESSAGE,
 } from '@/lib/account-status';
 import { recordAudit } from '@/server/audit/record';
+import {
+  buildAvatarKey,
+  MAX_AVATAR_BYTES,
+  signAvatarUrl,
+} from '@/server/avatar';
+import { deleteFileFromS3, uploadFileToS3 } from '@/server/s3/s3';
 
 /**
  * Sign-in and sign-up run on `publicProcedure`, which the audit middleware does
@@ -135,6 +145,9 @@ export const authRouter = router({
       assignedKecamatan: ctx.appUser.assignedKecamatan,
       nomorHP: ctx.appUser.nomorHP,
       nipNik: ctx.appUser.nipNik,
+      // The stored value is a private-bucket object key; only the signed link
+      // ever leaves the server.
+      fotoProfilUrl: await signAvatarUrl(ctx.appUser.fotoProfil),
     };
   }),
 
@@ -159,7 +172,7 @@ export const authRouter = router({
         .pick({ email: true, nama: true, nipNik: true })
         .extend({
           password: passwordSchema,
-          nomorHP: z.string().optional(),
+          nomorHP: nomorHPSchema,
         })
     )
     .mutation(async ({ ctx, input }) => {
@@ -501,6 +514,134 @@ export const authRouter = router({
   // ==========================================================================
   // Password management
   // ==========================================================================
+
+  /**
+   * Self-service profile edit, limited to the two contact fields a person can
+   * correct about themselves.
+   *
+   * Deliberately narrow: `peran`, `status`, `assignedVillageId` and
+   * `assignedKecamatan` decide what the account may do, and `email` is the login
+   * identifier — none of them can be reached from here, so this cannot become a
+   * way to escalate a role or take over an address. Those stay in Pengaturan,
+   * behind `adminProcedure`.
+   */
+  updateProfile: protectedProcedure
+    .input(
+      z.object({
+        nipNik: createUserSchema.shape.nipNik,
+        nomorHP: optionalNomorHPSchema,
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const user = ctx.appUser;
+
+      const updated = await queries.updateUser(user.id, {
+        nipNik: input.nipNik,
+        nomorHP: input.nomorHP ?? null,
+      });
+
+      ctx.audit.set({
+        entitasId: user.id,
+        ringkasan: 'Memperbarui profil sendiri (NIP/NIK, nomor HP)',
+        sebelum: { nipNik: user.nipNik, nomorHP: user.nomorHP },
+        sesudah: { nipNik: updated.nipNik, nomorHP: updated.nomorHP },
+      });
+
+      // Same shape as `me`, so the client can drop it straight into that cache.
+      return {
+        ...publicUser(updated),
+        nomorHP: updated.nomorHP,
+        nipNik: updated.nipNik,
+      };
+    }),
+
+  /**
+   * Replace the signed-in user's profile photo.
+   *
+   * The image arrives already cropped to 1:1 and resized by the client (see
+   * `AvatarCropDialog`), so this only has to check that it is a small image of
+   * an accepted type — there is no image decoder on the server to re-crop with,
+   * and the UI renders the photo in a square container with `object-cover`, so
+   * an odd aspect ratio can never break a layout even if one got through.
+   */
+  uploadAvatar: protectedProcedure
+    .input(
+      z.object({
+        /** base64 of the cropped image, without the data: URL prefix. */
+        fileData: z.string().min(1, 'Data gambar kosong'),
+        mimeType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const user = ctx.appUser;
+
+      let buffer: Buffer;
+      try {
+        buffer = Buffer.from(input.fileData, 'base64');
+      } catch {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Data gambar tidak valid.' });
+      }
+
+      if (buffer.length === 0) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Data gambar tidak valid.' });
+      }
+      if (buffer.length > MAX_AVATAR_BYTES) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Ukuran foto maksimal ${MAX_AVATAR_BYTES / 1024 / 1024} MB.`,
+        });
+      }
+
+      const key = buildAvatarKey(user.id, input.mimeType);
+      try {
+        await uploadFileToS3(buffer, key, input.mimeType);
+      } catch {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Gagal mengunggah foto profil. Coba lagi.',
+        });
+      }
+
+      const previousKey = user.fotoProfil;
+      const updated = await queries.updateUser(user.id, { fotoProfil: key });
+
+      // Only after the row points at the new object: deleting first would leave
+      // the account with a broken photo if the update failed.
+      if (previousKey && previousKey !== key) {
+        await deleteFileFromS3(previousKey).catch((error) => {
+          console.error('Foto profil lama gagal dihapus:', error);
+        });
+      }
+
+      ctx.audit.set({
+        entitasId: user.id,
+        ringkasan: 'Memperbarui foto profil sendiri',
+        sebelum: { fotoProfil: previousKey },
+        sesudah: { fotoProfil: updated.fotoProfil },
+      });
+
+      return { fotoProfilUrl: await signAvatarUrl(updated.fotoProfil) };
+    }),
+
+  /** Remove the photo and fall back to the initials avatar. */
+  removeAvatar: protectedProcedure.mutation(async ({ ctx }) => {
+    const user = ctx.appUser;
+    if (!user.fotoProfil) return { fotoProfilUrl: null };
+
+    await queries.updateUser(user.id, { fotoProfil: null });
+    await deleteFileFromS3(user.fotoProfil).catch((error) => {
+      console.error('Foto profil gagal dihapus dari penyimpanan:', error);
+    });
+
+    ctx.audit.set({
+      entitasId: user.id,
+      ringkasan: 'Menghapus foto profil sendiri',
+      sebelum: { fotoProfil: user.fotoProfil },
+      sesudah: { fotoProfil: null },
+    });
+
+    return { fotoProfilUrl: null };
+  }),
 
   changePassword: protectedProcedure
     .input(

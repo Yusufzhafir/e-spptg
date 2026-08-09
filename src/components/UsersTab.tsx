@@ -14,7 +14,7 @@ import {
 import { useTableSort, SortableHead } from './table-sort';
 import { formatDateTime } from '@/lib/format-date';
 import { useAuthRole } from './AuthRoleProvider';
-import { canManageUser, canViewUser } from '@/lib/user-access';
+import { canManageUser, canViewUser, canViewUserDetail } from '@/lib/user-access';
 import { RequiredMark } from './RequiredMark';
 import { SearchableSelect } from './SearchableSelect';
 import { FieldError } from './FieldError';
@@ -46,7 +46,10 @@ import {
   AlertDialogTitle,
 } from './ui/alert-dialog';
 import { Badge } from './ui/badge';
-import { Search, Plus, Edit, Power, KeyRound, Mail, Loader2 } from 'lucide-react';
+import { Search, Plus, Edit, Eye, Power, KeyRound, Mail, Loader2 } from 'lucide-react';
+import Link from 'next/link';
+import { UserAvatar } from './UserAvatar';
+import { TablePager, useTablePagination } from './table-pagination';
 import { toast } from 'sonner';
 
 interface UsersTabProps {
@@ -164,6 +167,8 @@ export function UsersTab({
         return '';
     }
   }, { key: 'updatedAt', dir: 'desc' });
+
+  const pagination = useTablePagination(sortedUsers);
 
   const handleAddUser = () => {
     setErrors({});
@@ -467,9 +472,20 @@ export function UsersTab({
                 </TableCell>
               </TableRow>
             ) : (
-              sortedUsers.map((user) => (
+              pagination.pageRows.map((user) => (
                 <TableRow key={user.id}>
-                  <TableCell>{user.nama}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2.5">
+                      <UserAvatar
+                        nama={user.nama}
+                        email={user.email}
+                        fotoProfilUrl={user.fotoProfilUrl}
+                        className="h-8 w-8"
+                        textClassName="text-xs"
+                      />
+                      <span className="min-w-0 truncate">{user.nama}</span>
+                    </div>
+                  </TableCell>
                   <TableCell className="text-gray-600">{user.nipNik}</TableCell>
                   <TableCell className="text-gray-600">{user.email}</TableCell>
                   <TableCell>
@@ -521,8 +537,21 @@ export function UsersTab({
                     {formatDateTime(user.terakhirMasuk)}
                   </TableCell>
                   <TableCell className="text-right">
-                    {currentUser && canManageUser(currentUser, user) ? (
-                      <div className="flex justify-end gap-2">
+                    <div className="flex justify-end gap-2">
+                      {/* Its own rule, looser than editing but stricter than the
+                          list: a Verifikator or Viewer may see a colleague in
+                          the table, never open their NIK and case history.
+                          `users.detail` refuses the same request server-side. */}
+                      {currentUser && canViewUserDetail(currentUser, user) && (
+                        <Button variant="ghost" size="sm" asChild title="Lihat detail">
+                          <Link href={`/app/pengaturan/pengguna/${user.id}`}>
+                            <Eye className="h-4 w-4" />
+                          </Link>
+                        </Button>
+                      )}
+
+                      {currentUser && canManageUser(currentUser, user) && (
+                        <>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -551,16 +580,27 @@ export function UsersTab({
                         >
                           <KeyRound className="h-4 w-4" />
                         </Button>
-                      </div>
-                    ) : (
-                      <span className="text-gray-400 text-sm">—</span>
-                    )}
+                        </>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
             )}
           </TableBody>
         </Table>
+
+        <div className="border-t border-gray-200 px-4 py-3">
+          <TablePager
+            page={pagination.page}
+            setPage={pagination.setPage}
+            pageSize={pagination.pageSize}
+            setPageSize={pagination.setPageSize}
+            total={pagination.total}
+            lastPage={pagination.lastPage}
+            noun="pengguna"
+          />
+        </div>
       </div>
 
       {/* Add User Dialog */}
@@ -608,7 +648,7 @@ export function UsersTab({
                 }}
                 inputMode="numeric"
                 maxLength={20}
-                placeholder="Masukkan NIP atau NIK"
+                placeholder="Masukkan NIP atau NIK (minimal 16 angka)"
                 className={errorClass('nipNik')}
               />
               <FieldError message={errors.nipNik} />

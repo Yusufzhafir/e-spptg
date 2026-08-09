@@ -87,7 +87,8 @@ export function SignUpForm() {
     }
 
     const nomorHP = form.nomorHP.trim();
-    if (nomorHP && !isValidPhoneNumber(nomorHP)) next.nomorHP = PHONE_NUMBER_ERROR;
+    if (!nomorHP) next.nomorHP = 'Nomor HP wajib diisi';
+    else if (!isValidPhoneNumber(nomorHP)) next.nomorHP = PHONE_NUMBER_ERROR;
 
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -102,7 +103,7 @@ export function SignUpForm() {
       nama: form.nama.trim(),
       nipNik: form.nipNik,
       email: form.email.trim(),
-      nomorHP: form.nomorHP.trim() || undefined,
+      nomorHP: form.nomorHP.trim(),
       password: form.password,
     });
   };
@@ -170,7 +171,7 @@ export function SignUpForm() {
           id="nipNik"
           inputMode="numeric"
           maxLength={20}
-          placeholder="Masukkan NIP atau NIK"
+          placeholder="Masukkan NIP atau NIK (minimal 16 angka)"
           value={form.nipNik}
           // Digits only, max 20 — enforced while typing so the field can never
           // hold a value the schema would reject.
@@ -201,11 +202,14 @@ export function SignUpForm() {
       </div>
 
       <div>
-        <Label htmlFor="nomorHP">Nomor HP</Label>
+        <Label htmlFor="nomorHP">
+          Nomor HP
+          <RequiredMark />
+        </Label>
         <Input
           id="nomorHP"
           autoComplete="tel"
-          placeholder="08xxxxxxxxxx"
+          placeholder="08xxxxxxxxxx atau 0549xxxxxx"
           value={form.nomorHP}
           onChange={(event) => set('nomorHP', event.target.value)}
           onBlur={(event) => set('nomorHP', normalizePhoneNumber(event.target.value))}

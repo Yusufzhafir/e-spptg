@@ -1,4 +1,6 @@
+import { useMemo } from 'react';
 import { SubmissionDraft } from '../../types';
+import { useAuthRole } from '../AuthRoleProvider';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
 import { Checkbox } from '../ui/checkbox';
@@ -30,11 +32,31 @@ export function Step1DocumentUpload({
   onPersistDraftPatch,
   errors = {},
 }: Step1Props) {
+  const { user } = useAuthRole();
   const { data: villagesData } = trpc.villages.list.useQuery({
     limit: 1000,
     offset: 0,
   });
-  const villages = villagesData ?? [];
+
+  /**
+   * Admin desa and Verifikator process one desa and one only — `saveStep`
+   * refuses a draft on any other. Offering the whole list would just be a trap,
+   * so they get their own desa and nothing else. Viewers pick freely (the land
+   * is wherever it is), and Superadmin has no desa scope to narrow to.
+   *
+   * `villages.list` stays unscoped on purpose: it is a globally cached query
+   * shared with Pengaturan and the dashboard filters, so the narrowing belongs
+   * here rather than in the procedure.
+   */
+  const scopedVillageId =
+    user && (user.peran === 'Admin' || user.peran === 'Verifikator')
+      ? user.assignedVillageId
+      : null;
+
+  const villages = useMemo(() => {
+    const all = villagesData ?? [];
+    return scopedVillageId ? all.filter((v) => v.id === scopedVillageId) : all;
+  }, [villagesData, scopedVillageId]);
 
   const handleVillageChange = (value: string) => {
     const villageId = Number(value);
@@ -121,35 +143,50 @@ export function Step1DocumentUpload({
         {/* Personal Details */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="tempatLahir">Tempat Lahir</Label>
+            <Label htmlFor="tempatLahir">
+              Tempat Lahir <span className="text-red-600">*</span>
+            </Label>
             <Input
               id="tempatLahir"
               value={draft.tempatLahir || ''}
               onChange={(e) => onUpdateDraft({ tempatLahir: e.target.value })}
               placeholder="Masukkan tempat lahir"
+              aria-invalid={Boolean(errors.tempatLahir)}
+              className={errors.tempatLahir ? 'border-red-500' : undefined}
             />
+            <FieldError message={errors.tempatLahir} />
           </div>
 
           <div>
-            <Label htmlFor="tanggalLahir">Tanggal Lahir</Label>
+            <Label htmlFor="tanggalLahir">
+              Tanggal Lahir <span className="text-red-600">*</span>
+            </Label>
             <Input
               id="tanggalLahir"
               type="date"
               value={draft.tanggalLahir || ''}
               onChange={(e) => onUpdateDraft({ tanggalLahir: e.target.value })}
+              aria-invalid={Boolean(errors.tanggalLahir)}
+              className={errors.tanggalLahir ? 'border-red-500' : undefined}
             />
+            <FieldError message={errors.tanggalLahir} />
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="pekerjaan">Pekerjaan</Label>
+            <Label htmlFor="pekerjaan">
+              Pekerjaan <span className="text-red-600">*</span>
+            </Label>
             <Input
               id="pekerjaan"
               value={draft.pekerjaan || ''}
               onChange={(e) => onUpdateDraft({ pekerjaan: e.target.value })}
               placeholder="Masukkan pekerjaan"
+              aria-invalid={Boolean(errors.pekerjaan)}
+              className={errors.pekerjaan ? 'border-red-500' : undefined}
             />
+            <FieldError message={errors.pekerjaan} />
           </div>
 
           <div>
@@ -174,7 +211,9 @@ export function Step1DocumentUpload({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="nomorHP">Nomor HP</Label>
+            <Label htmlFor="nomorHP">
+              Nomor HP <span className="text-red-600">*</span>
+            </Label>
             <Input
               id="nomorHP"
               type="tel"
@@ -189,7 +228,7 @@ export function Step1DocumentUpload({
                   onUpdateDraft({ nomorHP: normalized });
                 }
               }}
-              placeholder="08xxxxxxxxxx, 021xxxxxxx, atau 05xxxxxxxx"
+              placeholder="08xxxxxxxxxx atau 0549xxxxxx"
               aria-invalid={Boolean(errors.nomorHP)}
               className={errors.nomorHP ? 'border-red-500' : undefined}
             />
@@ -197,7 +236,9 @@ export function Step1DocumentUpload({
           </div>
 
           <div>
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">
+              Email <span className="text-red-600">*</span>
+            </Label>
             <Input
               id="email"
               type="email"
@@ -219,14 +260,19 @@ export function Step1DocumentUpload({
 
         <div className="grid grid-cols-1 gap-4">
           <div>
-            <Label htmlFor="alamatKTP">Alamat KTP</Label>
+            <Label htmlFor="alamatKTP">
+              Alamat KTP <span className="text-red-600">*</span>
+            </Label>
             <Textarea
               id="alamatKTP"
               value={draft.alamatKTP || ''}
               onChange={(e) => onUpdateDraft({ alamatKTP: e.target.value })}
               placeholder="Masukkan alamat sesuai KTP"
               rows={3}
+              aria-invalid={Boolean(errors.alamatKTP)}
+              className={errors.alamatKTP ? 'border-red-500' : undefined}
             />
+            <FieldError message={errors.alamatKTP} />
           </div>
         </div>
       </div>

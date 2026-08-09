@@ -23,6 +23,10 @@ export const prohibitedAreasRouter = router({
   //
   // Deliberately NOT caching `checkOverlaps` below — that one is scoped per
   // caller and reflects live submission geometry.
+  /**
+   * The whole list, cached — the wizard maps draw every kawasan as reference
+   * geometry, so they need all of them, not a page.
+   */
   list: protectedProcedure
     .input(
       z.object({
@@ -37,6 +41,33 @@ export const prohibitedAreasRouter = router({
         () => queries.listProhibitedAreas(input.limit, input.offset)
       );
     }),
+
+  /**
+   * One page for the Kawasan table. Not cached: search, sort and page in the
+   * key would make almost every request its own entry.
+   */
+  listPaged: protectedProcedure
+    .input(
+      z.object({
+        search: z.string().optional(),
+        jenisKawasan: z.string().optional(),
+        sortKey: z
+          .enum([
+            'namaKawasan',
+            'jenisKawasan',
+            'sumberData',
+            'tanggalEfektif',
+            'statusValidasi',
+            'aktifDiValidasi',
+            'updatedAt',
+          ])
+          .optional(),
+        sortDir: z.enum(['asc', 'desc']).optional(),
+        limit: z.number().int().positive().max(200).default(10),
+        offset: z.number().int().nonnegative().default(0),
+      })
+    )
+    .query(async ({ input }) => queries.listProhibitedAreasPaged(input)),
 
   byId: protectedProcedure
     .input(z.object({ id: z.number().int() }))

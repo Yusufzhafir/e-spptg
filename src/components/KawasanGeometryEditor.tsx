@@ -143,7 +143,7 @@ export function KawasanGeometryEditor({
   // Derive the UTM view from the coordinates while not actively editing a cell
   useEffect(() => {
     if (coordinateSystem !== 'utm' || editingUtm) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- mirror coords into the UTM view
+     
     setUtmRows(
       coordinates.map((c) => {
         const u = toUtmFromLatLon(c.latitude, c.longitude);

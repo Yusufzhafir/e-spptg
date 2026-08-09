@@ -10,7 +10,8 @@ import { trpc } from '@/trpc/client';
  * fail independently:
  *  1. the browser supports the Push API (iOS only does so for an *installed*
  *     PWA, and only from iOS 16.4),
- *  2. a service worker is registered (`ServiceWorkerRegistrar`, production only),
+ *  2. a service worker is registered (`ServiceWorkerRegistrar`, or on demand by
+ *     `subscribe` below),
  *  3. the deployment has VAPID keys (`notifications.pushConfig`).
  *
  * `isSupported === false` is a normal state, not an error — the in-app bell
@@ -97,10 +98,14 @@ export function usePushNotifications(): PushNotificationsState {
     if (!isSupported || !config?.publicKey) return;
     setIsBusy(true);
     try {
-      // `serviceWorker.ready` never settles when nothing is registered, which
-      // is the normal state in development (`ServiceWorkerRegistrar` only runs
-      // in production). Fail with a message instead of a spinner that hangs.
-      const registered = await navigator.serviceWorker.getRegistration();
+      // `serviceWorker.ready` never settles when nothing is registered, so this
+      // must not be left to chance: `ServiceWorkerRegistrar` waits for the
+      // window `load` event, and a toggle clicked before that would otherwise
+      // hang on a spinner. Register on demand and only give up if the browser
+      // itself refuses (private mode, blocked by policy, unsupported).
+      const registered =
+        (await navigator.serviceWorker.getRegistration()) ??
+        (await navigator.serviceWorker.register('/sw.js').catch(() => null));
       if (!registered) {
         throw new Error(
           'Service worker belum aktif di peramban ini, jadi notifikasi perangkat belum dapat diaktifkan.'

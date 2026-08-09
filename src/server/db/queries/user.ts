@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { UserRole, UserStatus } from '@/types';
 import { db, DBTransaction } from '../db';
 import { users } from '../schema';
@@ -122,29 +122,78 @@ export async function touchUserLastLogin(id: number, tx?: DBTransaction) {
   await invalidateUser(id);
 }
 
-export async function listUsers(limit = 50, offset = 0, tx?: DBTransaction) {
-  const queryDb = tx || db;
+/** Columns the Pengguna table may be ordered by, sorted in Postgres. */
+const USER_SORT_COLUMNS = {
+  nama: users.nama,
+  nipNik: users.nipNik,
+  email: users.email,
+  peran: users.peran,
+  status: users.status,
+  terakhirMasuk: users.terakhirMasuk,
+  updatedAt: users.updatedAt,
+} as const;
 
-  return queryDb.query.users.findMany({
-    limit,
-    offset,
-  });
-}
+export type UserSortKey = keyof typeof USER_SORT_COLUMNS;
 
-/** Users scoped to a single desa (for Admin/Verifikator visibility). */
-export async function listUsersByVillage(
-  villageId: number,
-  limit = 50,
-  offset = 0,
+/**
+ * One page of accounts, filtered, searched and counted in Postgres.
+ *
+ * `villageId` is the desa scope an Admin/Verifikator is limited to; leaving it
+ * out lists everyone (Superadmin). Paging here rather than in the browser means
+ * the table can never silently truncate at whatever limit the page happened to
+ * request.
+ */
+export async function listUsersPaged(
+  params: {
+    villageId?: number;
+    search?: string;
+    peran?: string;
+    status?: string;
+    sortKey?: UserSortKey;
+    sortDir?: 'asc' | 'desc';
+    limit?: number;
+    offset?: number;
+  } = {},
   tx?: DBTransaction
 ) {
   const queryDb = tx || db;
+  const conditions = [];
 
-  return queryDb.query.users.findMany({
-    where: eq(users.assignedVillageId, villageId),
-    limit,
-    offset,
-  });
+  if (params.villageId != null) {
+    conditions.push(eq(users.assignedVillageId, params.villageId));
+  }
+  if (params.peran) conditions.push(eq(users.peran, params.peran as never));
+  if (params.status) conditions.push(eq(users.status, params.status as never));
+  if (params.search?.trim()) {
+    const pattern = `%${params.search.trim().toLowerCase()}%`;
+    conditions.push(
+      sql`(
+        LOWER(${users.nama}) LIKE ${pattern}
+        OR LOWER(${users.email}) LIKE ${pattern}
+        OR LOWER(${users.nipNik}) LIKE ${pattern}
+      )`
+    );
+  }
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const column = USER_SORT_COLUMNS[params.sortKey ?? 'updatedAt'];
+  const orderBy = params.sortDir === 'asc' ? asc(column) : desc(column);
+
+  const items = await queryDb
+    .select()
+    .from(users)
+    .where(where)
+    // `id` as a tiebreak so equal values cannot swap between pages.
+    .orderBy(orderBy, desc(users.id))
+    .limit(params.limit ?? 50)
+    .offset(params.offset ?? 0);
+
+  const [counted] = await queryDb
+    .select({ count: sql<number>`count(*)::int` })
+    .from(users)
+    .where(where);
+
+  return { items, total: counted?.count ?? 0 };
 }
 
 export async function updateUser(

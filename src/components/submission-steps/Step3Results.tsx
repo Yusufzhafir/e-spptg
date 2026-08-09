@@ -41,6 +41,7 @@ import { coordinatesToGeoJSON, geoJSONToPaths } from '@/lib/map-utils';
 import { overlapJenisBadgeClassName } from '@/lib/overlap-results';
 import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
 import { trpc } from '@/trpc/client';
+import { DocumentActions } from '@/components/DocumentActions';
 
 interface Step3Props {
   draft: SubmissionDraft;
@@ -431,8 +432,14 @@ export function Step3Results({
     { limit: 500, offset: 0 },
     { enabled: hasOverlapData }
   );
-  const { data: existingSubmissionsData } = trpc.submissions.list.useQuery(
-    { limit: 500, offset: 0 },
+  /**
+   * Geometry comes from the all-desa map query, not the desa-scoped list: the
+   * overlap check runs across every desa, so an Admin or Verifikator can be
+   * told they clash with a plot their own `submissions.list` never returns —
+   * and the map would then silently draw nothing for that row.
+   */
+  const { data: allVillagePolygons } = trpc.submissions.listMapPolygons.useQuery(
+    undefined,
     { enabled: hasOverlapData }
   );
 
@@ -443,11 +450,9 @@ export function Step3Results({
       warna?: string | null;
       geom?: unknown;
     }>;
-    const subs = (existingSubmissionsData?.items ?? []) as Array<{
-      id: number;
-      status: string;
-      geoJSON?: unknown;
-    }>;
+    // Already filtered server-side to recorded (terdaftar/terdata) and still-valid
+    // pengajuan, the same set the overlap check itself considers.
+    const subs = allVillagePolygons ?? [];
 
     for (const overlap of draft.overlapResults || []) {
       const isSubmission =
@@ -483,7 +488,7 @@ export function Step3Results({
       }
     }
     return result;
-  }, [draft.overlapResults, prohibitedAreasData, existingSubmissionsData]);
+  }, [draft.overlapResults, prohibitedAreasData, allVillagePolygons]);
 
   return (
     // `disabled` on the fieldset cascades to every input, select and button
@@ -887,15 +892,18 @@ export function Step3Results({
                               </p>
                             </div>
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => void handleRemoveLampiran()}
-                            disabled={isUploading || isRemovingLampiran}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                          >
-                            <X className="w-4 h-4" />
-                          </Button>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <DocumentActions documentId={lampiranFeedback.documentId} />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => void handleRemoveLampiran()}
+                              disabled={isUploading || isRemovingLampiran}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -1083,6 +1091,9 @@ export function Step3Results({
                           {formatFileSize(draft.feedback.lampiranFeedback.size)}
                         </p>
                       </div>
+                      <DocumentActions
+                        documentId={draft.feedback.lampiranFeedback.documentId}
+                      />
                     </div>
                   </div>
                 </div>

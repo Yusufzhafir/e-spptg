@@ -14,6 +14,7 @@ import {
   TableRow,
 } from './ui/table';
 import { useTableSort, SortableHead } from './table-sort';
+import { TablePager, useTablePagination } from './table-pagination';
 import { useAuthRole } from './AuthRoleProvider';
 import { formatDate } from '@/lib/format-date';
 import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
@@ -185,6 +186,8 @@ export function ProhibitedAreasTab({
         return '';
     }
   }, { key: 'updatedAt', dir: 'desc' });
+
+  const pagination = useTablePagination(sortedAreas);
 
   const handleAddArea = () => {
     router.push('/app/pengaturan/kawasan/tambah');
@@ -391,7 +394,7 @@ export function ProhibitedAreasTab({
                   </TableCell>
                 </TableRow>
               ) : (
-                sortedAreas.map((area) => (
+                pagination.pageRows.map((area) => (
                   <TableRow key={area.id}>
                     <TableCell>{area.namaKawasan}</TableCell>
                     <TableCell>
@@ -470,6 +473,18 @@ export function ProhibitedAreasTab({
               )}
             </TableBody>
           </Table>
+
+          <div className="border-t border-gray-200 px-4 py-3">
+            <TablePager
+              page={pagination.page}
+              setPage={pagination.setPage}
+              pageSize={pagination.pageSize}
+              setPageSize={pagination.setPageSize}
+              total={pagination.total}
+              lastPage={pagination.lastPage}
+              noun="kawasan"
+            />
+          </div>
         </div>
       </div>
 

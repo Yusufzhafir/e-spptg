@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
 import { Check, Database, X, RefreshCw, FileText } from 'lucide-react';
 import { KPICard } from './KPICard';
 import { MapView } from './MapView';
 import { SubmissionsTable, type EditMode } from './SubmissionsTable';
 import { FilterPanel } from './FilterPanel';
 import { Submission, KPIData } from '../types';
+import type { ServerPagination } from './table-pagination';
+import type { SubmissionSortKey } from '@/lib/validation';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 
@@ -30,8 +31,32 @@ interface DashboardProps {
   onToggleValidity: (submission: Submission) => void;
   isTogglingValidity: boolean;
   onExportCsv: () => void;
-  /** Row to focus/highlight, driven by the ?focus= URL param (e.g. notifications) */
-  urlFocusId?: number | null;
+  /** Row to focus/highlight — a clicked map polygon, or the ?focus= URL param. */
+  focusSubmissionId?: number | null;
+  /** Changes on every focus request, so repeating the same row still triggers. */
+  focusNonce?: number;
+  /** Ask the page to focus a row; it re-queries to learn which page holds it. */
+  onFocusRow: (submissionId: number) => void;
+  /** The row being jumped to right now, or null once it has landed. */
+  pendingFocusId?: number | null;
+  /** Called by the table once the row is on screen. */
+  onFocusSettled?: () => void;
+  /**
+   * Polygons for the map. Separate from `submissions`, which is now only the
+   * page of rows on screen — a map that lost its polygons when you turned a
+   * table page would be worse than no map.
+   */
+  mapSubmissions: Submission[];
+  /** Server-side paging state, shared with `TablePager`. */
+  pagination: ServerPagination;
+  sortKey: SubmissionSortKey;
+  sortDir: 'asc' | 'desc';
+  onSortChange: (key: SubmissionSortKey) => void;
+  /**
+   * 0-based position of the focused row in the full result set, resolved by the
+   * server — the browser cannot find a row that is not on the current page.
+   */
+  focusPosition?: number | null;
 }
 
 export function Dashboard({
@@ -55,19 +80,26 @@ export function Dashboard({
   onToggleValidity,
   isTogglingValidity,
   onExportCsv,
-  urlFocusId,
+  focusSubmissionId,
+  focusNonce,
+  onFocusRow,
+  pendingFocusId,
+  onFocusSettled,
+  mapSubmissions,
+  pagination,
+  sortKey,
+  sortDir,
+  onSortChange,
+  focusPosition,
 }: DashboardProps) {
-  // Only submissions marked valid are drawn on the map (data & polygon).
-  const validSubmissions = submissions.filter((s) => s.isValid);
-  // Row to focus/scroll to in the table (from a map polygon click or the
-  // ?focus= URL param set by notifications).
-  const [focusSubmissionId, setFocusSubmissionId] = useState<number | null>(urlFocusId ?? null);
-  useEffect(() => {
-    if (urlFocusId != null) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync focus from URL/notification
-      setFocusSubmissionId(urlFocusId);
-    }
-  }, [urlFocusId]);
+  // The map draws every polygon in scope, not just the page on screen. Invalid
+  // rows are already excluded by `listForMap`; this keeps the guarantee local.
+  const validSubmissions = mapSubmissions.filter((s) => s.isValid);
+  // Which row to jump to is owned by the page, not by this component: the page
+  // is what asks the server where that row sits, and the server is the only one
+  // that knows — the table holds a single page now. Keeping the request in
+  // local state here meant a clicked polygon never reached the query, so
+  // "Lihat di tabel" quietly did nothing.
 
   // SPPTG count per status for the bar chart
   const statusBarData = [
@@ -141,7 +173,8 @@ export function Dashboard({
             <MapView
               submissions={validSubmissions}
               height="600px"
-              onViewInTable={(s) => setFocusSubmissionId(s.id)}
+              onViewInTable={(s) => onFocusRow(s.id)}
+              pendingFocusId={pendingFocusId}
             />
           </CardContent>
         </Card>
@@ -240,6 +273,13 @@ export function Dashboard({
           onToggleValidity={onToggleValidity}
           isTogglingValidity={isTogglingValidity}
           focusSubmissionId={focusSubmissionId}
+          focusNonce={focusNonce}
+          onFocusSettled={onFocusSettled}
+          focusPosition={focusPosition}
+          pagination={pagination}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSortChange={onSortChange}
         />
       </div>
     </div>

@@ -10,6 +10,12 @@ function completeStep1(): SubmissionDraft {
     currentStep: 1,
     namaPemohon: 'Budi Santoso',
     nik: '3201010101010001',
+    tempatLahir: 'Sangatta',
+    tanggalLahir: '1985-04-17',
+    pekerjaan: 'Petani',
+    alamatKTP: 'Jl. Yos Sudarso No. 12, RT 03',
+    nomorHP: '081234567890',
+    email: 'budi@email.com',
     villageId: 1,
     dokumenKTP: doc,
     dokumenKK: doc,
@@ -71,19 +77,38 @@ describe('validateStep1Fields', () => {
     }
   );
 
-  it('leaves the phone number optional', () => {
+  it('requires the phone number', () => {
     const draft = completeStep1();
     draft.nomorHP = '';
 
-    expect(validateStep1Fields(draft)).toEqual({});
+    expect(validateStep1Fields(draft).nomorHP).toBe('Nomor HP wajib diisi');
   });
 
-  it('blocks a malformed email but allows an empty one', () => {
+  it('blocks a malformed email and requires an empty one to be filled', () => {
     const draft = completeStep1();
     draft.email = 'budi[at]email';
     expect(validateStep1Fields(draft).email).toBeDefined();
 
     draft.email = '';
-    expect(validateStep1Fields(draft).email).toBeUndefined();
+    expect(validateStep1Fields(draft).email).toBe('Email wajib diisi');
+  });
+
+  it.each([
+    ['tempatLahir', 'Tempat lahir wajib diisi'],
+    ['tanggalLahir', 'Tanggal lahir wajib diisi'],
+    ['pekerjaan', 'Pekerjaan wajib diisi'],
+    ['alamatKTP', 'Alamat KTP wajib diisi'],
+  ] as const)('requires %s — it is printed on the certificate', (field, message) => {
+    const draft = completeStep1();
+    delete (draft as Partial<SubmissionDraft>)[field];
+
+    expect(validateStep1Fields(draft)[field]).toBe(message);
+  });
+
+  it('treats a whitespace-only identity field as empty', () => {
+    const draft = completeStep1();
+    draft.alamatKTP = '   ';
+
+    expect(validateStep1Fields(draft).alamatKTP).toBe('Alamat KTP wajib diisi');
   });
 });

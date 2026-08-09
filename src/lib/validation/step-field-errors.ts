@@ -28,15 +28,38 @@ export function validateStep1Fields(draft: SubmissionDraft): StepFieldErrors {
     errors.villageId = 'Desa wajib dipilih';
   }
 
-  // Contact details are optional, but a filled-in value must be usable —
+  // Identity details printed on the SPPTG itself — the certificate names the
+  // holder with their birthplace, date of birth, occupation and KTP address, so
+  // none of them can be left for later.
+  if (!draft.tempatLahir?.trim()) {
+    errors.tempatLahir = 'Tempat lahir wajib diisi';
+  }
+
+  if (!draft.tanggalLahir?.trim()) {
+    errors.tanggalLahir = 'Tanggal lahir wajib diisi';
+  }
+
+  if (!draft.pekerjaan?.trim()) {
+    errors.pekerjaan = 'Pekerjaan wajib diisi';
+  }
+
+  if (!draft.alamatKTP?.trim()) {
+    errors.alamatKTP = 'Alamat KTP wajib diisi';
+  }
+
+  // Contact details: required, and a filled-in value must also be usable —
   // an unchecked field silently stored a foreign number before this.
   const nomorHP = draft.nomorHP?.trim();
-  if (nomorHP && !isValidPhoneNumber(nomorHP)) {
+  if (!nomorHP) {
+    errors.nomorHP = 'Nomor HP wajib diisi';
+  } else if (!isValidPhoneNumber(nomorHP)) {
     errors.nomorHP = PHONE_NUMBER_ERROR;
   }
 
   const email = draft.email?.trim();
-  if (email && !isValidEmail(email)) {
+  if (!email) {
+    errors.email = 'Email wajib diisi';
+  } else if (!isValidEmail(email)) {
     errors.email = EMAIL_ERROR;
   }
 
@@ -80,11 +103,17 @@ export function validateStep2Fields(draft: SubmissionDraft): StepFieldErrors {
     errors.saksiList = 'Minimal 1 saksi batas lahan diperlukan';
   } else {
     const invalidWitness = draft.saksiList.find(
-      (w) => !w.nama?.trim() || !w.sisi || !w.penggunaanLahanBatas?.trim()
+      (w) =>
+        !w.nama?.trim() ||
+        !w.sisi ||
+        !w.penggunaanLahanBatas?.trim() ||
+        !w.umur ||
+        !w.pekerjaan?.trim() ||
+        !w.alamat?.trim()
     );
     if (invalidWitness) {
       errors.saksiList =
-        'Lengkapi data saksi batas lahan: nama saksi, sisi batas, dan penggunaan batas lahan';
+        'Lengkapi data saksi batas lahan: nama saksi, sisi batas, penggunaan batas lahan, umur, pekerjaan, dan alamat';
     }
   }
 

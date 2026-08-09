@@ -162,6 +162,7 @@ function ctx(
     assignedKecamatan,
     status: 'Aktif',
     nomorHP: null,
+    fotoProfil: null,
     emailVerifiedAt: new Date(),
     terakhirMasuk: null,
     createdAt: new Date(),

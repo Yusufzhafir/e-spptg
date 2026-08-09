@@ -156,7 +156,7 @@ export default function PengaturanPage() {
 
   const users: User[] = useMemo(() => {
     if (!usersData) return [];
-    return usersData.map((u) => ({
+    return usersData.items.map((u) => ({
       id: u.id,
       hasPassword: u.hasPassword,
       nama: u.nama,
@@ -167,6 +167,7 @@ export default function PengaturanPage() {
       assignedKecamatan: u.assignedKecamatan ?? null,
       status: u.status,
       nomorHP: u.nomorHP || null,
+      fotoProfilUrl: u.fotoProfilUrl ?? null,
       terakhirMasuk: u.terakhirMasuk ? new Date(u.terakhirMasuk) : null,
       updatedAt: u.updatedAt ?? null,
     }));

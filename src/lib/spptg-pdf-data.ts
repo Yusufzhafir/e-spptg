@@ -14,6 +14,28 @@ type BuildSPPTGPDFDataOptions = {
   mapUrlGenerator?: typeof generateStaticMapUrl;
 };
 
+/** Hard cap from step2LapanganSchema — `saksiList` is `.min(1).max(4)`. */
+export const MAX_WITNESSES = 4;
+
+/**
+ * The witness blocks the certificate prints: exactly the recorded saksi, no
+ * padding.
+ *
+ * The form used to be padded up to two slots so an unused line could be filled
+ * in by hand, which meant a pengajuan with a single saksi printed a second,
+ * empty identity block — an invitation to add a witness after signing. Every
+ * saksi is now captured in full (nama, umur, pekerjaan, alamat are all
+ * mandatory), so there is nothing left to complete on paper.
+ *
+ * One empty slot is still returned when there is no saksi at all: the draft
+ * validation makes that impossible to reach through the wizard, and a heading
+ * with nothing under it would be worse than a blank line.
+ */
+export function buildWitnessSlots<T>(saksiList: readonly T[] | undefined | null) {
+  const witnesses = (saksiList ?? []).slice(0, MAX_WITNESSES);
+  return witnesses.length > 0 ? witnesses : [undefined];
+}
+
 function buildBoundaryData(saksiList: SubmissionDraft['saksiList']) {
   const boundaryData: Partial<SPPTGPDFData> = {};
 

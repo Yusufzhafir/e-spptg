@@ -36,6 +36,13 @@
       "when": 1786071805887,
       "tag": "0004_foamy_maginty",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786266217907,
+      "tag": "0005_good_master_chief",
+      "breakpoints": true
     }
   ]
 }

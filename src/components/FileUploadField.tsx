@@ -7,6 +7,7 @@ import { Upload, File, X, CheckCircle2, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/trpc/client';
 import { TemplateType, TEMPLATE_FILENAME_MAP } from '@/lib/templates';
+import { DocumentActions } from './DocumentActions';
 
 export interface FileUploadFieldProps {
   label: string;
@@ -340,6 +341,12 @@ export function FileUploadField({
               </div>
               <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
             </div>
+            {/* Outside the !readOnly branch on purpose: someone who may not
+                change the berkas still needs to read it. */}
+            <DocumentActions
+              documentId={value.documentId}
+              className="flex shrink-0 items-center gap-1"
+            />
             {!readOnly && (
               <div className="flex items-center gap-2 flex-shrink-0">
                 <label htmlFor={`replace-${label}`}>
