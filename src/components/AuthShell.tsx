@@ -34,6 +34,7 @@ export function AuthShell({ title, subtitle, points, children }: AuthShellProps)
               alt=""
               width={1492}
               height={559}
+              sizes="(min-width: 640px) 150px, 120px"
               className="h-11 w-auto sm:h-14"
               priority
             />

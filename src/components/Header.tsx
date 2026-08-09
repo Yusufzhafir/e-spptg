@@ -25,6 +25,8 @@ export function Header({ title = 'Dashboard' }: HeaderProps) {
             alt="SIAPTAH — Sistem Informasi Administrasi Pertanahan"
             width={1492}
             height={559}
+            // h-7 on a 2.67 aspect ratio, and hidden from lg up.
+            sizes="75px"
             className="h-7 w-auto shrink-0 lg:hidden"
           />
           <h1 className="truncate text-lg sm:text-xl md:text-2xl text-gray-900">{title}</h1>

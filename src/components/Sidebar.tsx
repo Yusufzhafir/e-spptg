@@ -29,6 +29,8 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
             alt="SIAPTAH — Sistem Informasi Administrasi Pertanahan"
             width={1492}
             height={559}
+            // The sidebar only exists at lg and up, and the slot is a fixed w-44.
+            sizes="176px"
             className="h-auto w-44"
             priority
           />

@@ -190,3 +190,35 @@
     background-color: rgb(100 116 139); /* slate-500 */
   }
 }
+
+/* ---------------------------------------------------------------- Satellite
+ * Idle drift for the satellite layer on the "Tentang Layanan" section.
+ *
+ * Only the inner element animates; its wrapper carries the scroll parallax as
+ * an inline transform, so the two never fight over the same `transform`.
+ * Motion is opt-out — `prefers-reduced-motion` stops the drift entirely, and
+ * the parallax hook bails out on the same query.
+ */
+@keyframes satellite-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  33% {
+    transform: translate3d(-0.9%, -2.2%, 0) rotate(-1.6deg);
+  }
+  66% {
+    transform: translate3d(0.9%, 1.4%, 0) rotate(1.2deg);
+  }
+}
+
+.animate-satellite-drift {
+  animation: satellite-drift 13s ease-in-out infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-satellite-drift {
+    animation: none;
+  }
+}
