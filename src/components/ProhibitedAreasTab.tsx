@@ -13,7 +13,9 @@ import {
   TableHeader,
   TableRow,
 } from './ui/table';
-import { useTableSort, SortableHead } from './table-sort';
+import { SortableHead } from './table-sort';
+import { TablePager } from './table-pagination';
+import { useServerPagination, useTableUrlState } from './table-url-state';
 import { useAuthRole } from './AuthRoleProvider';
 import { formatDate } from '@/lib/format-date';
 import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
@@ -53,10 +55,29 @@ import {
 import { toast } from 'sonner';
 import { CreateProhibitedAreaInput, UpdateProhibitedAreaInput } from '@/types/prohibitedAreas';
 
+/** Filters this table keeps in the URL, beside the search box. */
+const AREA_FILTER_KEYS = ['jenis', 'status'] as const;
+
+/** Columns `prohibitedAreas.listPaged` can order by — must match the router's enum. */
+type AreaSortKey =
+  | 'namaKawasan'
+  | 'jenisKawasan'
+  | 'sumberData'
+  | 'dasarHukum'
+  | 'tanggalEfektif'
+  | 'diunggahOleh'
+  | 'statusValidasi'
+  | 'aktifDiValidasi'
+  | 'updatedAt';
+
 interface ProhibitedAreasTabProps {
-  prohibitedAreas: ProhibitedArea[];
-  // Toggle "Aktif di Validasi" and delete are still handled here via a bulk update.
-  onUpdateProhibitedAreas: (areas: ProhibitedArea[]) => void;
+  /**
+   * Flip "Aktif di Validasi" on one kawasan. One row at a time on purpose: the
+   * table only holds a page, so handing the parent a whole array to diff would
+   * make every kawasan it cannot see look deleted.
+   */
+  onToggleAreaActive: (id: number, aktifDiValidasi: boolean) => void;
+  onDeleteArea: (id: number) => void;
   // Add/edit now happen on dedicated pages; these remain optional for compatibility
   // with the settings page wiring and are no longer used by this tab.
   onCreateProhibitedArea?: (area: CreateProhibitedAreaInput) => void;
@@ -67,8 +88,8 @@ interface ProhibitedAreasTabProps {
 }
 
 export function ProhibitedAreasTab({
-  prohibitedAreas,
-  onUpdateProhibitedAreas,
+  onToggleAreaActive,
+  onDeleteArea,
 }: ProhibitedAreasTabProps) {
   const router = useRouter();
   const { user: currentUser } = useAuthRole();
@@ -77,9 +98,62 @@ export function ProhibitedAreasTab({
   // instead of letting them fill in a whole form and fail on save.
   const canManageKawasan =
     currentUser?.peran === 'Superadmin' || currentUser?.peran === 'Admin';
-  const [searchQuery, setSearchQuery] = useState('');
-  const [jenisFilter, setJenisFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+
+  // Search, filters, sort and paging are all resolved in Postgres; the table
+  // never holds more than the page on screen.
+  const table = useTableUrlState<AreaSortKey>(AREA_FILTER_KEYS, {
+    key: 'updatedAt',
+    dir: 'desc',
+  });
+
+  const {
+    data: areasPage,
+    isLoading,
+    isFetching,
+    error,
+  } = trpc.prohibitedAreas.listPaged.useQuery(
+    {
+      search: table.appliedSearch || undefined,
+      jenisKawasan: table.filters.jenis || undefined,
+      statusValidasi: table.filters.status || undefined,
+      sortKey: table.sortKey,
+      sortDir: table.sortDir,
+      limit: table.pageSize,
+      offset: table.page * table.pageSize,
+    },
+    { placeholderData: (previous) => previous }
+  );
+
+  const pagination = useServerPagination(table, areasPage?.total ?? 0);
+
+  const prohibitedAreas: ProhibitedArea[] = useMemo(
+    () =>
+      (areasPage?.items ?? []).map((a) => ({
+        id: a.id,
+        namaKawasan: a.namaKawasan,
+        jenisKawasan: a.jenisKawasan,
+        sumberData: a.sumberData,
+        dasarHukum: a.dasarHukum,
+        tanggalEfektif:
+          typeof a.tanggalEfektif === 'string'
+            ? a.tanggalEfektif
+            : new Date(a.tanggalEfektif).toISOString(),
+        tanggalUnggah:
+          typeof a.tanggalUnggah === 'string'
+            ? a.tanggalUnggah
+            : new Date(a.tanggalUnggah).toISOString(),
+        diunggahOleh: a.diunggahOleh,
+        diunggahOlehNama: a.diunggahOlehNama ?? null,
+        statusValidasi: a.statusValidasi,
+        aktifDiValidasi: a.aktifDiValidasi,
+        warna: a.warna,
+        catatan: a.catatan,
+        geomGeoJSON: a.geom as string | null,
+        updatedAt: a.updatedAt ?? null,
+      })),
+    [areasPage]
+  );
+
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false);
   const [isOverlapCheckDialogOpen, setIsOverlapCheckDialogOpen] = useState(false);
@@ -143,49 +217,6 @@ export function ProhibitedAreasTab({
     }
   }, [selectedArea]);
 
-  // Filter areas
-  const filteredAreas = prohibitedAreas.filter((area) => {
-    const matchesSearch =
-      !searchQuery ||
-      area.namaKawasan.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      area.sumberData.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesJenis = jenisFilter === 'all' || area.jenisKawasan === jenisFilter;
-    const matchesStatus = statusFilter === 'all' || area.statusValidasi === statusFilter;
-
-    return matchesSearch && matchesJenis && matchesStatus;
-  });
-
-  const {
-    sorted: sortedAreas,
-    sortKey,
-    sortDir,
-    toggleSort,
-  } = useTableSort<ProhibitedArea>(filteredAreas, (area, key) => {
-    switch (key) {
-      case 'namaKawasan':
-        return area.namaKawasan?.toLowerCase();
-      case 'jenisKawasan':
-        return area.jenisKawasan;
-      case 'sumberData':
-        return area.sumberData?.toLowerCase();
-      case 'dasarHukum':
-        return area.dasarHukum?.toLowerCase() ?? '';
-      case 'tanggalEfektif':
-        return area.tanggalEfektif ? new Date(area.tanggalEfektif).getTime() : 0;
-      case 'diunggahOleh':
-        return String(area.diunggahOleh ?? '');
-      case 'statusValidasi':
-        return area.statusValidasi;
-      case 'aktifDiValidasi':
-        return area.aktifDiValidasi ? 1 : 0;
-      case 'updatedAt':
-        return area.updatedAt ? new Date(area.updatedAt).getTime() : 0;
-      default:
-        return '';
-    }
-  }, { key: 'updatedAt', dir: 'desc' });
-
   const handleAddArea = () => {
     router.push('/app/pengaturan/kawasan/tambah');
   };
@@ -207,8 +238,7 @@ export function ProhibitedAreasTab({
   const confirmDelete = () => {
     if (!selectedArea) return;
 
-    const updatedAreas = prohibitedAreas.filter((a) => a.id !== selectedArea.id);
-    onUpdateProhibitedAreas(updatedAreas);
+    onDeleteArea(selectedArea.id);
     setIsDeleteDialogOpen(false);
     setSelectedArea(null);
     // Success toast is shown by the delete mutation's onSuccess handler.
@@ -219,11 +249,7 @@ export function ProhibitedAreasTab({
     // Optimistically reflect the toggle immediately; the backend update +
     // refetch (handled by the parent) will confirm it.
     setOptimisticActive((prev) => ({ ...prev, [area.id]: nextValue }));
-    onUpdateProhibitedAreas(
-      prohibitedAreas.map((a) =>
-        a.id === area.id ? { ...a, aktifDiValidasi: nextValue } : a
-      )
-    );
+    onToggleAreaActive(area.id, nextValue);
     toast.success(
       `Kawasan ${area.aktifDiValidasi ? 'dinonaktifkan' : 'diaktifkan'} di validasi.`
     );
@@ -311,16 +337,16 @@ export function ProhibitedAreasTab({
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input
               placeholder="Cari nama kawasan atau sumber data…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={table.search}
+              onChange={(e) => table.setSearch(e.target.value)}
               className="pl-10"
             />
           </div>
 
           <SearchableSelect
             className="w-full sm:w-[200px]"
-            value={jenisFilter}
-            onValueChange={setJenisFilter}
+            value={table.filters.jenis || 'all'}
+            onValueChange={(value) => table.setFilter('jenis', value === 'all' ? '' : value)}
             placeholder="Semua Jenis"
             searchPlaceholder="Cari jenis..."
             options={[
@@ -331,8 +357,8 @@ export function ProhibitedAreasTab({
 
           <SearchableSelect
             className="w-full sm:w-[180px]"
-            value={statusFilter}
-            onValueChange={setStatusFilter}
+            value={table.filters.status || 'all'}
+            onValueChange={(value) => table.setFilter('status', value === 'all' ? '' : value)}
             placeholder="Semua Status"
             searchPlaceholder="Cari status..."
             options={[
@@ -370,28 +396,32 @@ export function ProhibitedAreasTab({
           <Table className="min-w-250">
             <TableHeader>
               <TableRow className="bg-gray-50">
-                <SortableHead label="Nama Kawasan" sortKey="namaKawasan" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
-                <SortableHead label="Jenis" sortKey="jenisKawasan" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
-                <SortableHead label="Sumber Data" sortKey="sumberData" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
-                <SortableHead label="Dasar Hukum" sortKey="dasarHukum" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
-                <SortableHead label="Tanggal Efektif" sortKey="tanggalEfektif" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
-                <SortableHead label="Diunggah Oleh" sortKey="diunggahOleh" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
-                <SortableHead label="Status Validasi" sortKey="statusValidasi" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
-                <SortableHead label="Aktif di Validasi" sortKey="aktifDiValidasi" activeKey={sortKey} dir={sortDir} onSort={toggleSort} className="text-center" />
+                <SortableHead label="Nama Kawasan" sortKey="namaKawasan" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
+                <SortableHead label="Jenis" sortKey="jenisKawasan" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
+                <SortableHead label="Sumber Data" sortKey="sumberData" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
+                <SortableHead label="Dasar Hukum" sortKey="dasarHukum" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
+                <SortableHead label="Tanggal Efektif" sortKey="tanggalEfektif" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
+                <SortableHead label="Diunggah Oleh" sortKey="diunggahOleh" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
+                <SortableHead label="Status Validasi" sortKey="statusValidasi" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
+                <SortableHead label="Aktif di Validasi" sortKey="aktifDiValidasi" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} className="text-center" />
                 <TableHead className="text-right">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sortedAreas.length === 0 ? (
+              {prohibitedAreas.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="text-center py-8 text-gray-500">
-                    {searchQuery || jenisFilter !== 'all' || statusFilter !== 'all'
-                      ? 'Tidak ada kawasan yang ditemukan'
+                    {isLoading
+                      ? 'Memuat kawasan…'
+                      : error
+                      ? error.message
+                      : table.hasFilter
+                      ? 'Tidak ada kawasan yang cocok dengan pencarian atau filter.'
                       : 'Belum ada kawasan Non‑SPPTG. Unggah KML/KMZ atau gambar polygon.'}
                   </TableCell>
                 </TableRow>
               ) : (
-                sortedAreas.map((area) => (
+                prohibitedAreas.map((area) => (
                   <TableRow key={area.id}>
                     <TableCell>{area.namaKawasan}</TableCell>
                     <TableCell>
@@ -470,6 +500,10 @@ export function ProhibitedAreasTab({
               )}
             </TableBody>
           </Table>
+
+          <div className="border-t border-gray-200 px-4 py-3">
+            <TablePager {...pagination} noun="kawasan" isBusy={isFetching} />
+          </div>
         </div>
       </div>
 

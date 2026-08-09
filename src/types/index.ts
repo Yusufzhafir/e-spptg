@@ -129,6 +129,8 @@ export interface User {
   assignedKecamatan?: string | null;
   status: UserStatus;
   nomorHP: string | null;
+  /** Signed link to the profile photo; null when the account has none. */
+  fotoProfilUrl?: string | null;
   terakhirMasuk: Date | null;
   /** Last modification time, used as the default table sort. */
   updatedAt?: Date | string | null;

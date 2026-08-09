@@ -2,10 +2,22 @@
 
 import { useEffect } from 'react';
 
-/** Registers the PWA service worker (production only). Renders nothing. */
+/**
+ * Registers the PWA service worker. Renders nothing.
+ *
+ * Registered in development too: without a service worker the browser refuses
+ * to subscribe to push at all, so "Notifikasi Perangkat" could never be tested
+ * outside a production build — and the permission prompt never even appeared,
+ * because the subscribe flow gives up before asking.
+ *
+ * That is safe here because `public/sw.js` caches almost nothing: API traffic
+ * is skipped outright, navigations always hit the network (the cache is only an
+ * offline fallback), and the only cached responses are images and fonts, served
+ * stale-while-revalidate. No HTML or JS is cached, so hot reloading is
+ * unaffected.
+ */
 export function ServiceWorkerRegistrar() {
   useEffect(() => {
-    if (process.env.NODE_ENV !== 'production') return;
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
 
     const register = () => {

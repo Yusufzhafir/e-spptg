@@ -136,6 +136,12 @@ export const users = pgTable(
      */
     emailVerifiedAt: timestamp('email_verified_at'),
     nomorHP: varchar('nomor_hp', { length: 15 }),
+    /**
+     * S3 object key of the profile photo, not a URL: the bucket is private, so
+     * what the client gets is a short-lived signed link generated on read. NULL
+     * means "no photo" and the UI falls back to the initials avatar.
+     */
+    fotoProfil: varchar('foto_profil', { length: 500 }),
     terakhirMasuk: timestamp('terakhir_masuk'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),

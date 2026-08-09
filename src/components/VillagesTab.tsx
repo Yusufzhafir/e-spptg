@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Village } from '../types';
 import { trpc } from '@/trpc/client';
@@ -15,7 +15,9 @@ import {
   TableHeader,
   TableRow,
 } from './ui/table';
-import { useTableSort, SortableHead } from './table-sort';
+import { SortableHead } from './table-sort';
+import { TablePager } from './table-pagination';
+import { useServerPagination, useTableUrlState } from './table-url-state';
 import { RequiredMark } from './RequiredMark';
 import { FieldError } from './FieldError';
 import { createVillageSchema } from '@/lib/validation';
@@ -58,9 +60,27 @@ type CreateVillageInput = {
 
 type UpdateVillageInput = Partial<CreateVillageInput>;
 
+/** Filters this table keeps in the URL, beside the search box. */
+const VILLAGE_FILTER_KEYS = ['kecamatan'] as const;
+
+/** Columns `villages.listPaged` can order by — must match the router's enum. */
+type VillageSortKey =
+  | 'kodeDesa'
+  | 'namaDesa'
+  | 'namaKepalaDesa'
+  | 'kecamatan'
+  | 'kabupaten'
+  | 'provinsi'
+  | 'jumlahPengajuan'
+  | 'updatedAt';
+
 interface VillagesTabProps {
-  villages: Village[];
-  onUpdateVillages?: (villages: Village[]) => void; // Keep for backward compatibility
+  /**
+   * Every kecamatan there is, for the filter dropdown. Derived from the cached
+   * full desa list rather than from the rows on screen — one page would offer a
+   * handful of options and hide the rest.
+   */
+  kecamatanOptions: string[];
   onCreateVillage?: (data: CreateVillageInput) => void;
   onUpdateVillage?: (id: number, data: UpdateVillageInput) => void;
   onDeleteVillage?: (id: number) => void;
@@ -69,9 +89,8 @@ interface VillagesTabProps {
   isDeleting?: boolean;
 }
 
-export function VillagesTab({ 
-  villages, 
-  onUpdateVillages,
+export function VillagesTab({
+  kecamatanOptions,
   onCreateVillage,
   onUpdateVillage,
   onDeleteVillage,
@@ -80,8 +99,53 @@ export function VillagesTab({
   isDeleting = false,
 }: VillagesTabProps) {
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [kecamatanFilter, setKecamatanFilter] = useState<string>('all');
+
+  // Search, filter, sort and paging all happen in Postgres — the table holds
+  // one page, so deciding any of them here would work on the wrong rows.
+  const table = useTableUrlState<VillageSortKey>(VILLAGE_FILTER_KEYS, {
+    key: 'updatedAt',
+    dir: 'desc',
+  });
+
+  const {
+    data: villagesPage,
+    isLoading,
+    isFetching,
+    error,
+  } = trpc.villages.listPaged.useQuery(
+    {
+      search: table.appliedSearch || undefined,
+      kecamatan: table.filters.kecamatan || undefined,
+      sortKey: table.sortKey,
+      sortDir: table.sortDir,
+      limit: table.pageSize,
+      offset: table.page * table.pageSize,
+    },
+    { placeholderData: (previous) => previous }
+  );
+
+  const pagination = useServerPagination(table, villagesPage?.total ?? 0);
+
+  const villages: Village[] = useMemo(
+    () =>
+      (villagesPage?.items ?? []).map((v) => ({
+        id: v.id,
+        kodeDesa: v.kodeDesa,
+        namaDesa: v.namaDesa,
+        namaKepalaDesa: v.namaKepalaDesa ?? null,
+        juruUkurNama: v.juruUkurNama ?? null,
+        juruUkurJabatan: v.juruUkurJabatan ?? null,
+        juruUkurInstansi: v.juruUkurInstansi ?? null,
+        juruUkurNomorHP: v.juruUkurNomorHP ?? null,
+        kecamatan: v.kecamatan,
+        kabupaten: v.kabupaten,
+        provinsi: v.provinsi,
+        jumlahPengajuan: v.jumlahPengajuan || 0,
+        updatedAt: v.updatedAt ?? null,
+      })),
+    [villagesPage]
+  );
+
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -148,49 +212,6 @@ export function VillagesTab({
     return Object.keys(next).length === 0;
   };
 
-  // Get unique kecamatan for filter
-  const kecamatanOptions = Array.from(new Set(villages.map((v) => v.kecamatan))).sort();
-
-  // Filter villages
-  const filteredVillages = villages.filter((village) => {
-    const matchesSearch =
-      !searchQuery ||
-      village.namaDesa.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      village.kodeDesa.includes(searchQuery);
-
-    const matchesKecamatan = kecamatanFilter === 'all' || village.kecamatan === kecamatanFilter;
-
-    return matchesSearch && matchesKecamatan;
-  });
-
-  const {
-    sorted: sortedVillages,
-    sortKey,
-    sortDir,
-    toggleSort,
-  } = useTableSort<Village>(filteredVillages, (village, key) => {
-    switch (key) {
-      case 'kodeDesa':
-        return village.kodeDesa;
-      case 'namaDesa':
-        return village.namaDesa?.toLowerCase();
-      case 'namaKepalaDesa':
-        return village.namaKepalaDesa?.toLowerCase();
-      case 'kecamatan':
-        return village.kecamatan?.toLowerCase();
-      case 'kabupaten':
-        return village.kabupaten?.toLowerCase();
-      case 'provinsi':
-        return village.provinsi?.toLowerCase();
-      case 'jumlahPengajuan':
-        return village.jumlahPengajuan ?? 0;
-      case 'updatedAt':
-        return village.updatedAt ? new Date(village.updatedAt).getTime() : 0;
-      default:
-        return '';
-    }
-  }, { key: 'updatedAt', dir: 'desc' });
-
   const handleWilayahChange = (patch: WilayahValue) => {
     setFormData((prev) => ({ ...prev, ...patch }));
     (Object.keys(patch) as (keyof WilayahValue)[]).forEach((field) => clearError(field));
@@ -236,26 +257,8 @@ export function VillagesTab({
       });
       setIsAddDialogOpen(false);
       setFormData({});
-    } else if (onUpdateVillages) {
-      // Fallback to old behavior for backward compatibility
-      const newVillage: Village = {
-        id: new Date().getTime(),
-        kodeDesa: formData.kodeDesa ?? '',
-        namaDesa: formData.namaDesa ?? '',
-        namaKepalaDesa: formData.namaKepalaDesa ?? '',
-        juruUkurNama: formData.juruUkurNama ?? '',
-        juruUkurJabatan: formData.juruUkurJabatan ?? '',
-        juruUkurInstansi: formData.juruUkurInstansi || undefined,
-        juruUkurNomorHP: formData.juruUkurNomorHP ?? '',
-        kecamatan: formData.kecamatan ?? '',
-        kabupaten: formData.kabupaten ?? '',
-        provinsi: formData.provinsi ?? '',
-        jumlahPengajuan: 0,
-      };
-      onUpdateVillages([...villages, newVillage]);
-      setIsAddDialogOpen(false);
-      setFormData({});
-      toast.success('Desa berhasil ditambahkan.');
+    } else {
+      toast.error('Penambahan desa tidak tersedia.');
     }
   };
 
@@ -284,16 +287,8 @@ export function VillagesTab({
       setIsEditDialogOpen(false);
       setSelectedVillage(null);
       setFormData({});
-    } else if (onUpdateVillages) {
-      // Fallback to old behavior for backward compatibility
-      const updatedVillages = villages.map((v) =>
-        v.id === selectedVillage.id ? { ...v, ...formData } : v
-      );
-      onUpdateVillages(updatedVillages);
-      setIsEditDialogOpen(false);
-      setSelectedVillage(null);
-      setFormData({});
-      toast.success('Desa berhasil diperbarui.');
+    } else {
+      toast.error('Pembaruan desa tidak tersedia.');
     }
   };
 
@@ -305,13 +300,8 @@ export function VillagesTab({
       onDeleteVillage(selectedVillage.id);
       setIsDeleteDialogOpen(false);
       setSelectedVillage(null);
-    } else if (onUpdateVillages) {
-      // Fallback to old behavior for backward compatibility
-      const updatedVillages = villages.filter((v) => v.id !== selectedVillage.id);
-      onUpdateVillages(updatedVillages);
-      setIsDeleteDialogOpen(false);
-      setSelectedVillage(null);
-      toast.success('Desa berhasil dihapus.');
+    } else {
+      toast.error('Penghapusan desa tidak tersedia.');
     }
   };
 
@@ -462,17 +452,17 @@ export function VillagesTab({
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input
-              placeholder="Cari desa atau kode…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari desa, kode, atau kepala desa…"
+              value={table.search}
+              onChange={(e) => table.setSearch(e.target.value)}
               className="pl-10"
             />
           </div>
 
           <SearchableSelect
             className="w-full sm:w-[200px]"
-            value={kecamatanFilter}
-            onValueChange={setKecamatanFilter}
+            value={table.filters.kecamatan || 'all'}
+            onValueChange={(value) => table.setFilter('kecamatan', value === 'all' ? '' : value)}
             placeholder="Semua Kecamatan"
             searchPlaceholder="Cari kecamatan..."
             options={[
@@ -506,27 +496,31 @@ export function VillagesTab({
         <Table className="min-w-225">
           <TableHeader>
             <TableRow className="bg-gray-50">
-              <SortableHead label="Kode Desa (BPS)" sortKey="kodeDesa" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
-              <SortableHead label="Nama Desa" sortKey="namaDesa" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
-              <SortableHead label="Kepala Desa" sortKey="namaKepalaDesa" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
-              <SortableHead label="Kecamatan" sortKey="kecamatan" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
-              <SortableHead label="Kabupaten/Kota" sortKey="kabupaten" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
-              <SortableHead label="Provinsi" sortKey="provinsi" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
-              <SortableHead label="Jumlah Pengajuan" sortKey="jumlahPengajuan" activeKey={sortKey} dir={sortDir} onSort={toggleSort} className="text-center" />
+              <SortableHead label="Kode Desa (BPS)" sortKey="kodeDesa" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
+              <SortableHead label="Nama Desa" sortKey="namaDesa" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
+              <SortableHead label="Kepala Desa" sortKey="namaKepalaDesa" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
+              <SortableHead label="Kecamatan" sortKey="kecamatan" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
+              <SortableHead label="Kabupaten/Kota" sortKey="kabupaten" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
+              <SortableHead label="Provinsi" sortKey="provinsi" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} />
+              <SortableHead label="Jumlah Pengajuan" sortKey="jumlahPengajuan" activeKey={table.sortKey} dir={table.sortDir} onSort={table.toggleSort} className="text-center" />
               <TableHead className="text-right">Aksi</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sortedVillages.length === 0 ? (
+            {villages.length === 0 ? (
               <TableRow>
               <TableCell colSpan={8} className="text-center py-8 text-gray-500">
-                  {searchQuery || kecamatanFilter !== 'all'
-                    ? 'Tidak ada desa yang ditemukan'
+                  {isLoading
+                    ? 'Memuat desa…'
+                    : error
+                    ? error.message
+                    : table.hasFilter
+                    ? 'Tidak ada desa yang cocok dengan pencarian atau filter.'
                     : 'Belum ada data desa. Tambahkan desa terlebih dahulu.'}
                 </TableCell>
               </TableRow>
             ) : (
-              sortedVillages.map((village) => (
+              villages.map((village) => (
                 <TableRow key={village.id}>
                   <TableCell className="text-gray-900">{village.kodeDesa}</TableCell>
                   <TableCell>{village.namaDesa}</TableCell>
@@ -576,6 +570,10 @@ export function VillagesTab({
             )}
           </TableBody>
         </Table>
+
+        <div className="border-t border-gray-200 px-4 py-3">
+          <TablePager {...pagination} noun="desa" isBusy={isFetching} />
+        </div>
       </div>
 
       {/* Add Village Dialog */}

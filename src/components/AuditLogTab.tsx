@@ -3,8 +3,6 @@
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  ChevronLeft,
-  ChevronRight,
   Loader2,
   RotateCcw,
   Search,
@@ -35,9 +33,9 @@ import {
   AlertDialogTitle,
 } from './ui/alert-dialog';
 import { formatDateTime } from '@/lib/format-date';
+import { DEFAULT_PAGE_SIZE, TablePager } from './table-pagination';
 import { ENTITY_LABEL, actionLabel } from '@/server/audit/actions';
 
-const PAGE_SIZE = 25;
 
 /** `null` and `undefined` have to be visibly different from the string "null". */
 function renderValue(value: unknown): string {
@@ -72,6 +70,9 @@ export function AuditLogTab() {
   const utils = trpc.useUtils();
   const [filters, setFilters] = useState<Filters>(EMPTY);
   const [page, setPage] = useState(0);
+  // Server-paged, so the rows-per-page choice feeds the query rather than a
+  // slice — but it is the same control every other table offers.
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
@@ -85,10 +86,10 @@ export function AuditLogTab() {
       actorId: filters.actorId === 'all' ? undefined : Number(filters.actorId),
       dateFrom: filters.dateFrom || undefined,
       dateTo: filters.dateTo || undefined,
-      limit: PAGE_SIZE,
-      offset: page * PAGE_SIZE,
+      limit: pageSize,
+      offset: page * pageSize,
     }),
-    [filters, page]
+    [filters, page, pageSize]
   );
 
   const { data, isLoading, isFetching } = trpc.audit.list.useQuery(queryInput, {
@@ -116,7 +117,7 @@ export function AuditLogTab() {
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
-  const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+  const lastPage = Math.max(0, Math.ceil(total / pageSize) - 1);
   const hasFilter = JSON.stringify(filters) !== JSON.stringify(EMPTY);
 
   return (
@@ -342,34 +343,19 @@ export function AuditLogTab() {
       </div>
 
       {/* Paging */}
-      <div className="flex items-center justify-between text-sm text-gray-600">
-        <span>
-          {total === 0
-            ? 'Tidak ada entri'
-            : `Menampilkan ${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} dari ${total} entri`}
-          {isFetching && !isLoading && ' · memuat…'}
-        </span>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page === 0}
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Sebelumnya
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page >= lastPage}
-            onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
-          >
-            Berikutnya
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+      <TablePager
+        page={page}
+        setPage={setPage}
+        pageSize={pageSize}
+        setPageSize={(size) => {
+          setPageSize(size);
+          setPage(0);
+        }}
+        total={total}
+        lastPage={lastPage}
+        noun="entri"
+        isBusy={isFetching && !isLoading}
+      />
 
       {/* Detail — the before/after view */}
       <Dialog open={detailId !== null} onOpenChange={(open) => !open && setDetailId(null)}>

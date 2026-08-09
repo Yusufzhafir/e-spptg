@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { isValidPhoneNumber, PHONE_NUMBER_ERROR } from '@/lib/phone-number';
+import {
+  isValidPhoneNumber,
+  normalizePhoneNumber,
+  PHONE_NUMBER_ERROR,
+} from '@/lib/phone-number';
 import { EMAIL_ERROR, isValidEmail } from '@/lib/email-address';
 export * from './submission-draft';
 
@@ -12,12 +16,44 @@ export const geomGeoJSONPolygonSchema = z.object({
 // User Schemas
 // ============================================================================
 
+/**
+ * Contact number on a user account: optional, but a value that *is* typed has
+ * to be a usable Indonesian number, and it is stored in the canonical shape so
+ * the same person is not filed once as "+62 812…" and once as "0812…".
+ *
+ * Applies on the server, where the client-side checks in the forms cannot be
+ * relied on — and it matters beyond the account page, because a Viewer's
+ * account number is what prefills Nomor HP on Step 1 of the wizard.
+ */
+export const optionalNomorHPSchema = z
+  .string()
+  .trim()
+  .transform((value) => (value ? normalizePhoneNumber(value) : ''))
+  .refine((value) => value === '' || isValidPhoneNumber(value), PHONE_NUMBER_ERROR)
+  .transform((value) => value || undefined)
+  .optional();
+
+/**
+ * The same rule where the number is mandatory — self-registration, where it is
+ * the only way to reach the applicant besides their email.
+ */
+export const nomorHPSchema = z
+  .string()
+  .trim()
+  .min(1, 'Nomor HP wajib diisi')
+  .transform(normalizePhoneNumber)
+  .refine(isValidPhoneNumber, PHONE_NUMBER_ERROR);
+
 export const createUserSchema = z.object({
   email: z.string().refine(isValidEmail, EMAIL_ERROR),
   nama: z.string().min(2, 'Nama minimal 2 karakter'),
+  // 16 is the NIK length; a NIP is 18. Anything shorter is a typo or a
+  // placeholder, and the number identifies the person on official documents.
   nipNik: z
     .string()
-    .min(5, 'NIP/NIK minimal 5 angka')
+    .trim()
+    .regex(/^[0-9]+$/, 'NIP/NIK hanya boleh angka')
+    .min(16, 'NIP/NIK minimal 16 angka')
     .max(20, 'NIP/NIK maksimal 20 angka'),
   peran: z.enum(['Superadmin', 'Admin', 'Verifikator', 'Kecamatan', 'Viewer']).optional(),
   assignedVillageId: z.number().int().nullable().optional(),
@@ -163,6 +199,25 @@ export const dashboardFilterSchema = z
   .optional()
   .default({});
 
+/**
+ * Ordering is part of the request now that the table is paged in Postgres —
+ * sorting one page in the browser would order the wrong ten rows.
+ */
+export const submissionSortKeySchema = z.enum([
+  'id',
+  'namaPemilik',
+  'kecamatan',
+  'luas',
+  'tanggalPengajuan',
+  'status',
+  'isValid',
+  'verifikator',
+  'updatedAt',
+]);
+
+/** Client-safe: the table and the query agree on one list of sort keys. */
+export type SubmissionSortKey = z.infer<typeof submissionSortKeySchema>;
+
 export const listSubmissionsSchema = z.object({
   search: z.string().optional(),
   status: z.string().optional(),
@@ -170,7 +225,11 @@ export const listSubmissionsSchema = z.object({
   kecamatan: z.string().optional(),
   dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  limit: z.number().int().positive().default(50),
+  sortKey: submissionSortKeySchema.optional(),
+  sortDir: z.enum(['asc', 'desc']).optional(),
+  /** Ask where this row sits, so the client can jump to its page. */
+  focusId: z.number().int().positive().optional(),
+  limit: z.number().int().positive().max(200).default(10),
   offset: z.number().int().nonnegative().default(0),
 });
 

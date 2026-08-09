@@ -12,8 +12,7 @@ import type { TRPCContext } from '@/trpc/context';
 import type { UserRole } from '@/types';
 
 vi.mock('@/server/db/queries/user', () => ({
-  listUsers: vi.fn(),
-  listUsersByVillage: vi.fn(),
+  listUsersPaged: vi.fn(),
   getUserById: vi.fn(),
   getUserByEmail: vi.fn(),
   createUser: vi.fn(),
@@ -31,6 +30,7 @@ vi.mock('@/server/db/queries/drafts', () => ({
 }));
 vi.mock('@/server/db/queries/submissions', () => ({
   getSubmissionById: vi.fn(),
+  listSubmissionsForUser: vi.fn(async () => ({ items: [], total: 0 })),
 }));
 vi.mock('@/server/db/queries/documents', () => ({
   getDocumentById: vi.fn(),
@@ -93,8 +93,7 @@ const getUserByIdMock = vi.mocked(userQueries.getUserById);
 const updateUserMock = vi.mocked(userQueries.updateUser);
 const createUserMock = vi.mocked(userQueries.createUser);
 const getUserByEmailMock = vi.mocked(userQueries.getUserByEmail);
-const listUsersMock = vi.mocked(userQueries.listUsers);
-const listUsersByVillageMock = vi.mocked(userQueries.listUsersByVillage);
+const listUsersPagedMock = vi.mocked(userQueries.listUsersPaged);
 const getOrCreateDraftMock = vi.mocked(draftQueries.getOrCreateDraft);
 const createDraftMock = vi.mocked(draftQueries.createDraft);
 const createDraftFromSubmissionMock = vi.mocked(draftQueries.createDraftFromSubmission);
@@ -138,6 +137,7 @@ function ctx(
     assignedKecamatan,
     status,
     nomorHP: null,
+    fotoProfil: null,
     // Verified: these fixtures stand in for existing, usable accounts.
     emailVerifiedAt: new Date(),
     terakhirMasuk: null,
@@ -196,9 +196,8 @@ function draft(overrides: Partial<DraftRecord> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  listUsersMock.mockResolvedValue([] as never);
-  listUsersByVillageMock.mockResolvedValue([] as never);
-  listAccessibleDraftsMock.mockResolvedValue([] as never);
+  listUsersPagedMock.mockResolvedValue({ items: [], total: 0 } as never);
+  listAccessibleDraftsMock.mockResolvedValue({ items: [], total: 0 } as never);
   listCommentsMock.mockResolvedValue([] as never);
   listNotificationsScopedMock.mockResolvedValue([] as never);
   listDocumentsBySubmissionMock.mockResolvedValue([] as never);
@@ -215,30 +214,34 @@ beforeEach(() => {
 // users
 // ---------------------------------------------------------------------------
 describe('users.list — scoped per role', () => {
-  it('Superadmin lists everyone', async () => {
+  it('Superadmin lists everyone, unscoped', async () => {
     await usersRouter.createCaller(SUPERADMIN()).list({ limit: 100, offset: 0 });
-    expect(listUsersMock).toHaveBeenCalled();
-    expect(listUsersByVillageMock).not.toHaveBeenCalled();
+    expect(listUsersPagedMock).toHaveBeenCalledWith(
+      expect.objectContaining({ villageId: undefined })
+    );
   });
 
   it('Admin and Verifikator are limited to their desa', async () => {
     await usersRouter.createCaller(ADMIN()).list({ limit: 100, offset: 0 });
     await usersRouter.createCaller(VERIFIKATOR()).list({ limit: 100, offset: 0 });
-    expect(listUsersByVillageMock).toHaveBeenCalledTimes(2);
-    expect(listUsersByVillageMock).toHaveBeenNthCalledWith(1, VILLAGE_A, 100, 0);
-    expect(listUsersMock).not.toHaveBeenCalled();
+    expect(listUsersPagedMock).toHaveBeenCalledTimes(2);
+    expect(listUsersPagedMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ villageId: VILLAGE_A, limit: 100, offset: 0 })
+    );
   });
 
   it('Viewer and Kecamatan only see their own account', async () => {
     getUserByIdMock.mockResolvedValue({ id: 4 } as unknown as UserRecord);
-    const viewerRows = await usersRouter.createCaller(VIEWER()).list({ limit: 100, offset: 0 });
-    const kecamatanRows = await usersRouter
+    const viewer = await usersRouter.createCaller(VIEWER()).list({ limit: 100, offset: 0 });
+    const kecamatan = await usersRouter
       .createCaller(KECAMATAN())
       .list({ limit: 100, offset: 0 });
-    expect(viewerRows).toHaveLength(1);
-    expect(kecamatanRows).toHaveLength(1);
-    expect(listUsersMock).not.toHaveBeenCalled();
-    expect(listUsersByVillageMock).not.toHaveBeenCalled();
+    expect(viewer.items).toHaveLength(1);
+    expect(viewer.total).toBe(1);
+    expect(kecamatan.items).toHaveLength(1);
+    // Never reaches the paged query: their own row comes straight from getUserById.
+    expect(listUsersPagedMock).not.toHaveBeenCalled();
   });
 });
 
@@ -272,13 +275,54 @@ describe('users.byId — must not leak accounts outside the caller scope', () =>
     getUserByIdMock.mockResolvedValue({ id: 99, assignedVillageId: VILLAGE_A } as unknown as UserRecord);
     await expectDenied(usersRouter.createCaller(KECAMATAN()).byId({ id: 99 }));
   });
+
+  it('Verifikator cannot read a colleague, even in their own desa', async () => {
+    getUserByIdMock.mockResolvedValue({ id: 99, assignedVillageId: VILLAGE_A } as unknown as UserRecord);
+    await expectDenied(usersRouter.createCaller(VERIFIKATOR()).byId({ id: 99 }));
+  });
+
+  it('Admin cannot read a Superadmin or Kecamatan account (neither has a desa)', async () => {
+    getUserByIdMock.mockResolvedValue({ id: 1, assignedVillageId: null } as unknown as UserRecord);
+    await expectDenied(usersRouter.createCaller(ADMIN()).byId({ id: 1 }));
+  });
+});
+
+describe('users.detail — the account page enforces the same scope', () => {
+  it('lets an Admin open an account in their own desa', async () => {
+    getUserByIdMock.mockResolvedValue({ id: 99, assignedVillageId: VILLAGE_A } as unknown as UserRecord);
+    await expect(
+      usersRouter.createCaller(ADMIN()).detail({ id: 99 })
+    ).resolves.toBeTruthy();
+  });
+
+  it.each([
+    ['Admin, other desa', () => ADMIN(), VILLAGE_B],
+    ['Verifikator, own desa', () => VERIFIKATOR(), VILLAGE_A],
+    ['Viewer', () => VIEWER(), VILLAGE_A],
+    ['Kecamatan', () => KECAMATAN(), VILLAGE_A],
+  ] as const)('refuses %s', async (_label, caller, villageId) => {
+    getUserByIdMock.mockResolvedValue({
+      id: 99,
+      assignedVillageId: villageId,
+    } as unknown as UserRecord);
+    await expectDenied(usersRouter.createCaller(caller()).detail({ id: 99 }));
+  });
+
+  it('always lets anyone open their own account page', async () => {
+    getUserByIdMock.mockResolvedValue({ id: 4, assignedVillageId: null } as unknown as UserRecord);
+    await expect(
+      usersRouter.createCaller(VIEWER()).detail({ id: 4 })
+    ).resolves.toBeTruthy();
+  });
 });
 
 describe('users mutations — role guard', () => {
   const payload = {
     nama: 'Baru',
     email: 'baru@example.com',
-    nipNik: '1234567890',
+    // 16 digits: a shorter one is rejected by the input schema, and these tests
+    // are about the role guard that runs after it.
+    nipNik: '3201010101010009',
   };
 
   it('Verifikator, Kecamatan and Viewer cannot create users', async () => {
@@ -384,8 +428,9 @@ describe('drafts — Kecamatan takes no part in the workflow', () => {
   });
 
   it('has no drafts to list', async () => {
-    const rows = await draftsRouter.createCaller(KECAMATAN()).listMy();
-    expect(rows).toEqual([]);
+    // Paged response now: an empty page and a zero count, not a bare array.
+    const result = await draftsRouter.createCaller(KECAMATAN()).listMy({});
+    expect(result).toEqual({ items: [], total: 0 });
   });
 
   it('cannot delete a draft', async () => {
@@ -613,7 +658,7 @@ describe('status Nonaktif — access is revoked for every role', () => {
     await expect(
       usersRouter.createCaller(caller).list({ limit: 100, offset: 0 })
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
-    expect(listUsersMock).not.toHaveBeenCalled();
+    expect(listUsersPagedMock).not.toHaveBeenCalled();
   });
 
   it('a deactivated Superadmin loses its privileged mutations too', async () => {
@@ -625,10 +670,10 @@ describe('status Nonaktif — access is revoked for every role', () => {
   });
 
   it('an active account is unaffected', async () => {
-    listUsersMock.mockResolvedValue([] as never);
+    listUsersPagedMock.mockResolvedValue({ items: [], total: 0 } as never);
     await expect(
       usersRouter.createCaller(SUPERADMIN()).list({ limit: 100, offset: 0 })
-    ).resolves.toEqual([]);
+    ).resolves.toEqual({ items: [], total: 0 });
   });
 });
 

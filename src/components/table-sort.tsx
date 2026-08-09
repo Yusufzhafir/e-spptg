@@ -1,50 +1,17 @@
 'use client';
 
-import { useMemo, useState } from 'react';
 import { TableHead } from './ui/table';
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 
 export type SortDir = 'asc' | 'desc';
 
 /**
- * Generic client-side table sort. `getValue(row, key)` returns the comparable
- * value for a column key. Returns the sorted data plus header state/handlers.
+ * Clickable, sortable table header cell.
+ *
+ * Sorting itself happens in Postgres — every table that uses this holds one
+ * page, so ordering the rows in the browser would order the wrong ones. See
+ * `useTableUrlState` for the state behind `activeKey`/`dir`/`onSort`.
  */
-export function useTableSort<T>(
-  data: T[],
-  getValue: (row: T, key: string) => string | number | null | undefined,
-  initial?: { key: string; dir: SortDir }
-) {
-  const [sortKey, setSortKey] = useState<string | null>(initial?.key ?? null);
-  const [sortDir, setSortDir] = useState<SortDir>(initial?.dir ?? 'asc');
-
-  const sorted = useMemo(() => {
-    if (!sortKey) return data;
-    const copy = [...data];
-    copy.sort((a, b) => {
-      const av = getValue(a, sortKey);
-      const bv = getValue(b, sortKey);
-      let cmp = 0;
-      if (typeof av === 'number' && typeof bv === 'number') cmp = av - bv;
-      else cmp = String(av ?? '').localeCompare(String(bv ?? ''));
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-    return copy;
-  }, [data, sortKey, sortDir, getValue]);
-
-  const toggleSort = (key: string) => {
-    if (key === sortKey) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortKey(key);
-      setSortDir('asc');
-    }
-  };
-
-  return { sorted, sortKey, sortDir, toggleSort };
-}
-
-/** Clickable, sortable table header cell. */
 export function SortableHead({
   label,
   sortKey,

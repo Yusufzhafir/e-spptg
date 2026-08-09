@@ -7,21 +7,17 @@
  * - Two columns: witness signature lines on the left, the declarant signature
  *   with meterai and the Kepala Desa/Lurah endorsement on the right
  *
- * Only the witness name is known to the system (BoundaryWitness carries nama,
- * sisi and penggunaanLahanBatas), so Umur/Pekerjaan/Alamat stay as dotted lines
- * to be filled in by hand on the printed form.
+ * Every field of a witness is captured by the wizard (nama, umur, pekerjaan and
+ * alamat are all mandatory on the saksi form), so each block prints complete —
+ * the dotted lines are only ever blank when the data really is missing.
  */
 
 import React from 'react';
 import { Page, Text, View } from '@react-pdf/renderer';
 import { styles, formatIndonesianDate } from './styles';
 import { DocumentFooter } from './DocumentFooter';
+import { buildWitnessSlots } from '@/lib/spptg-pdf-data';
 import { PageProps, SPPTGPDFData } from './types';
-
-/** Minimum number of witness slots printed, matching the official form */
-const MIN_WITNESS_SLOTS = 2;
-/** Upper bound, same as the 4-witness cap enforced by the draft validation */
-const MAX_WITNESS_SLOTS = 4;
 
 /**
  * Label + colon + dotted line that either carries a value or stays blank
@@ -98,13 +94,8 @@ export const SPPTGPage3: React.FC<PageProps> = ({ data, config }) => {
   const showWitnesses = config?.includeWitnesses !== false;
   const showAdministrative = config?.includeAdministrative !== false;
 
-  // Keep every recorded witness, but always print at least the two slots of
-  // the official form so unused lines can be filled in by hand.
-  const witnesses = data.saksiList.slice(0, MAX_WITNESS_SLOTS);
-  const witnessSlots = Array.from(
-    { length: Math.max(witnesses.length, MIN_WITNESS_SLOTS) },
-    (_, index) => witnesses[index]
-  );
+  // One block per recorded saksi — one saksi prints one block, four print four.
+  const witnessSlots = buildWitnessSlots(data.saksiList);
 
   return (
     <Page size="A4" style={styles.page}>

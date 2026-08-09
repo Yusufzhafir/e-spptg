@@ -14,12 +14,14 @@ const createUserMock = vi.fn();
 const setUserPasswordMock = vi.fn();
 const touchUserLastLoginMock = vi.fn();
 const markEmailVerifiedMock = vi.fn();
+const updateUserMock = vi.fn();
 vi.mock('@/server/db/queries/user', () => ({
   getUserByEmail: (...args: unknown[]) => getUserByEmailMock(...args),
   createUser: (...args: unknown[]) => createUserMock(...args),
   setUserPassword: (...args: unknown[]) => setUserPasswordMock(...args),
   touchUserLastLogin: (...args: unknown[]) => touchUserLastLoginMock(...args),
   markEmailVerified: (...args: unknown[]) => markEmailVerifiedMock(...args),
+  updateUser: (...args: unknown[]) => updateUserMock(...args),
   getUserById: vi.fn(),
 }));
 
@@ -88,6 +90,7 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
     assignedKecamatan: null,
     status: 'Aktif',
     nomorHP: null,
+    fotoProfil: null,
     // Verified: these fixtures stand in for existing, usable accounts.
     emailVerifiedAt: new Date(),
     terakhirMasuk: null,
@@ -322,6 +325,7 @@ describe('auth.register', () => {
     nama: 'Siti Rahayu',
     nipNik: '3201010101010002',
     email: 'siti@gmail.com',
+    nomorHP: '081234567890',
     password: PASSWORD,
   };
 
@@ -436,6 +440,31 @@ describe('auth.register', () => {
       authRouter.createCaller(anonCtx()).register(payload)
     );
     expect(batas, 'batas pendaftaran berubah dari 10 percobaan').toBe(10);
+  });
+
+  it.each([
+    ['', 'a missing number'],
+    ['+1 (599) 869-8667', 'a foreign number'],
+  ])('refuses to register with %s (%s)', async (nomorHP) => {
+    getUserByEmailMock.mockResolvedValue(undefined);
+
+    await expect(
+      authRouter.createCaller(anonCtx()).register({ ...payload, nomorHP })
+    ).rejects.toBeDefined();
+    expect(createUserMock).not.toHaveBeenCalled();
+  });
+
+  it('stores the phone number in its canonical form', async () => {
+    getUserByEmailMock.mockResolvedValue(undefined);
+    createUserMock.mockResolvedValue(userRow({ id: 21 }));
+
+    await authRouter
+      .createCaller(anonCtx())
+      .register({ ...payload, nomorHP: '+62 812 3456 7890' });
+
+    expect(createUserMock).toHaveBeenCalledWith(
+      expect.objectContaining({ nomorHP: '081234567890' })
+    );
   });
 
   it('refuses to create an account it cannot mail', async () => {
@@ -582,6 +611,90 @@ describe('auth.logout', () => {
     await expect(authRouter.createCaller(ctx).logout()).resolves.toEqual({ success: true });
     expect(invalidateSessionMock).not.toHaveBeenCalled();
     expect(setCookieHeader(ctx)).toContain('Max-Age=0');
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('auth.updateProfile', () => {
+  const valid = { nipNik: '3201010101010009', nomorHP: '081234567890' };
+
+  beforeEach(() => {
+    updateUserMock.mockImplementation(async (id: number, data: Record<string, unknown>) =>
+      userRow({ id, ...data })
+    );
+  });
+
+  it('saves the two fields the user owns', async () => {
+    const result = await authRouter.createCaller(signedInCtx()).updateProfile(valid);
+
+    expect(updateUserMock).toHaveBeenCalledWith(7, {
+      nipNik: valid.nipNik,
+      nomorHP: valid.nomorHP,
+    });
+    expect(result.nipNik).toBe(valid.nipNik);
+  });
+
+  it('stores the phone number in its canonical form', async () => {
+    await authRouter
+      .createCaller(signedInCtx())
+      .updateProfile({ ...valid, nomorHP: '+62 812 3456 7890' });
+
+    expect(updateUserMock).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ nomorHP: '081234567890' })
+    );
+  });
+
+  it('clears the number when it is submitted empty', async () => {
+    await authRouter.createCaller(signedInCtx()).updateProfile({ ...valid, nomorHP: '' });
+
+    expect(updateUserMock).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ nomorHP: null })
+    );
+  });
+
+  it.each([
+    ['1234567890', 'a NIP/NIK below 16 digits'],
+    ['32010101010100AB', 'a NIP/NIK with letters'],
+  ])('refuses %s (%s)', async (nipNik) => {
+    await expect(
+      authRouter.createCaller(signedInCtx()).updateProfile({ ...valid, nipNik })
+    ).rejects.toBeDefined();
+    expect(updateUserMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a foreign phone number', async () => {
+    await expect(
+      authRouter
+        .createCaller(signedInCtx())
+        .updateProfile({ ...valid, nomorHP: '+1 (599) 869-8667' })
+    ).rejects.toBeDefined();
+    expect(updateUserMock).not.toHaveBeenCalled();
+  });
+
+  it('cannot be used to change role, status or desa', async () => {
+    await authRouter.createCaller(signedInCtx()).updateProfile({
+      ...valid,
+      peran: 'Superadmin',
+      status: 'Nonaktif',
+      assignedVillageId: 99,
+      email: 'penyerang@example.com',
+    } as never);
+
+    // Only the two owned fields reach the database — the rest are stripped by
+    // the input schema, so the account cannot escalate itself.
+    expect(updateUserMock).toHaveBeenCalledWith(7, {
+      nipNik: valid.nipNik,
+      nomorHP: valid.nomorHP,
+    });
+  });
+
+  it('refuses an anonymous caller', async () => {
+    await expect(
+      authRouter.createCaller(anonCtx()).updateProfile(valid)
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    expect(updateUserMock).not.toHaveBeenCalled();
   });
 });
 

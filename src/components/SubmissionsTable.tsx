@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Table,
   TableBody,
@@ -24,8 +24,6 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
-  ChevronLeft,
-  ChevronRight,
   Pencil,
   FilePlus2,
 } from 'lucide-react';
@@ -33,6 +31,8 @@ import { Submission } from '../types';
 import { StatusBadge } from './StatusBadge';
 import { formatDate } from '@/lib/format-date';
 import { useAuthRole } from './AuthRoleProvider';
+import { TablePager, type ServerPagination } from './table-pagination';
+import type { SubmissionSortKey } from '@/lib/validation';
 
 export type EditMode = 'existing' | 'duplicate';
 
@@ -44,45 +44,25 @@ interface SubmissionsTableProps {
   isTogglingValidity: boolean;
   /** When set, the table pages to and highlights this submission's row */
   focusSubmissionId?: number | null;
+  /**
+   * 0-based position of that row in the whole result set, resolved by the
+   * server. The browser holds one page and cannot find a row on any other, so
+   * this is what turns "open pengajuan 812" into a page number.
+   */
+  focusPosition?: number | null;
+  /** Changes per request, so focusing the same row twice still fires. */
+  focusNonce?: number;
+  /** Called once the row is on screen and scrolled to — the jump is finished. */
+  onFocusSettled?: () => void;
+  pagination: ServerPagination;
+  sortKey: SortKey;
+  sortDir: SortDirection;
+  onSortChange: (key: SortKey) => void;
 }
 
-type SortKey =
-  | 'id'
-  | 'namaPemilik'
-  | 'kecamatan'
-  | 'luas'
-  | 'tanggalPengajuan'
-  | 'status'
-  | 'isValid'
-  | 'verifikator'
-  | 'updatedAt';
+type SortKey = SubmissionSortKey;
 
 type SortDirection = 'asc' | 'desc';
-
-const PAGE_SIZE = 10;
-
-function getSortValue(s: Submission, key: SortKey): number | string {
-  switch (key) {
-    case 'id':
-      return s.id;
-    case 'namaPemilik':
-      return (s.namaPemilik || '').toLowerCase();
-    case 'kecamatan':
-      return (s.kecamatan || '').toLowerCase();
-    case 'luas':
-      return s.luas ?? 0;
-    case 'tanggalPengajuan':
-      return new Date(s.tanggalPengajuan).getTime() || 0;
-    case 'status':
-      return s.status || '';
-    case 'isValid':
-      return s.isValid ? 1 : 0;
-    case 'verifikator':
-      return (s.verifikatorName || '').toLowerCase();
-    case 'updatedAt':
-      return new Date(s.updatedAt).getTime() || 0;
-  }
-}
 
 export function SubmissionsTable({
   submissions,
@@ -91,6 +71,13 @@ export function SubmissionsTable({
   onToggleValidity,
   isTogglingValidity,
   focusSubmissionId,
+  focusPosition,
+  focusNonce,
+  onFocusSettled,
+  pagination,
+  sortKey,
+  sortDir,
+  onSortChange,
 }: SubmissionsTableProps) {
   const { user: currentUser } = useAuthRole();
   // Editing (drafts.createFromSubmission) and the validity toggle both reject
@@ -102,61 +89,49 @@ export function SubmissionsTable({
       currentUser.peran !== 'Viewer' &&
       currentUser.peran !== 'Kecamatan'
   );
-  const [sortKey, setSortKey] = useState<SortKey>('updatedAt');
-  const [sortDir, setSortDir] = useState<SortDirection>('desc');
-  const [page, setPage] = useState(0);
   const [highlightId, setHighlightId] = useState<number | null>(null);
   const [editTarget, setEditTarget] = useState<Submission | null>(null);
   const rowRefs = useRef<Record<number, HTMLTableRowElement | null>>({});
 
-  const sorted = useMemo(() => {
-    const copy = [...submissions];
-    copy.sort((a, b) => {
-      const av = getSortValue(a, sortKey);
-      const bv = getSortValue(b, sortKey);
-      let cmp = 0;
-      if (typeof av === 'number' && typeof bv === 'number') cmp = av - bv;
-      else cmp = String(av).localeCompare(String(bv));
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-    return copy;
-  }, [submissions, sortKey, sortDir]);
+  // `submissions` is already one page, ordered by Postgres: it arrives sorted
+  // and sliced, so there is nothing left to do here but render it.
+  const { page: safePage, setPage, pageSize } = pagination;
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
-  // Clamp at render so a shrinking data set never leaves us on a dead page.
-  const safePage = Math.min(page, totalPages - 1);
-
-  // When a map polygon is clicked, page to and highlight that row.
+  // Jump to the row someone asked for (a clicked polygon, a notification).
+  // Which page it lives on is the server's answer, not something the browser
+  // can work out from the page it happens to be holding.
   useEffect(() => {
-    if (focusSubmissionId == null) return;
-    const index = sorted.findIndex((s) => s.id === focusSubmissionId);
-    if (index === -1) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- respond to an external focus request
-    setPage(Math.floor(index / PAGE_SIZE));
+    if (focusSubmissionId == null || focusPosition == null) return;
+     
+    setPage(Math.floor(focusPosition / pageSize));
     // eslint-disable-next-line react-hooks/set-state-in-effect -- respond to an external focus request
     setHighlightId(focusSubmissionId);
-  }, [focusSubmissionId, sorted]);
+    // `focusNonce` is what makes asking for the same row twice work: the id and
+    // its position are unchanged, so without it nothing here would re-run.
+  }, [focusSubmissionId, focusPosition, focusNonce, pageSize, setPage]);
 
   // Scroll to the highlighted row once it is on the current page, then fade it.
+  //
+  // `submissions` is in the deps because changing page starts a fetch: on the
+  // render right after `setPage` the new rows do not exist yet, so the ref is
+  // empty. Waiting for the row rather than scrolling to nothing — and starting
+  // the fade timer only once it is found — is what makes a jump to another page
+  // actually land instead of silently doing nothing.
   useEffect(() => {
     if (highlightId == null) return;
     const el = rowRefs.current[highlightId];
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+    if (!el) return;
+
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // The jump is done: whoever asked for it (the map popup) can stop waiting.
+    onFocusSettled?.();
     const timeout = setTimeout(() => setHighlightId(null), 2500);
     return () => clearTimeout(timeout);
-  }, [highlightId, safePage]);
+  }, [highlightId, safePage, submissions, onFocusSettled]);
 
-  const handleSort = (key: SortKey) => {
-    if (key === sortKey) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortKey(key);
-      setSortDir('asc');
-    }
-    setPage(0);
-  };
+  // Ordering is the server's job now — the parent owns the key and direction
+  // because they are part of the query, not of this component's local state.
+  const handleSort = onSortChange;
 
   const sortIcon = (key: SortKey) =>
     sortKey === key ? (
@@ -181,7 +156,7 @@ export function SubmissionsTable({
     </TableHead>
   );
 
-  const pageItems = sorted.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+  const pageItems = submissions;
 
   if (submissions.length === 0) {
     return (
@@ -311,34 +286,16 @@ export function SubmissionsTable({
       </Table>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3">
-        <p className="text-sm text-gray-600">
-          Menampilkan {safePage * PAGE_SIZE + 1}–
-          {Math.min((safePage + 1) * PAGE_SIZE, sorted.length)} dari {sorted.length} pengajuan
-        </p>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage(Math.max(0, safePage - 1))}
-            disabled={safePage === 0}
-          >
-            <ChevronLeft className="w-4 h-4" />
-            Sebelumnya
-          </Button>
-          <span className="text-sm text-gray-600">
-            Hal {safePage + 1} / {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage(Math.min(totalPages - 1, safePage + 1))}
-            disabled={safePage >= totalPages - 1}
-          >
-            Berikutnya
-            <ChevronRight className="w-4 h-4" />
-          </Button>
-        </div>
+      <div className="border-t border-gray-200 px-4 py-3">
+        <TablePager
+          page={safePage}
+          setPage={setPage}
+          pageSize={pageSize}
+          setPageSize={pagination.setPageSize}
+          total={pagination.total}
+          lastPage={pagination.lastPage}
+          noun="pengajuan"
+        />
       </div>
 
       {/* Edit choice dialog */}

@@ -372,11 +372,16 @@ export const submissionsRouter = router({
             return submission;
         }),
 
+    /**
+     * One page of the pengajuan table. Paged, filtered *and* sorted in Postgres:
+     * the browser never holds more than the rows on screen, so it cannot do any
+     * of the three itself without answering from an incomplete set.
+     */
     list: protectedProcedure
         .input(listSubmissionsSchema)
         .query(async ({ ctx, input }) => {
             const scope = getSubmissionScopeForUser(ctx.appUser!);
-            return submissionQueries.listSubmissions({
+            const filters = {
                 search: input.search,
                 status: input.status,
                 desaId: input.desaId,
@@ -386,10 +391,60 @@ export const submissionsRouter = router({
                 ownerUserId: scope.ownerUserId,
                 villageId: scope.villageId,
                 scopeKecamatan: scope.scopeKecamatan,
+                sortKey: input.sortKey,
+                sortDir: input.sortDir,
+            };
+
+            const page = await submissionQueries.listSubmissions({
+                ...filters,
                 limit: input.limit,
                 offset: input.offset,
             });
+
+            // Only when asked: an extra window function on every keystroke of
+            // the search box would be wasted work.
+            const focusPosition = input.focusId
+                ? await submissionQueries.findSubmissionPosition(input.focusId, filters)
+                : null;
+
+            return { ...page, focusPosition };
         }),
+
+    /**
+     * Polygons for the dashboard map, scoped exactly like `list` but never
+     * paged — a map that loses its polygons when you turn a table page is worse
+     * than no map. Applicant identity beyond the name shown in the popup stays
+     * out of the payload.
+     */
+    listForMap: protectedProcedure
+        .input(listSubmissionsSchema.omit({ limit: true, offset: true, focusId: true, sortKey: true, sortDir: true }))
+        .query(async ({ ctx, input }) => {
+            const scope = getSubmissionScopeForUser(ctx.appUser!);
+            return submissionQueries.listSubmissionsForMap({
+                search: input.search,
+                status: input.status,
+                desaId: input.desaId,
+                kecamatan: input.kecamatan,
+                dateFrom: input.dateFrom,
+                dateTo: input.dateTo,
+                ownerUserId: scope.ownerUserId,
+                villageId: scope.villageId,
+                scopeKecamatan: scope.scopeKecamatan,
+            });
+        }),
+
+    /**
+     * Every recorded SPPTG polygon, across every desa, for the maps in the
+     * wizard (Step 2 drawing reference, Step 3 overlap detail).
+     *
+     * `verifikatorProcedure` on purpose: only the roles that actually process a
+     * pengajuan see beyond their own desa here. A Viewer keeps the desa-scoped
+     * `list`. The payload carries no applicant identity — see
+     * `listSubmissionMapPolygons`.
+     */
+    listMapPolygons: verifikatorProcedure.query(async () => {
+        return submissionQueries.listSubmissionMapPolygons();
+    }),
 
     getOverlaps: protectedProcedure
         .input(z.object({ submissionId: z.number().int() }))

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { trpc } from '@/trpc/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DEFAULT_PAGE_SIZE, TablePager } from '@/components/table-pagination';
 import {
   Select,
   SelectContent,
@@ -47,14 +48,11 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
-  ChevronLeft,
-  ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 type DraftSortKey = 'namaPemohon' | 'nik' | 'currentStep' | 'lastSaved';
 type SortDirection = 'asc' | 'desc';
-const DRAFT_PAGE_SIZE = 10;
 
 export default function DraftsListPage() {
   const router = useRouter();
@@ -68,53 +66,40 @@ export default function DraftsListPage() {
   const [stepFilter, setStepFilter] = useState<string>('all');
   const [sortKey, setSortKey] = useState<DraftSortKey>('lastSaved');
   const [sortDir, setSortDir] = useState<SortDirection>('desc');
+
+  // Paged, searched and sorted in Postgres — the list used to come back whole
+  // with no limit at all, and the browser did all three.
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSizeState] = useState<number>(DEFAULT_PAGE_SIZE);
 
-  // Fetch user's drafts
-  const { data: drafts, isLoading, error, refetch } = trpc.drafts.listMy.useQuery();
-
-  const filteredDrafts = useMemo(() => {
-    const list = drafts ?? [];
-    const q = search.trim().toLowerCase();
-    const filtered = list.filter((d) => {
-      const matchesSearch =
-        !q ||
-        (d.namaPemohon || '').toLowerCase().includes(q) ||
-        (d.nik || '').toLowerCase().includes(q) ||
-        (d.ownerName || '').toLowerCase().includes(q) ||
-        (d.villageName || '').toLowerCase().includes(q);
-      const matchesStep = stepFilter === 'all' || String(d.currentStep) === stepFilter;
-      return matchesSearch && matchesStep;
-    });
-
-    const sorted = [...filtered].sort((a, b) => {
-      let cmp = 0;
-      switch (sortKey) {
-        case 'namaPemohon':
-          cmp = (a.namaPemohon || '').localeCompare(b.namaPemohon || '');
-          break;
-        case 'nik':
-          cmp = (a.nik || '').localeCompare(b.nik || '');
-          break;
-        case 'currentStep':
-          cmp = (a.currentStep || 0) - (b.currentStep || 0);
-          break;
-        case 'lastSaved':
-          cmp = new Date(a.lastSaved).getTime() - new Date(b.lastSaved).getTime();
-          break;
-      }
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-    return sorted;
-  }, [drafts, search, stepFilter, sortKey, sortDir]);
-
-  const totalDraftPages = Math.max(1, Math.ceil(filteredDrafts.length / DRAFT_PAGE_SIZE));
-  // Clamp at render so a shrinking result set never leaves us on a dead page.
-  const safePage = Math.min(page, totalDraftPages - 1);
-  const pagedDrafts = filteredDrafts.slice(
-    safePage * DRAFT_PAGE_SIZE,
-    safePage * DRAFT_PAGE_SIZE + DRAFT_PAGE_SIZE
+  const listInput = useMemo(
+    () => ({
+      search: search.trim() || undefined,
+      step: stepFilter === 'all' ? undefined : Number(stepFilter),
+      sortKey,
+      sortDir,
+      limit: pageSize,
+      offset: page * pageSize,
+    }),
+    [search, stepFilter, sortKey, sortDir, page, pageSize]
   );
+
+  const { data, isLoading, error, refetch } = trpc.drafts.listMy.useQuery(listInput, {
+    placeholderData: (previous) => previous,
+  });
+
+  const pagedDrafts = useMemo(() => data?.items ?? [], [data?.items]);
+  const total = data?.total ?? 0;
+  const lastPage = Math.max(0, Math.ceil(total / pageSize) - 1);
+  const safePage = Math.min(page, lastPage);
+
+  const setPageSize = (size: number) => {
+    setPageSizeState(size);
+    setPage(0);
+  };
+
+  /** Distinguishes "no drafts yet" from "nothing matched" once paging is server-side. */
+  const hasFilter = search.trim() !== '' || stepFilter !== 'all';
 
   const handleSort = (key: DraftSortKey) => {
     if (key === sortKey) {
@@ -258,8 +243,9 @@ export default function DraftsListPage() {
         </div>
       </div>
 
-      {/* Search & Filter */}
-      {drafts && drafts.length > 0 && (
+      {/* Search & Filter. Stays on screen while a filter is active even if it
+          matches nothing — otherwise the controls vanish with no way back. */}
+      {(total > 0 || hasFilter) && (
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -305,12 +291,11 @@ export default function DraftsListPage() {
           <div className="px-6 py-10 text-center">
             <p className="text-red-600">{error.message}</p>
           </div>
-        ) : drafts && drafts.length > 0 ? (
-          filteredDrafts.length === 0 ? (
-            <div className="px-6 py-10 text-center text-gray-500">
-              Tidak ada draft yang cocok dengan pencarian/filter.
-            </div>
-          ) : (
+        ) : total === 0 && hasFilter ? (
+          <div className="px-6 py-10 text-center text-gray-500">
+            Tidak ada draft yang cocok dengan pencarian/filter.
+          </div>
+        ) : total > 0 ? (
           <>
           <Table className="min-w-200">
             <TableHeader>
@@ -436,38 +421,18 @@ export default function DraftsListPage() {
           </Table>
 
           {/* Pagination */}
-          <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3">
-            <p className="text-sm text-gray-600">
-              Menampilkan {safePage * DRAFT_PAGE_SIZE + 1}–
-              {Math.min((safePage + 1) * DRAFT_PAGE_SIZE, filteredDrafts.length)} dari{' '}
-              {filteredDrafts.length} draft
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage(Math.max(0, safePage - 1))}
-                disabled={safePage === 0}
-              >
-                <ChevronLeft className="w-4 h-4" />
-                Sebelumnya
-              </Button>
-              <span className="text-sm text-gray-600">
-                Hal {safePage + 1} / {totalDraftPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage(Math.min(totalDraftPages - 1, safePage + 1))}
-                disabled={safePage >= totalDraftPages - 1}
-              >
-                Berikutnya
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
+          <div className="border-t border-gray-200 px-4 py-3">
+            <TablePager
+              page={safePage}
+              setPage={setPage}
+              pageSize={pageSize}
+              setPageSize={setPageSize}
+              total={total}
+              lastPage={lastPage}
+              noun="draft"
+            />
           </div>
           </>
-          )
         ) : (
           <div className="text-center py-12">
             <div className="text-gray-400 mb-4">

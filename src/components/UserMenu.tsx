@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { KeyRound, LogOut, User as UserIcon } from 'lucide-react';
 import { useAuthRole } from './AuthRoleProvider';
+import { UserAvatar } from './UserAvatar';
 import { Skeleton } from './ui/skeleton';
 import {
   DropdownMenu,
@@ -12,14 +13,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
-
-/** "Budi Santoso" -> "BS"; falls back to the first letter of the email. */
-function initials(nama: string, email: string): string {
-  const parts = nama.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return email.slice(0, 1).toUpperCase() || '?';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
 
 /**
  * Account menu in the header and the bottom nav: who you are, links to the
@@ -40,13 +33,25 @@ export function UserMenu() {
         <button
           type="button"
           aria-label="Menu akun"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold text-white transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+          className="rounded-full transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
         >
-          {initials(user.nama, user.email)}
+          <UserAvatar
+            nama={user.nama}
+            email={user.email}
+            fotoProfilUrl={user.fotoProfilUrl}
+            className="h-9 w-9"
+            textClassName="text-sm"
+          />
         </button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-60">
+      {/* Same treatment as the notification panel: full width on a phone, where
+          this trigger lives in the bottom nav, and a compact menu from `sm` up. */}
+      <DropdownMenuContent
+        align="end"
+        collisionPadding={12}
+        className="w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] sm:w-60 sm:max-w-none"
+      >
         <DropdownMenuLabel className="font-normal">
           <p className="truncate text-sm font-medium text-gray-900">{user.nama}</p>
           <p className="truncate text-xs text-gray-500">{user.email}</p>

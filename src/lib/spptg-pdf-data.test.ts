@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSPPTGPDFData } from './spptg-pdf-data';
+import { buildSPPTGPDFData, buildWitnessSlots, MAX_WITNESSES } from './spptg-pdf-data';
 import type { SubmissionDraft } from '@/types';
 
 function createDraftFixture(): SubmissionDraft {
@@ -69,5 +69,31 @@ describe('buildSPPTGPDFData', () => {
     expect(pdfData.statusTanah).toBe('Tanah Negara');
     expect(pdfData.asalPerolehan).toBe('jual beli dengan Bapak Ahmad');
     expect(pdfData.tahunPerolehan).toBe(2004);
+  });
+});
+
+describe('buildWitnessSlots', () => {
+  const saksi = (nama: string) => ({ nama });
+
+  it('prints exactly one block for a single saksi — no empty second slot', () => {
+    expect(buildWitnessSlots([saksi('Tetangga 1')])).toEqual([saksi('Tetangga 1')]);
+  });
+
+  it.each([2, 3, 4])('prints one block per saksi for %i of them', (count) => {
+    const list = Array.from({ length: count }, (_, i) => saksi(`Tetangga ${i + 1}`));
+
+    expect(buildWitnessSlots(list)).toHaveLength(count);
+    expect(buildWitnessSlots(list)).toEqual(list);
+  });
+
+  it(`never prints more than the ${MAX_WITNESSES}-saksi cap`, () => {
+    const list = Array.from({ length: 6 }, (_, i) => saksi(`Tetangga ${i + 1}`));
+
+    expect(buildWitnessSlots(list)).toHaveLength(MAX_WITNESSES);
+  });
+
+  it('falls back to one blank slot rather than an empty heading', () => {
+    expect(buildWitnessSlots([])).toEqual([undefined]);
+    expect(buildWitnessSlots(undefined)).toEqual([undefined]);
   });
 });

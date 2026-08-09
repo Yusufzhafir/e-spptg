@@ -191,6 +191,33 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
   };
 
   /**
+   * Save the berkas to disk instead of opening it in a tab. The signed link is
+   * asked for with `disposition: 'attachment'`, so it arrives carrying the
+   * Content-Disposition that makes the browser download it under its original
+   * filename — a plain anchor click then needs no new tab and no navigation.
+   */
+  const handleDownloadDocument = async (documentId: number) => {
+    setOpeningDocumentId(documentId);
+
+    try {
+      const { signedUrl } = await openDocumentMutation.mutateAsync({
+        documentId,
+        disposition: 'attachment',
+      });
+      const link = document.createElement('a');
+      link.href = signedUrl;
+      link.rel = 'noopener';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Gagal mengunduh dokumen.');
+    } finally {
+      setOpeningDocumentId(null);
+    }
+  };
+
+  /**
    * Hand the parcel boundary to a GIS tool (Google Earth, QGIS, BPN). The whole
    * submission is already in memory, so the file is built and downloaded in the
    * browser — `jszip` for KMZ is only pulled in when someone asks for it.
@@ -658,19 +685,19 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleOpenDocument(doc.id)}
+                          onClick={() => void handleDownloadDocument(doc.id)}
                           disabled={openingDocumentId === doc.id}
                           className="inline-flex items-center gap-2"
                         >
                           {openingDocumentId === doc.id ? (
                             <>
                               <Loader2 className="h-4 w-4 animate-spin" />
-                              Membuka...
+                              Mengunduh...
                             </>
                           ) : (
                             <>
                               <Download className="h-4 w-4" />
-                              Buka
+                              Unduh
                             </>
                           )}
                         </Button>

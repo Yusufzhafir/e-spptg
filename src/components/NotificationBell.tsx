@@ -59,7 +59,7 @@ export function NotificationBell() {
     } else {
       const now = Date.now();
       window.localStorage.setItem(SEEN_KEY, String(now));
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- initialise baseline on first mount
+       
       setLastSeen(now);
     }
   }, []);
@@ -102,7 +102,15 @@ export function NotificationBell() {
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 p-0">
+      {/* Edge-to-edge on a phone (minus a 12px gutter), a fixed panel from `sm`
+          up. On a 360px screen the old fixed 320px left the list squeezed
+          against one side with a stripe of page showing through; the trigger
+          also sits in the bottom nav there, so the panel opens upward. */}
+      <PopoverContent
+        align="end"
+        collisionPadding={12}
+        className="w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] p-0 sm:w-80 sm:max-w-none"
+      >
         <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
           <p className="text-sm font-semibold text-gray-900">Notifikasi</p>
 
@@ -139,7 +147,9 @@ export function NotificationBell() {
             pengaturan peramban Anda untuk mengaktifkannya.
           </p>
         )}
-        <div className="max-h-96 overflow-y-auto">
+        {/* Viewport-relative on a phone: a fixed 384px list can outgrow a small
+            screen once the header and the push banner are added on top. */}
+        <div className="max-h-[60vh] overflow-y-auto sm:max-h-96">
           {items.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-gray-500">
               Belum ada notifikasi.

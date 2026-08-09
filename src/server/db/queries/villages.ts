@@ -1,6 +1,88 @@
-import { eq, ilike, sql, getTableColumns } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, sql, getTableColumns } from 'drizzle-orm';
 import { db, DBTransaction } from '../db';
 import { villages } from '../schema';
+
+/**
+ * How many pengajuan point at a desa. Written once and used both as a selected
+ * column and as a sort key — the Desa table offers "Jumlah Pengajuan" as a
+ * sortable header, and sorting has to happen in Postgres now that the browser
+ * only ever holds one page.
+ *
+ * NB: the outer column is referenced by table name; see `listVillages` below.
+ */
+const villageSubmissionCount = sql<number>`(
+  SELECT COUNT(*)::int FROM submissions AS sub WHERE sub."villageId" = "villages"."id"
+)`;
+
+/** Columns the Desa table may be ordered by, sorted in Postgres. */
+const VILLAGE_SORT_COLUMNS = {
+  kodeDesa: villages.kodeDesa,
+  namaDesa: villages.namaDesa,
+  namaKepalaDesa: villages.namaKepalaDesa,
+  kecamatan: villages.kecamatan,
+  kabupaten: villages.kabupaten,
+  provinsi: villages.provinsi,
+  jumlahPengajuan: villageSubmissionCount,
+  updatedAt: villages.updatedAt,
+} as const;
+
+export type VillageSortKey = keyof typeof VILLAGE_SORT_COLUMNS;
+
+/** One page of desa, searched, sorted and counted in Postgres. */
+export async function listVillagesPaged(
+  params: {
+    search?: string;
+    kecamatan?: string;
+    sortKey?: VillageSortKey;
+    sortDir?: 'asc' | 'desc';
+    limit?: number;
+    offset?: number;
+  } = {},
+  tx?: DBTransaction
+) {
+  const queryDb = tx || db;
+  const conditions = [];
+
+  if (params.kecamatan) conditions.push(eq(villages.kecamatan, params.kecamatan));
+  if (params.search?.trim()) {
+    const pattern = `%${params.search.trim().toLowerCase()}%`;
+    conditions.push(
+      sql`(
+        LOWER(${villages.namaDesa}) LIKE ${pattern}
+        OR LOWER(${villages.kodeDesa}) LIKE ${pattern}
+        OR LOWER(COALESCE(${villages.namaKepalaDesa}, '')) LIKE ${pattern}
+      )`
+    );
+  }
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const column = VILLAGE_SORT_COLUMNS[params.sortKey ?? 'updatedAt'];
+  const orderBy = params.sortDir === 'asc' ? asc(column) : desc(column);
+
+  // `limit: 0` asks for the count alone — what the Pengaturan nav needs for its
+  // record-count pill.
+  const items =
+    params.limit === 0
+      ? []
+      : await queryDb
+          .select({
+            ...getTableColumns(villages),
+            jumlahPengajuan: villageSubmissionCount,
+          })
+          .from(villages)
+          .where(where)
+          // `id` as a tiebreak so equal values cannot swap between pages.
+          .orderBy(orderBy, desc(villages.id))
+          .limit(params.limit ?? 50)
+          .offset(params.offset ?? 0);
+
+  const [counted] = await queryDb
+    .select({ count: sql<number>`count(*)::int` })
+    .from(villages)
+    .where(where);
+
+  return { items, total: counted?.count ?? 0 };
+}
 
 export async function listVillages(limit = 100, offset = 0, tx?: DBTransaction) {
   const queryDb = tx || db;

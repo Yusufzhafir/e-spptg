@@ -337,9 +337,29 @@ export const draftsRouter = router({
       return result;
     }),
 
+  /**
+   * One page of the draft table, paged, searched and sorted in Postgres — the
+   * list used to be returned whole, with no limit at all.
+   */
   listMy: protectedProcedure
+    .input(
+      z
+        .object({
+          search: z.string().optional(),
+          step: z.number().int().min(1).max(4).optional(),
+          sortKey: z
+            .enum(['namaPemohon', 'nik', 'currentStep', 'lastSaved'])
+            .optional(),
+          sortDir: z.enum(['asc', 'desc']).optional(),
+          limit: z.number().int().positive().max(200).default(10),
+          offset: z.number().int().nonnegative().default(0),
+        })
+        .default({ limit: 10, offset: 0 })
+    )
     .output(
-      z.array(
+      z.object({
+        total: z.number(),
+        items: z.array(
         z.object({
           id: z.number(),
           ownerUserId: z.number(),
@@ -361,21 +381,30 @@ export const draftsRouter = router({
             z.string().nullable()
           ),
         })
-      )
+        ),
+      })
     )
-    .query(async ({ ctx }) => {
+    .query(async ({ ctx, input }) => {
       let assignedVillageId: number | undefined;
       if (isPrivilegedProcessor(ctx.appUser!)) {
         assignedVillageId = requireAssignedVillageId(ctx.appUser!);
       }
 
-      const drafts = await queries.listAccessibleDrafts({
+      const { items, total } = await queries.listAccessibleDrafts({
         userId: ctx.appUser!.id,
         role: ctx.appUser!.peran,
         assignedVillageId,
+        search: input.search,
+        step: input.step,
+        sortKey: input.sortKey,
+        sortDir: input.sortDir,
+        limit: input.limit,
+        offset: input.offset,
       });
 
-      return drafts.map((d) => ({
+      return {
+        total,
+        items: items.map((d) => ({
         id: d.id,
         ownerUserId: d.ownerUserId,
         ownerName: d.ownerName || null,
@@ -389,7 +418,8 @@ export const draftsRouter = router({
         updatedAt: d.updatedAt,
         namaPemohon: d.namaPemohon || null,
         nik: d.nik || null,
-      }));
+        })),
+      };
     }),
 
   delete: protectedProcedure

@@ -13,6 +13,10 @@ export const villagesRouter = router({
   // dashboard filter, the submission wizard) and written only by a Superadmin.
   // Not scoped per role — every caller sees the same desa list — so one shared
   // entry per page is correct.
+  /**
+   * The whole list, cached — this is what fills the desa dropdowns in the
+   * wizard and the dashboard filter, where every option has to be present.
+   */
   list: protectedProcedure
     .input(
       z.object({
@@ -27,6 +31,36 @@ export const villagesRouter = router({
         () => queries.listVillages(input.limit, input.offset)
       );
     }),
+
+  /**
+   * One page for the Desa table. Deliberately not cached: with search, sort and
+   * page all in the key, near enough every request would be its own entry, and
+   * the cache would cost more to maintain than it saves.
+   */
+  listPaged: protectedProcedure
+    .input(
+      z.object({
+        search: z.string().optional(),
+        kecamatan: z.string().optional(),
+        sortKey: z
+          .enum([
+            'kodeDesa',
+            'namaDesa',
+            'namaKepalaDesa',
+            'kecamatan',
+            'kabupaten',
+            'provinsi',
+            'jumlahPengajuan',
+            'updatedAt',
+          ])
+          .optional(),
+        sortDir: z.enum(['asc', 'desc']).optional(),
+        /** 0 asks for `total` without any rows — the nav's count pill. */
+        limit: z.number().int().nonnegative().max(200).default(10),
+        offset: z.number().int().nonnegative().default(0),
+      })
+    )
+    .query(async ({ input }) => queries.listVillagesPaged(input)),
 
   search: protectedProcedure
     .input(z.object({ query: z.string().min(1) }))

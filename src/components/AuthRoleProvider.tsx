@@ -17,6 +17,8 @@ type User = {
   assignedKecamatan: string | null;
   nomorHP: string | null;
   nipNik: string;
+  /** Signed link to the profile photo; null when the account has none. */
+  fotoProfilUrl: string | null;
 };
 
 type AuthRoleContextType = {

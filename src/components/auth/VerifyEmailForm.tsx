@@ -30,11 +30,6 @@ export function VerifyEmailForm() {
    *  would spend the token on the first call and fail on the second. */
   const redeemStarted = useRef(false);
 
-  const tokenCheck = trpc.auth.verifyEmailToken.useQuery(
-    { token },
-    { enabled: token.length > 0, retry: false }
-  );
-
   const verify = trpc.auth.verifyEmail.useMutation({
     onSuccess: (result) => {
       queryClient.clear();
@@ -51,6 +46,17 @@ export function VerifyEmailForm() {
     onError: (error) => setFormError(error.message),
   });
 
+  /** Redemption spends the token, so from that moment on the check would answer
+   *  "invalid" about a link that actually worked. Switching the query off keeps
+   *  the cache reset in `onSuccess` from refetching it and briefly flashing the
+   *  "Tautan Tidak Berlaku" screen on the way to the dashboard. */
+  const redeeming = verify.status !== 'idle';
+
+  const tokenCheck = trpc.auth.verifyEmailToken.useQuery(
+    { token },
+    { enabled: token.length > 0 && !redeeming, retry: false }
+  );
+
   const isValidToken = tokenCheck.data?.valid === true;
 
   useEffect(() => {
@@ -59,7 +65,9 @@ export function VerifyEmailForm() {
     verify.mutate({ token });
   }, [isValidToken, token, verify]);
 
-  if (!token || (tokenCheck.isFetched && !isValidToken)) {
+  // Only the pre-redemption check can condemn the link; once redemption is under
+  // way the token is legitimately spent and this screen would be a lie.
+  if (!token || (!redeeming && tokenCheck.isFetched && !isValidToken)) {
     return (
       <div className="space-y-5 text-center">
         <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-red-50">

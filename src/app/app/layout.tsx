@@ -1,11 +1,10 @@
 'use client';
 
-import { ReactNode, useState, useEffect, createContext, useContext } from 'react';
+import { ReactNode, useState, useEffect, useRef, createContext, useContext } from 'react';
 import { Sidebar } from '@/components/Sidebar';
 import { BottomNav } from '@/components/BottomNav';
 import { Header } from '@/components/Header';
 import { Submission, StatusSPPTG, SubmissionDraft } from '@/types';
-import { toast } from 'sonner';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuthRole } from '@/components/AuthRoleProvider';
 import { AccountDeactivatedNotice } from '@/components/AccountDeactivatedNotice';
@@ -32,15 +31,23 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { isAuthenticated, isLoading, isDeactivated, signOut } = useAuthRole();
 
+  // This layout stays mounted for the whole navigation away from /app, and a
+  // deliberate "Keluar" makes `isAuthenticated` false long before that
+  // navigation lands. Without the latch the effect below would read that as a
+  // dead session and sign out again — and each `signOut` clears the query
+  // cache, which refetches `auth.me`, which re-runs the effect: an endless
+  // POST /logout + GET /me loop until the route finally changes.
+  const bounced = useRef(false);
+
   // `src/proxy.ts` only checks that a session cookie *exists* — it runs on the
   // Edge and cannot reach the database to validate it. So a cookie that has been
   // revoked (logout elsewhere, deactivation, expiry) still gets this far and
   // shows up as a failing `auth.me`. Clear it and send them to sign in, rather
   // than leaving them on a shell whose every query 401s.
   useEffect(() => {
-    if (!isLoading && !isAuthenticated && !isDeactivated) {
-      void signOut(`/sign-in?next=${encodeURIComponent(pathname)}`);
-    }
+    if (isLoading || isAuthenticated || isDeactivated || bounced.current) return;
+    bounced.current = true;
+    void signOut(`/sign-in?next=${encodeURIComponent(pathname)}`);
   }, [isLoading, isAuthenticated, isDeactivated, signOut, pathname]);
 
   // infer "currentPage" from the route (under /app)
@@ -120,8 +127,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     };
 
     setSubmissions((prev) => [newSubmission, ...prev]);
-    router.push('/app');
-    toast.success('Pengajuan SPPTG berhasil diselesaikan');
+    // `?terbit=1` rather than a toast fired here: raising it before `push`
+    // announces success while the wizard is still on screen and the button is
+    // still spinning. The dashboard shows it on arrival and strips the flag —
+    // the same pattern the draft editor uses for `?baru=1`.
+    router.push('/app?terbit=1');
   };
 
   const contextValue: AppStateContextValue = {

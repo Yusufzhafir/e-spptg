@@ -55,6 +55,7 @@ function ctx(peran: UserRole, userId: number, assignedVillageId: number | null =
     assignedKecamatan: null,
     status: 'Aktif',
     nomorHP: null,
+    fotoProfil: null,
     // Verified: these fixtures stand in for existing, usable accounts.
     emailVerifiedAt: new Date(),
     terakhirMasuk: null,

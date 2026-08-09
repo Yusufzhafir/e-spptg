@@ -75,9 +75,15 @@ type PersistDraftOptions = {
   silent?: boolean;
 };
 
+/** The three things the Viewer's centre-screen dialog can be saying. */
+type ViewerNotice =
+  | { kind: 'confirm' }
+  | { kind: 'success' }
+  | { kind: 'error'; message: string };
+
 export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlowProps) {
   const router = useRouter();
-  const { hasRole } = useAuthRole();
+  const { hasRole, user } = useAuthRole();
   const isViewer = hasRole('Viewer');
   const [currentStep, setCurrentStep] = useState(1);
   // How far the berkas itself has actually progressed, as opposed to the step
@@ -86,6 +92,15 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
   const [lastSaved, setLastSaved] = useState<string>('');
   const [fieldErrors, setFieldErrors] = useState<StepFieldErrors>({});
   const isSubmittingFromStep3 = useRef(false);
+  /**
+   * Step 4's "Terbitkan SPPTG" is in flight. Unlike the mutation's own
+   * `isPending`, this stays true after the mutation resolves: the redirect that
+   * follows is a client navigation, and re-enabling the button for those frames
+   * invites a second submission of a draft that is already filed. It is only
+   * cleared when the attempt fails and the user is meant to try again.
+   */
+  const isIssuingSPPTG = useRef(false);
+  const [isIssuingSPPTGView, setIsIssuingSPPTGView] = useState(false);
 
   // Step 2 overlap-confirmation gate (shown before Simpan Draf / Berikutnya)
   const [isStep2ConfirmOpen, setIsStep2ConfirmOpen] = useState(false);
@@ -96,10 +111,20 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
    * Saving Step 1 is the end of the road for a Viewer — there is no Step 2 to
    * correct things in. A corner toast is too easy to miss for a once-only
    * action, so the confirmation and its outcome are shown centre-screen.
+   *
+   * Open state is tracked separately from the content: the dialog stays mounted
+   * through its close animation, and clearing the content on close would let
+   * those frames render the fallback variant — the "Simpan berkas sekarang?"
+   * confirmation would flash over the notice the user just dismissed. The last
+   * notice therefore stays put until the next one replaces it.
    */
-  const [viewerNotice, setViewerNotice] = useState<
-    { kind: 'confirm' } | { kind: 'success' } | { kind: 'error'; message: string } | null
-  >(null);
+  const [viewerNotice, setViewerNotice] = useState<ViewerNotice | null>(null);
+  const [isViewerNoticeOpen, setIsViewerNoticeOpen] = useState(false);
+
+  const showViewerNotice = useCallback((notice: ViewerNotice) => {
+    setViewerNotice(notice);
+    setIsViewerNoticeOpen(true);
+  }, []);
 
   // Clear the error of a field as soon as it gets updated
   const clearFieldErrorsFor = useCallback(
@@ -128,12 +153,13 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
 
   // Submit draft mutation
   const submitDraftMutation = trpc.submissions.submitDraft.useMutation({
-    onSuccess: (data) => {
-      // If submitting from Step 3, handleSubmitFromStep3 will show status-specific message
-      if (!isSubmittingFromStep3.current) {
-        toast.success('Pengajuan berhasil disimpan');
-        router.push(`/app/pengajuan`);
-      }
+    onSuccess: () => {
+      // Step 3 (handleSubmitFromStep3) and Step 4 (Terbitkan SPPTG) each own
+      // their own outcome message and destination, so this generic pair would
+      // only stack a second toast and a competing redirect on top of theirs.
+      if (isSubmittingFromStep3.current || isIssuingSPPTG.current) return;
+      toast.success('Pengajuan berhasil disimpan');
+      router.push(`/app/pengajuan`);
     },
     onError: (error) => {
       toast.error(`Gagal menyimpan pengajuan: ${error.message}`);
@@ -171,19 +197,34 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
       const payload = (draftData.payload ?? {}) as Partial<SubmissionDraft>;
       const coordinatesGeografis = normalizeCoordinateIds(payload.coordinatesGeografis ?? []);
       const allowedStep = isViewer ? 1 : draftData.currentStep;
+
+      // A Viewer files on their own behalf, so their account *is* the applicant:
+      // prefill the identity fields rather than making them retype what the
+      // system already holds. Only where the draft has nothing — anything saved
+      // wins — and only for Viewers, since for the officer roles the applicant
+      // is a citizen at the counter, never the signed-in user.
+      const applicant = isViewer
+        ? {
+            nama: user?.nama ?? '',
+            nik: user?.nipNik ?? '',
+            nomorHP: user?.nomorHP ?? undefined,
+            email: user?.email,
+          }
+        : { nama: '', nik: '', nomorHP: undefined, email: undefined };
+
       setDraft({
         id: draftData.id,
         currentStep: allowedStep,
         lastSaved: draftData.lastSaved,
         // Step 1: Applicant Data
-        namaPemohon: payload.namaPemohon || '',
-        nik: payload.nik || '',
+        namaPemohon: payload.namaPemohon || applicant.nama,
+        nik: payload.nik || applicant.nik,
         tempatLahir: payload.tempatLahir,
         tanggalLahir: payload.tanggalLahir,
         pekerjaan: payload.pekerjaan,
         alamatKTP: payload.alamatKTP,
-        nomorHP: payload.nomorHP,
-        email: payload.email,
+        nomorHP: payload.nomorHP || applicant.nomorHP,
+        email: payload.email || applicant.email,
         persetujuanData: payload.persetujuanData || false,
         // Step 2: Land Location & Details
         villageId: payload.villageId,
@@ -242,7 +283,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         setLastSaved(time);
       }
     }
-  }, [draftData, isViewer]);
+  }, [draftData, isViewer, user]);
 
   // Handle draft errors
   useEffect(() => {
@@ -457,10 +498,10 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
   const handleViewerConfirmSave = async () => {
     try {
       await persistDraftSnapshot(draft, 1, { silent: true });
-      setViewerNotice({ kind: 'success' });
+      showViewerNotice({ kind: 'success' });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Terjadi kesalahan';
-      setViewerNotice({ kind: 'error', message });
+      showViewerNotice({ kind: 'error', message });
     }
   };
 
@@ -471,7 +512,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors);
         if (isViewer) {
-          setViewerNotice({
+          showViewerNotice({
             kind: 'error',
             message:
               'Masih ada kolom wajib yang belum terisi. Kolom tersebut ditandai merah pada formulir di atas.',
@@ -485,7 +526,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
 
       if (isViewer) {
         // Ask first — this save is the Viewer's final action on the berkas.
-        setViewerNotice({ kind: 'confirm' });
+        showViewerNotice({ kind: 'confirm' });
         return;
       }
       // Non-viewer: saving happens once in the transition block below
@@ -912,8 +953,8 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
           ) : (
             <Button
               onClick={async () => {
-                if (!draft.id) {
-                  toast.error('Draf belum dimuat');
+                if (!draft.id || isIssuingSPPTG.current) {
+                  if (!draft.id) toast.error('Draf belum dimuat');
                   return;
                 }
 
@@ -926,23 +967,32 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                 }
                 setFieldErrors({});
 
-                // Save final draft before submitting
-                await saveDraftToBackend(4);
-                // Submit draft to create submission
+                isIssuingSPPTG.current = true;
+                setIsIssuingSPPTGView(true);
                 try {
-                  const result = await submitDraftMutation.mutateAsync({
-                    draftId: draft.id,
-                  });
+                  // Silent: issuing is one action to the user, and its outcome
+                  // is announced once, on the dashboard it lands on.
+                  await saveDraftToBackend(4, { silent: true });
+                  await submitDraftMutation.mutateAsync({ draftId: draft.id });
+                  // Navigates to the dashboard, which raises the single success
+                  // toast once it is actually on screen.
                   onComplete(draft);
-                  toast.success('SPPTG berhasil diterbitkan.');
-                } catch (error) {
-                  // Error already handled in mutation
+                } catch {
+                  // The mutation already reported why; let them try again.
+                  isIssuingSPPTG.current = false;
+                  setIsIssuingSPPTGView(false);
                 }
               }}
               className="bg-green-600 hover:bg-green-700"
-              disabled={submitDraftMutation.isPending || saveDraftMutation.isPending}
+              disabled={
+                isIssuingSPPTGView ||
+                submitDraftMutation.isPending ||
+                saveDraftMutation.isPending
+              }
             >
-              {submitDraftMutation.isPending || saveDraftMutation.isPending ? 'Menyimpan...' : 'Terbitkan SPPTG'}
+              {isIssuingSPPTGView || submitDraftMutation.isPending || saveDraftMutation.isPending
+                ? 'Menyimpan...'
+                : 'Terbitkan SPPTG'}
             </Button>
           )}
         </div>
@@ -951,13 +1001,13 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
 
       {/* Viewer: confirmation and outcome for the one action they have. */}
       <Dialog
-        open={viewerNotice !== null}
+        open={isViewerNoticeOpen}
         onOpenChange={(open) => {
           if (open) return;
           // A saved berkas is final for the Viewer — send them back to the list
           // instead of leaving them on a form they can no longer act on.
           const wasSuccess = viewerNotice?.kind === 'success';
-          setViewerNotice(null);
+          setIsViewerNoticeOpen(false);
           if (wasSuccess) router.push('/app/pengajuan');
         }}
       >
@@ -1000,7 +1050,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                   <Button
                     variant="outline"
                     className="w-full sm:w-auto"
-                    onClick={() => setViewerNotice(null)}
+                    onClick={() => setIsViewerNoticeOpen(false)}
                     disabled={saveDraftMutation.isPending}
                   >
                     Periksa Lagi
@@ -1018,7 +1068,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                   className="w-full sm:w-auto"
                   onClick={() => {
                     const wasSuccess = viewerNotice?.kind === 'success';
-                    setViewerNotice(null);
+                    setIsViewerNoticeOpen(false);
                     if (wasSuccess) router.push('/app/pengajuan');
                   }}
                 >
