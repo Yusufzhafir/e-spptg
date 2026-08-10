@@ -17,6 +17,7 @@ import { Page, Text, View } from '@react-pdf/renderer';
 import { styles, formatIndonesianDate } from './styles';
 import { DocumentFooter } from './DocumentFooter';
 import { buildWitnessSlots } from '@/lib/spptg-pdf-data';
+import { isTerdataCertificate, PAGE_SIGNATURES, totalCertificatePages } from './pagination';
 import { PageProps, SPPTGPDFData } from './types';
 
 /**
@@ -92,7 +93,10 @@ export const SPPTGPage3: React.FC<PageProps> = ({ data, config }) => {
     )].join(', ') || '.....................';
 
   const showWitnesses = config?.includeWitnesses !== false;
-  const showAdministrative = config?.includeAdministrative !== false;
+  // No desa endorses a parcel that is still contested: the terdata variant drops
+  // the Kepala Desa block and carries the disclosure notice below instead.
+  const showAdministrative =
+    config?.includeAdministrative !== false && !isTerdataCertificate(data);
 
   // One block per recorded saksi — one saksi prints one block, four print four.
   const witnessSlots = buildWitnessSlots(data.saksiList);
@@ -178,7 +182,9 @@ export const SPPTGPage3: React.FC<PageProps> = ({ data, config }) => {
         </View>
       </View>
 
-      <DocumentFooter page={3} />
+      {/* The disclosure notice is its own page — see `pagination.ts`. */}
+
+      <DocumentFooter page={PAGE_SIGNATURES} totalPages={totalCertificatePages(data)} />
     </Page>
   );
 };

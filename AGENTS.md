@@ -457,11 +457,17 @@ Required environment variables:
 DATABASE_URL=           # PostgreSQL connection string (with PostGIS)
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=
 
-# Gmail SMTP — used ONLY for "lupa sandi" and account-invite email.
-# GMAIL_APP_PASSWORD must be a 16-character Google App Password (2FA required).
-# If unset the app still runs; only those two emails fail, with a clear message.
-GMAIL_USER=
-GMAIL_APP_PASSWORD=
+# SMTP — used ONLY for verification, "lupa sandi" and account-invite email.
+# Production is the Pemkab mail server (mail.kutaitimurkab.go.id).
+# If SMTP_USER/SMTP_PASSWORD are unset the app still runs; only those emails
+# fail, with a clear message. Legacy GMAIL_USER/GMAIL_APP_PASSWORD still work
+# as a fallback when SMTP_* are empty.
+SMTP_HOST=              # Omit to fall back to Gmail's service preset
+SMTP_PORT=              # 465 = implicit TLS, 587 = STARTTLS (default 587)
+SMTP_SECURE=            # Optional override; defaults to true only on port 465
+SMTP_USER=
+SMTP_PASSWORD=
+MAIL_FROM_ADDRESS=      # Optional envelope From (default: SMTP_USER)
 MAIL_FROM_NAME=         # Display name on outgoing mail (default: SIAPTAH)
 NEXT_PUBLIC_APP_URL=    # Absolute base URL for email links AND the SEO canonical
                         # host (src/lib/site.ts); unset falls back to the

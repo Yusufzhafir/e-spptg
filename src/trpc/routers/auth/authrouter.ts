@@ -197,7 +197,7 @@ export const authRouter = router({
       // address from being registered again once mail is fixed.
       if (!isMailerConfigured()) {
         console.error(
-          'GMAIL_USER/GMAIL_APP_PASSWORD belum diatur — pendaftaran mandiri tidak dapat mengirim email verifikasi.'
+          'SMTP_USER/SMTP_PASSWORD belum diatur — pendaftaran mandiri tidak dapat mengirim email verifikasi.'
         );
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
@@ -478,7 +478,7 @@ export const authRouter = router({
 
       if (!isMailerConfigured()) {
         console.error(
-          'GMAIL_USER/GMAIL_APP_PASSWORD belum diatur — email verifikasi tidak dapat dikirim.'
+          'SMTP_USER/SMTP_PASSWORD belum diatur — email verifikasi tidak dapat dikirim.'
         );
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
@@ -708,7 +708,7 @@ export const authRouter = router({
         // A misconfigured server must not silently swallow reset requests —
         // that reads as "the email never arrived" and is impossible to debug.
         console.error(
-          'GMAIL_USER/GMAIL_APP_PASSWORD belum diatur — permintaan reset kata sandi tidak dapat dikirim.'
+          'SMTP_USER/SMTP_PASSWORD belum diatur — permintaan reset kata sandi tidak dapat dikirim.'
         );
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',

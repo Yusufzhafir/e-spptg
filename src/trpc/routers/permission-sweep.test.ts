@@ -275,7 +275,7 @@ beforeEach(() => {
   vi.mocked(prohibitedAreaQueries.deleteProhibitedArea).mockResolvedValue(undefined as never);
   vi.mocked(prohibitedAreaQueries.getProhibitedAreaById).mockResolvedValue({
     id: 1,
-    namaKawasan: 'Hutan Lindung',
+    namaKawasan: 'Kawasan Hutan',
   } as never);
   vi.mocked(auditQueries.listAuditLogs).mockResolvedValue({ items: [], total: 0 } as never);
   vi.mocked(auditQueries.getAuditLogById).mockResolvedValue(null as never);
@@ -377,8 +377,8 @@ describe('desa — only Superadmin may write', () => {
 // ---------------------------------------------------------------------------
 describe('kawasan non-SPPTG — write is Superadmin/Admin only', () => {
   const payload = {
-    namaKawasan: 'Hutan Lindung',
-    jenisKawasan: 'Hutan Lindung',
+    namaKawasan: 'Kawasan Hutan',
+    jenisKawasan: 'Kawasan Hutan',
     coordinates: [
       { latitude: 0.1, longitude: 117.1 },
       { latitude: 0.2, longitude: 117.2 },

@@ -1,3 +1,4 @@
+import { hasNomorSPPTGBody } from '@/lib/nomor-spptg';
 import type { StatusSPPTG } from '@/types';
 
 /** Statuses a draft may carry into a submission via Step 3. */
@@ -19,21 +20,24 @@ export type DraftStatusPayload = {
 /**
  * The status a submission should be created with.
  *
- * A completed Step 4 (certificate number + issue date + uploaded SPPTG
- * document) keeps the submission under 'SPPTG terdaftar': issuing the
- * certificate is the outcome of being approved, not a separate bucket in the
- * dashboard. Issuance itself stays observable via the certificate number and
- * the uploaded SPPG document.
+ * **The Step 3 decision wins.** Both `terdaftar` and `terdata` can complete
+ * Step 4, and the two issue visibly different certificates — a terdata berkas
+ * that came back as `terdaftar` merely because a document was attached would
+ * contradict the paper it just produced. Issuance stays observable through the
+ * certificate number and the uploaded SPPG document, not through the status.
  *
- * Otherwise the Step 3 decision applies, falling back to 'SPPTG terdata' when
- * the draft carries nothing valid.
+ * A completed Step 4 only decides the outcome when no valid decision was
+ * recorded at all; otherwise the fallback is 'SPPTG terdata'.
  */
 export function deriveSubmissionStatus(payload: DraftStatusPayload): StatusSPPTG {
-  const isIssued = Boolean(
-    payload.nomorSPPTG?.trim() && payload.tanggalTerbit && payload.dokumenSPPTG
-  );
-  if (isIssued) return 'SPPTG terdaftar';
-
   const decided = DECIDABLE_STATUSES.find((s) => s === payload.status);
-  return decided ?? 'SPPTG terdata';
+  if (decided) return decided;
+
+  // `hasNomorSPPTGBody`, not a plain emptiness check: Step 4 seeds the mandatory
+  // prefix into the field, so the bare prefix must not read as "issued".
+  const isIssued = Boolean(
+    hasNomorSPPTGBody(payload.nomorSPPTG) && payload.tanggalTerbit && payload.dokumenSPPTG
+  );
+
+  return isIssued ? 'SPPTG terdaftar' : 'SPPTG terdata';
 }

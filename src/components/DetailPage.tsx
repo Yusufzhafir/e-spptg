@@ -26,6 +26,7 @@ import { findCenter } from '@/lib/utils';
 import { trpc } from '@/trpc/client';
 import { formatDate } from '@/lib/format-date';
 import { keepLatestPerCategory } from '@/lib/document-list';
+import { documentCategoryLabel } from '@/lib/document-category-label';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -148,6 +149,14 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
     () => keepLatestPerCategory(documents ?? []),
     [documents]
   );
+
+  // What the SPPTG document in the list is called. The nomor is the durable
+  // marker of which certificate was issued; status only covers rows that predate
+  // the prefixes (see `documentCategoryLabel`).
+  const certificateContext = {
+    nomorSPPTG: submission.payload?.nomorSPPTG,
+    status: submission.status,
+  };
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -625,8 +634,9 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
 
                 {isCertificateOnlyViewer && (
                   <p className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
-                    Peran Anda hanya dapat melihat dokumen SPPTG. Berkas pribadi
-                    pemohon (KTP, KK, dan lampiran lainnya) tidak ditampilkan.
+                    Peran Anda hanya dapat melihat dokumen SPPTG — baik SPPTG
+                    terdaftar maupun SPPTG terdata. Berkas pribadi pemohon (KTP,
+                    KK, dan lampiran lainnya) tidak ditampilkan.
                   </p>
                 )}
 
@@ -658,7 +668,7 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
                     <FileText className="mx-auto mb-2 h-10 w-10 text-gray-400" />
                     <p className="text-sm text-gray-600">
                       {isCertificateOnlyViewer
-                        ? 'SPPTG untuk pengajuan ini belum diterbitkan.'
+                        ? 'Dokumen SPPTG untuk pengajuan ini belum diterbitkan.'
                         : 'Belum ada dokumen untuk pengajuan ini.'}
                     </p>
                   </div>
@@ -676,7 +686,8 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
                           <div className="min-w-0">
                             <p className="truncate text-sm text-gray-900">{doc.filename}</p>
                             <p className="text-xs text-gray-500">
-                              {doc.category} • {formatFileSize(doc.size)} • Diunggah{' '}
+                              {documentCategoryLabel(doc.category, certificateContext)} •{' '}
+                              {formatFileSize(doc.size)} • Diunggah{' '}
                               {formatUploadedAt(doc.uploadedAt)}
                             </p>
                           </div>

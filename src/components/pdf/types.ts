@@ -136,6 +136,22 @@ export interface SPPTGPDFData {
   /** Village head name */
   namaKepalaDesa?: string;
 
+  /**
+   * Which certificate this is. `terdata` is issued over land the overlap check
+   * flagged: it drops the Kepala Desa endorsement — no desa signs off on a
+   * contested parcel — and prints the yellow disclosure notice instead.
+   */
+  variant?: 'terdaftar' | 'terdata';
+  /**
+   * Jenis kawasan the parcel overlaps, ticked on the terdata notice. Unused by
+   * the terdaftar certificate, which cannot be issued with overlaps at all.
+   */
+  overlapStatuses?: string[];
+  /** Surveyor who signs the terdata notice (Tim Peneliti / Juru Ukur). */
+  namaJuruUkur?: string;
+  /** The surveyor's post, printed under the name. */
+  jabatanJuruUkur?: string;
+
   // Map Data
   /** Geographic coordinates of land polygon */
   coordinatesGeografis: GeographicCoordinate[];

@@ -97,3 +97,58 @@ describe('buildWitnessSlots', () => {
     expect(buildWitnessSlots(undefined)).toEqual([undefined]);
   });
 });
+
+describe('buildSPPTGPDFData — certificate variant', () => {
+  it('marks a terdaftar berkas and carries no checklist', () => {
+    const draft = { ...createDraftFixture(), status: 'SPPTG terdaftar' as const };
+    const pdfData = buildSPPTGPDFData(draft, null);
+
+    expect(pdfData.variant).toBe('terdaftar');
+    expect(pdfData.overlapStatuses).toBeUndefined();
+  });
+
+  it('ticks the kawasan a terdata berkas overlaps, and names the juru ukur', () => {
+    // The whole chain the notice depends on: status picks the variant, the
+    // overlap snapshot picks the ticks, and the surveyor signs it.
+    const draft: SubmissionDraft = {
+      ...createDraftFixture(),
+      status: 'SPPTG terdata',
+      juruUkur: { nama: 'Rina Kartika', jabatan: 'Juru Ukur', nomorHP: '081234567890' },
+      overlapResults: [
+        { kawasanId: 1, namaKawasan: 'Hutan A', jenisKawasan: 'Kawasan Hutan', sumber: 'ProhibitedArea', luasOverlap: 120 },
+        { kawasanId: 2, namaKawasan: 'Aset Pemda', jenisKawasan: 'Tanah Pemerintah', sumber: 'ProhibitedArea', luasOverlap: 40 },
+      ],
+    } as unknown as SubmissionDraft;
+
+    const pdfData = buildSPPTGPDFData(draft, null);
+
+    expect(pdfData.variant).toBe('terdata');
+    expect(pdfData.overlapStatuses).toEqual(['Kawasan Hutan', 'Tanah Pemerintah']);
+    expect(pdfData.namaJuruUkur).toBe('Rina Kartika');
+    expect(pdfData.jabatanJuruUkur).toBe('Juru Ukur');
+  });
+
+  it('still ticks when the snapshot holds a jenis recorded before the rename', () => {
+    const draft = {
+      ...createDraftFixture(),
+      status: 'SPPTG terdata',
+      overlapResults: [
+        { kawasanId: 1, namaKawasan: 'hutan', jenisKawasan: 'Hutan Lindung', sumber: 'ProhibitedArea', luasOverlap: 120 },
+      ],
+    } as unknown as SubmissionDraft;
+
+    expect(buildSPPTGPDFData(draft, null).overlapStatuses).toEqual(['Kawasan Hutan']);
+  });
+
+  it('never ticks a clash with another pengajuan — that blocks issuance instead', () => {
+    const draft = {
+      ...createDraftFixture(),
+      status: 'SPPTG terdata',
+      overlapResults: [
+        { kawasanId: 9, namaKawasan: 'Budi', jenisKawasan: 'SPPTG terdaftar', sumber: 'Submission', luasOverlap: 500 },
+      ],
+    } as unknown as SubmissionDraft;
+
+    expect(buildSPPTGPDFData(draft, null).overlapStatuses).toEqual([]);
+  });
+});

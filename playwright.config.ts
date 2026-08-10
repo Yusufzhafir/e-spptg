@@ -47,6 +47,8 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: {
+      SMTP_USER: '',
+      SMTP_PASSWORD: '',
       GMAIL_USER: '',
       GMAIL_APP_PASSWORD: '',
       VAPID_PUBLIC_KEY: '',

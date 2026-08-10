@@ -16,19 +16,9 @@ import { FieldError } from './FieldError';
 import { SearchableSelect } from './SearchableSelect';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
+import { PROHIBITED_AREA_TYPES } from '@/lib/prohibited-area-types';
 
-const jenisKawasanOptions: ProhibitedAreaType[] = [
-  'Hutan Lindung',
-  'Tanah Pemerintah',
-  'Cagar Alam',
-  'Kawasan Industri',
-  'Fasum/Fasos',
-  'Sempadan Sungai',
-  'Sempadan Pantai',
-  'Kawasan Rawan Bencana',
-  'Aset TNI/POLRI',
-  'Lainnya',
-];
+const jenisKawasanOptions: readonly ProhibitedAreaType[] = PROHIBITED_AREA_TYPES;
 
 type KawasanFormData = Partial<Omit<ProhibitedArea, 'geomGeoJSON'>> & {
   geomGeoJSON?: { type: 'Polygon'; coordinates: [[[number, number]]] } | null;
@@ -162,7 +152,7 @@ export function KawasanForm({ mode, initialArea, isSubmitting, onSubmit }: Kawas
                 value={formData.namaKawasan || ''}
                 onChange={(e) => { setFormData({ ...formData, namaKawasan: e.target.value }); clearError('namaKawasan'); }}
                 className={errorClass('namaKawasan')}
-                placeholder="Contoh: Hutan Lindung Cikole"
+                placeholder="Contoh: Kawasan Hutan Lindung Sangatta"
               />
               <FieldError message={errors.namaKawasan} />
             </div>

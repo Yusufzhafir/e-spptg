@@ -153,17 +153,10 @@ export interface Village {
   updatedAt?: Date | string | null;
 }
 
-export type ProhibitedAreaType = 
-  | 'Hutan Lindung'
-  | 'Tanah Pemerintah'
-  | 'Cagar Alam'
-  | 'Kawasan Industri'
-  | 'Fasum/Fasos'
-  | 'Sempadan Sungai'
-  | 'Sempadan Pantai'
-  | 'Kawasan Rawan Bencana'
-  | 'Aset TNI/POLRI'
-  | 'Lainnya';
+// Re-exported so the many `from '@/types'` importers keep working; the list
+// itself lives in one place (see prohibited-area-types.ts).
+import type { ProhibitedAreaType } from '@/lib/prohibited-area-types';
+export type { ProhibitedAreaType };
 
 export type ValidationStatus = 'Lolos' | 'Perlu Perbaikan';
 

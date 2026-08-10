@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SubmissionDraft } from '../../types';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
@@ -18,6 +18,14 @@ import { toast } from 'sonner';
 import { trpc } from '@/trpc/client';
 import { usePDFGenerator } from '@/hooks/usePDFGenerator';
 import { buildSPPTGPDFData } from '@/lib/spptg-pdf-data';
+import { cn } from '@/lib/utils';
+import {
+  certificateLabel,
+  hasNomorSPPTGBody,
+  nomorSPPTGBody,
+  nomorSPPTGPrefix,
+  withNomorSPPTGPrefix,
+} from '@/lib/nomor-spptg';
 
 interface Step4Props {
   draft: SubmissionDraft;
@@ -33,11 +41,16 @@ type GeneratedDocs = {
   pdfUrl: string;
   baseName: string;
   /**
-   * The Nomor SPPTG and Tanggal Diterbitkan actually baked into these files.
-   * Kept so a later edit of either field can be detected: the downloads are
-   * static blobs and do not follow the form, so without this the user would
-   * hand over a certificate printed with the old values.
+   * Everything that went into these files, serialised.
+   *
+   * The download is a static blob and does not follow the form, so any later
+   * edit would have the user hand over a certificate printed with stale values.
+   * Comparing the whole payload rather than a couple of fields catches the ones
+   * that are not typed on this step either — the overlap checklist and the juru
+   * ukur on a terdata notice both come from earlier stages.
    */
+  fingerprint: string;
+  /** Kept out of the fingerprint so the warning can name what changed. */
   nomorSPPTG: string;
   tanggalTerbit: string;
 };
@@ -83,6 +96,27 @@ export function Step4Issuance({
     { enabled: !!draft.villageId }
   );
 
+  /**
+   * A berkas that was only ever *recorded* can still be issued a certificate,
+   * but a visibly different one: its own prefix, its own title, no manual
+   * softcopy, and a disclosure notice naming what the land overlaps.
+   */
+  const isTerdata = draft.status === 'SPPTG terdata';
+  const canIssue = isTerdata || draft.status === 'SPPTG terdaftar';
+
+  /**
+   * The exact payload the certificate would be rendered from right now, and a
+   * serialisation of it. Both are derived rather than assembled at click time so
+   * the "Generate Ulang" prompt can compare against what was actually printed.
+   */
+  const pdfData = useMemo(
+    () => buildSPPTGPDFData(draft, villageData ?? null),
+    [draft, villageData]
+  );
+  const pdfFingerprint = useMemo(() => JSON.stringify(pdfData), [pdfData]);
+  const nomorPrefix = nomorSPPTGPrefix(draft.status);
+  const dokumenLabel = certificateLabel(draft.status);
+
   // Auto-fill the issue date with today's date once the draft is loaded and
   // the field is still empty. It stays user-editable afterwards.
   useEffect(() => {
@@ -90,6 +124,18 @@ export function Step4Issuance({
       onUpdateDraft({ tanggalTerbit: new Date().toISOString().split('T')[0] });
     }
   }, [draft.id, draft.tanggalTerbit, onUpdateDraft]);
+
+  // Seed the mandatory prefix so the stored nomor carries it from the start —
+  // the input renders it either way, but the PDF and the summary read the draft.
+  useEffect(() => {
+    if (!draft.id) return;
+    const normalized = withNomorSPPTGPrefix(nomorSPPTGBody(draft.nomorSPPTG), draft.status);
+    if (normalized !== draft.nomorSPPTG) {
+      onUpdateDraft({ nomorSPPTG: normalized });
+    }
+    // draft.status is a dependency on purpose: flipping the Step 3 decision
+    // re-prefixes the number instead of leaving TERDAFTAR/ on a terdata berkas.
+  }, [draft.id, draft.nomorSPPTG, draft.status, onUpdateDraft]);
 
   const deleteDocumentById = async (documentId: number) => {
     await deleteDocumentMutation.mutateAsync({ documentId });
@@ -121,6 +167,17 @@ export function Step4Issuance({
       return;
     }
 
+    await uploadSPPTGPdf(file, file.name, 'Dokumen SPPTG berhasil diunggah.');
+  };
+
+  /**
+   * Puts a PDF on the berkas as its softcopy SPPTG.
+   *
+   * Takes a blob rather than a File because the terdata flow has no upload box:
+   * its certificate is the one this app just generated, and it is attached
+   * automatically so the document on file is provably the one that was issued.
+   */
+  const uploadSPPTGPdf = async (blob: Blob, filename: string, successMessage: string) => {
     if (!draft.id) {
       toast.error('Draf belum dimuat');
       return;
@@ -132,12 +189,12 @@ export function Step4Issuance({
       const { documentId, s3Key } = await createUploadUrlMutation.mutateAsync({
         draftId: draft.id,
         category: 'SPPG',
-        filename: file.name,
-        size: file.size,
+        filename,
+        size: blob.size,
         mimeType: 'application/pdf',
       });
 
-      const fileBuffer = await file.arrayBuffer();
+      const fileBuffer = await blob.arrayBuffer();
       const base64String = btoa(
         new Uint8Array(fileBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
       );
@@ -147,17 +204,17 @@ export function Step4Issuance({
         documentId,
         s3Key,
         fileData: base64String,
-        filename: file.name,
+        filename,
         mimeType: 'application/pdf',
-        size: file.size,
+        size: blob.size,
       });
 
       try {
         await onPersistDraftPatch(
           {
             dokumenSPPTG: {
-              name: file.name,
-              size: file.size,
+              name: filename,
+              size: blob.size,
               url: uploadResult.publicUrl,
               uploadedAt: new Date().toISOString(),
               documentId,
@@ -191,7 +248,7 @@ export function Step4Issuance({
         }
       }
 
-      toast.success('Dokumen SPPTG berhasil diunggah.');
+      toast.success(successMessage);
     } catch (error: unknown) {
       console.error('Upload error:', error);
       if (error instanceof Error && error.message) {
@@ -282,8 +339,8 @@ export function Step4Issuance({
       toast.error('Data lahan belum lengkap. Pastikan luas lahan sudah dihitung.');
       return;
     }
-    if (!draft.nomorSPPTG?.trim()) {
-      toast.error('Isi Nomor SPPTG terlebih dahulu.');
+    if (!hasNomorSPPTGBody(draft.nomorSPPTG)) {
+      toast.error(`Isi Nomor SPPTG setelah awalan ${nomorPrefix} terlebih dahulu.`);
       return;
     }
     if (!draft.tanggalTerbit) {
@@ -293,10 +350,10 @@ export function Step4Issuance({
 
     setIsGeneratingDocs(true);
     try {
-      const pdfData = buildSPPTGPDFData(draft, villageData ?? null);
-
       const pdfResult = await generatePDF(pdfData, {
         includeWitnesses: true,
+        // The terdata variant drops the Kepala Desa endorsement itself; leaving
+        // this true keeps the flag meaning what it says for the other one.
         includeAdministrative: true,
         includeMap: true,
       });
@@ -305,15 +362,28 @@ export function Step4Issuance({
         URL.revokeObjectURL(generatedDocs.pdfUrl);
       }
 
-      const baseName = `SPPTG_${(draft.nomorSPPTG || 'dokumen').replace(/[\\/]/g, '_')}`;
+      const baseName = `${isTerdata ? 'SPPTG_TERDATA' : 'SPPTG'}_${(
+        draft.nomorSPPTG || 'dokumen'
+      ).replace(/[\\/]/g, '_')}`;
       setGeneratedDocs({
         pdfUrl: pdfResult.url,
         baseName,
-        nomorSPPTG: draft.nomorSPPTG.trim(),
+        fingerprint: pdfFingerprint,
+        nomorSPPTG: withNomorSPPTGPrefix(nomorSPPTGBody(draft.nomorSPPTG), draft.status),
         tanggalTerbit: draft.tanggalTerbit,
       });
 
-      toast.success('Dokumen SPPTG berhasil dibuat. Silakan unduh dalam format PDF.');
+      if (isTerdata) {
+        // No upload box on this variant: the certificate on file has to be the
+        // one that was just generated, not a look-alike chosen by hand.
+        await uploadSPPTGPdf(
+          pdfResult.blob,
+          `${baseName}.pdf`,
+          'Dokumen SPPTG Terdata dibuat dan otomatis terlampir pada berkas.'
+        );
+      } else {
+        toast.success('Dokumen SPPTG berhasil dibuat. Silakan unduh dalam format PDF.');
+      }
     } catch (error: unknown) {
       console.error('Document generation error:', error);
       if (error instanceof Error && error.message) {
@@ -370,41 +440,62 @@ export function Step4Issuance({
     }
   };
 
-  const isFormComplete = draft.dokumenSPPTG && draft.nomorSPPTG && draft.tanggalTerbit;
+  const isFormComplete =
+    draft.dokumenSPPTG && hasNomorSPPTGBody(draft.nomorSPPTG) && draft.tanggalTerbit;
 
-  // The generated PDF is a fixed blob: editing the number or the issue date
-  // afterwards leaves the download link pointing at a certificate that no
-  // longer matches the form. Flag it instead of letting it pass silently.
+  // The generated PDF is a fixed blob: any later edit leaves the download link
+  // pointing at a certificate that no longer matches the berkas. Flag it instead
+  // of letting it pass silently.
   const generatedDocsAreStale =
-    generatedDocs !== null &&
-    ((draft.nomorSPPTG ?? '').trim() !== generatedDocs.nomorSPPTG ||
-      (draft.tanggalTerbit ?? '') !== generatedDocs.tanggalTerbit);
+    generatedDocs !== null && generatedDocs.fingerprint !== pdfFingerprint;
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-gray-900 mb-2">Penerbitan SPPTG</h2>
+        <h2 className="text-gray-900 mb-2">Penerbitan {dokumenLabel}</h2>
         <p className="text-gray-600">
-          Unggah softcopy SPPTG dan lengkapi informasi penerbitan.
+          {isTerdata
+            ? 'Lengkapi informasi penerbitan, lalu buat dokumen SPPTG Terdata. Dokumen hasil pembuatan otomatis terlampir pada berkas.'
+            : 'Unggah softcopy SPPTG dan lengkapi informasi penerbitan.'}
         </p>
       </div>
 
       {/* SPPTG Number */}
       <div className="space-y-2">
         <Label htmlFor="nomorSPPTG">
-          Nomor SPPTG <span className="text-red-600">*</span>
+          Nomor {dokumenLabel} <span className="text-red-600">*</span>
         </Label>
-        <Input
-          id="nomorSPPTG"
-          value={draft.nomorSPPTG || ''}
-          onChange={(e) => onUpdateDraft({ nomorSPPTG: e.target.value })}
-          placeholder="SPPTG/XX/123/2025"
-          aria-invalid={Boolean(errors.nomorSPPTG)}
-          className={errors.nomorSPPTG ? 'border-red-500' : undefined}
-        />
+        {/* The prefix sits outside the input, not inside its value: it cannot be
+            selected, backspaced over, or cursored behind. */}
+        <div
+          className={cn(
+            'flex items-stretch overflow-hidden rounded-md border border-input bg-transparent',
+            'focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50',
+            errors.nomorSPPTG && 'border-red-500'
+          )}
+        >
+          <span
+            aria-hidden="true"
+            className="flex select-none items-center border-r border-input bg-gray-50 px-3 text-sm font-medium text-gray-600"
+          >
+            {nomorPrefix}
+          </span>
+          <Input
+            id="nomorSPPTG"
+            value={nomorSPPTGBody(draft.nomorSPPTG)}
+            onChange={(e) =>
+              onUpdateDraft({ nomorSPPTG: withNomorSPPTGPrefix(e.target.value, draft.status) })
+            }
+            placeholder="145/KTM/2026"
+            aria-invalid={Boolean(errors.nomorSPPTG)}
+            aria-describedby="nomorSPPTG-hint"
+            className="rounded-none border-0 shadow-none focus-visible:ring-0"
+          />
+        </div>
         <FieldError message={errors.nomorSPPTG} />
-        <p className="text-xs text-gray-500">
-          Masukkan nomor SPPTG sesuai format yang berlaku
+        <p id="nomorSPPTG-hint" className="text-xs text-gray-500">
+          Awalan <strong>{nomorPrefix}</strong> mengikuti status keputusan, sudah baku
+          dan tidak dapat diubah. Isi nomor setelahnya sesuai format yang berlaku.
         </p>
       </div>
 
@@ -428,29 +519,50 @@ export function Step4Issuance({
       </div>
 
       {/* Status Check */}
-      {draft.status !== 'SPPTG terdaftar' && (
+      {!canIssue && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <p className="text-yellow-900">
-            ⚠️ Penerbitan SPPTG hanya tersedia untuk status &quot;SPPTG terdaftar&quot;. Status saat ini:{' '}
+            ⚠️ Penerbitan surat hanya tersedia untuk status &quot;SPPTG terdaftar&quot; atau
+            &quot;SPPTG terdata&quot;. Status saat ini:{' '}
             <strong>{draft.status || 'Belum ditentukan'}</strong>
           </p>
         </div>
       )}
 
-      {draft.status === 'SPPTG terdaftar' && (
+      {canIssue && (
         <>
+          {isTerdata && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+              <div className="flex gap-2.5">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div className="text-sm text-amber-900">
+                  <p className="font-semibold">Dokumen SPPTG Terdata</p>
+                  <p className="mt-1 leading-relaxed">
+                    Berkas ini terbit dengan status <strong>terdata</strong>, jadi
+                    dokumennya berbeda dari SPPTG terdaftar: tanpa pengesahan Kepala
+                    Desa, dan memuat catatan hasil verifikasi fisik berisi daftar
+                    kawasan yang bertampalan dengan lahan, ditandatangani Tim Peneliti
+                    (Juru Ukur).
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* PDF Generation Button */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h3 className="text-sm font-semibold text-blue-900 mb-1">
-                  Generate Dokumen SPPTG
+                  Generate Dokumen {dokumenLabel}
                 </h3>
                 <p className="text-xs text-blue-700">
-                  Buat dokumen SPPTG dari data pengajuan. Dokumen memakai Nomor SPPTG
-                  dan Tanggal Diterbitkan yang Anda isi di atas (tidak diisi otomatis).
-                  Hasilnya berupa tautan unduh PDF — bukan diunggah otomatis
-                  sebagai softcopy.
+                  Buat dokumen {dokumenLabel} dari data pengajuan. Dokumen memakai Nomor{' '}
+                  {dokumenLabel} dan Tanggal Diterbitkan yang Anda isi di atas (tidak
+                  diisi otomatis).{' '}
+                  {isTerdata
+                    ? 'Hasilnya langsung terlampir pada berkas sebagai dokumen resmi dan dapat diunduh di bawah.'
+                    : 'Hasilnya berupa tautan unduh PDF — bukan diunggah otomatis sebagai softcopy.'}
                 </p>
               </div>
               <Button
@@ -481,11 +593,12 @@ export function Step4Issuance({
           {generatedDocs && (
             <div className="bg-white border border-gray-200 rounded-lg p-4">
               <p className="text-sm font-semibold text-gray-900 mb-1">
-                Dokumen SPPTG hasil generate
+                Dokumen {dokumenLabel} hasil generate
               </p>
               <p className="text-xs text-gray-500 mb-3">
-                Unduh, tanda tangani/stempel bila perlu, lalu unggah kembali sebagai
-                softcopy SPPTG di bawah.
+                {isTerdata
+                  ? 'Dokumen ini sudah terlampir otomatis pada berkas. Unduh untuk dicetak dan ditandatangani Tim Peneliti.'
+                  : 'Unduh, tanda tangani/stempel bila perlu, lalu unggah kembali sebagai softcopy SPPTG di bawah.'}
               </p>
 
               {generatedDocsAreStale && (
@@ -494,11 +607,14 @@ export function Step4Issuance({
                   <div className="text-xs text-amber-900">
                     <p className="font-semibold">Ada perubahan setelah dokumen dibuat</p>
                     <p className="mt-1 leading-relaxed">
-                      Dokumen di bawah masih memakai{' '}
-                      <strong>Nomor SPPTG {generatedDocs.nomorSPPTG}</strong> dan{' '}
-                      <strong>tanggal {formatIssueDate(generatedDocs.tanggalTerbit)}</strong>.
-                      Klik <strong>Generate Ulang</strong> agar isinya sesuai dengan data
-                      terbaru sebelum diunduh dan diunggah.
+                      Dokumen di bawah dibuat dengan{' '}
+                      <strong>Nomor {dokumenLabel} {generatedDocs.nomorSPPTG}</strong>,{' '}
+                      <strong>tanggal {formatIssueDate(generatedDocs.tanggalTerbit)}</strong>,
+                      dan data pengajuan saat itu. Klik <strong>Generate Ulang</strong> agar
+                      isinya sesuai dengan data terbaru
+                      {isTerdata
+                        ? ' — dokumen yang terlampir akan ikut diperbarui.'
+                        : ' sebelum diunduh dan diunggah.'}
                     </p>
                   </div>
                 </div>
@@ -519,13 +635,35 @@ export function Step4Issuance({
             </div>
           )}
 
-          {/* SPPTG Document Upload */}
+          {/* SPPTG Document Upload. The terdata variant has no upload box at
+              all — its certificate is attached by the generator — so it only
+              ever renders the attached-document card below. */}
           <div className="space-y-3">
             <Label>
-              Upload Softcopy SPPTG <span className="text-red-600">*</span>
+              {isTerdata ? (
+                <>Dokumen {dokumenLabel} terlampir</>
+              ) : (
+                <>
+                  Upload Softcopy {dokumenLabel} <span className="text-red-600">*</span>
+                </>
+              )}
             </Label>
 
-            {!draft.dokumenSPPTG ? (
+            {isTerdata && !draft.dokumenSPPTG ? (
+              <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
+                <p className="text-sm text-gray-600">
+                  Belum ada dokumen. Klik <strong>Generate Dokumen {dokumenLabel}</strong> di
+                  atas — dokumennya akan terlampir otomatis di sini.
+                </p>
+                <FieldError message={errors.dokumenSPPTG} />
+                {isUploading && (
+                  <div className="mt-2 flex items-center gap-2 text-sm text-gray-600">
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-blue-600" />
+                    <span>Melampirkan dokumen...</span>
+                  </div>
+                )}
+              </div>
+            ) : !draft.dokumenSPPTG ? (
               <div>
                 <label
                   htmlFor="spptg-file"
@@ -605,28 +743,35 @@ export function Step4Issuance({
                         </Button>
                       </>
                     )}
-                    <label htmlFor="replace-spptg">
-                      <Button variant="ghost" size="sm" type="button" asChild>
-                        <span className="cursor-pointer text-xs">Ganti</span>
-                      </Button>
-                      <input
-                        id="replace-spptg"
-                        type="file"
-                        className="hidden"
-                        accept=".pdf"
-                        onChange={handleFileUpload}
-                        disabled={isUploading || isDeleting}
-                      />
-                    </label>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => void handleRemoveFile()}
-                      disabled={isUploading || isDeleting}
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
+                    {/* Replacing or removing is a terdaftar-only affordance:
+                        a terdata certificate is regenerated, never swapped for
+                        a file someone picked. */}
+                    {!isTerdata && (
+                      <>
+                        <label htmlFor="replace-spptg">
+                          <Button variant="ghost" size="sm" type="button" asChild>
+                            <span className="cursor-pointer text-xs">Ganti</span>
+                          </Button>
+                          <input
+                            id="replace-spptg"
+                            type="file"
+                            className="hidden"
+                            accept=".pdf"
+                            onChange={handleFileUpload}
+                            disabled={isUploading || isDeleting}
+                          />
+                        </label>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void handleRemoveFile()}
+                          disabled={isUploading || isDeleting}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

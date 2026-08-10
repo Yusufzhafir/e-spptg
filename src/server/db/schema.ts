@@ -12,6 +12,8 @@ import {
   bigint,
   doublePrecision,
 } from 'drizzle-orm/pg-core';
+// Relative, not aliased: drizzle-kit bundles this file without tsconfig paths.
+import { PROHIBITED_AREA_TYPES } from '../../lib/prohibited-area-types';
 
 // ============================================================================
 // ENUMS
@@ -44,18 +46,10 @@ export const validationStatusEnum = pgEnum('validation_status', [
   'Perlu Perbaikan',
 ]);
 
-export const prohibitedAreaTypeEnum = pgEnum('prohibited_area_type', [
-  'Hutan Lindung',
-  'Tanah Pemerintah',
-  'Cagar Alam',
-  'Kawasan Industri',
-  'Fasum/Fasos',
-  'Sempadan Sungai',
-  'Sempadan Pantai',
-  'Kawasan Rawan Bencana',
-  'Aset TNI/POLRI',
-  'Lainnya',
-]);
+export const prohibitedAreaTypeEnum = pgEnum(
+  'prohibited_area_type',
+  PROHIBITED_AREA_TYPES
+);
 
 export const documentCategoryEnum = pgEnum('document_category', [
   'KTP',

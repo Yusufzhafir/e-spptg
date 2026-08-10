@@ -17,6 +17,7 @@ import React from 'react';
 import { Page, Text, View } from '@react-pdf/renderer';
 import { styles, formatIndonesianDate, formatLuas } from './styles';
 import { DocumentFooter } from './DocumentFooter';
+import { PAGE_STATEMENTS_START, totalCertificatePages } from './pagination';
 import { PageProps } from './types';
 
 /**
@@ -75,9 +76,11 @@ export const SPPTGPage1: React.FC<PageProps> = ({ data }) => {
         <Text>{data.nomorSPPTG}</Text>
       </View>
 
-      {/* Title */}
+      {/* Title — the terdata variant names itself, so the two certificates are
+          never mistaken for one another on paper. */}
       <Text style={styles.title}>
         SURAT PERNYATAAN{'\n'}PENGUASAAN TANAH GARAPAN
+        {data.variant === 'terdata' ? `${'\n'}(TERDATA)` : ''}
       </Text>
 
       {/* Opening Statement */}
@@ -213,7 +216,7 @@ export const SPPTGPage1: React.FC<PageProps> = ({ data }) => {
 
       {/* Statements 2-14 continue on page 2 */}
 
-      <DocumentFooter page={1} />
+      <DocumentFooter page={PAGE_STATEMENTS_START} totalPages={totalCertificatePages(data)} />
     </Page>
   );
 };

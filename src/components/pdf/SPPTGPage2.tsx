@@ -15,6 +15,7 @@ import React from 'react';
 import { Page, Text, View } from '@react-pdf/renderer';
 import { styles } from './styles';
 import { DocumentFooter } from './DocumentFooter';
+import { PAGE_STATEMENTS_CONT, totalCertificatePages } from './pagination';
 import { PageProps } from './types';
 
 /** Placeholder for data that is filled in by hand on the printed form */
@@ -210,7 +211,7 @@ export const SPPTGPage2: React.FC<PageProps> = ({ data }) => {
         terima dibatalkan oleh pejabat yang berwenang.
       </Text>
 
-      <DocumentFooter page={2} />
+      <DocumentFooter page={PAGE_STATEMENTS_CONT} totalPages={totalCertificatePages(data)} />
     </Page>
   );
 };

@@ -7,7 +7,7 @@ describe('normalizeOverlapRows', () => {
       {
         kawasan_id: '55',
         nama_kawasan: 'Area A',
-        jenis_kawasan: 'Hutan Lindung',
+        jenis_kawasan: 'Kawasan Hutan',
         luas_overlap: 15.5,
         percentage_overlap: 10,
         sumber: 'ProhibitedArea',
@@ -26,7 +26,7 @@ describe('normalizeOverlapRows', () => {
       {
         kawasanId: 55,
         namaKawasan: 'Area A',
-        jenisKawasan: 'Hutan Lindung',
+        jenisKawasan: 'Kawasan Hutan',
         luasOverlap: 15.5,
         percentageOverlap: 10,
         sumber: 'ProhibitedArea',

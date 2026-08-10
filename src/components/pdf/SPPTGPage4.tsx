@@ -12,6 +12,7 @@ import React from 'react';
 import { Page, Text, View, Image } from '@react-pdf/renderer';
 import { styles } from './styles';
 import { DocumentFooter } from './DocumentFooter';
+import { mapPageNumber, totalCertificatePages } from './pagination';
 import { PageProps } from './types';
 
 function formatCoordinate(value: number): string {
@@ -147,7 +148,7 @@ export const SPPTGPage4: React.FC<PageProps> = ({ data, config }) => {
         </Text>
       )}
 
-      <DocumentFooter page={4} />
+      <DocumentFooter page={mapPageNumber(data)} totalPages={totalCertificatePages(data)} />
     </Page>
   );
 };
