@@ -11,6 +11,7 @@ import {
   type SsoIdentity,
 } from '@/server/auth/sso';
 import { SSO_SOURCE } from '@/lib/sso-config';
+import { SITE_URL } from '@/lib/site';
 import { completeSsoSignIn, requestMeta } from '@/server/auth/sso-login';
 import { createUser, getUserByEmail, getUserBySsoSub } from '@/server/db/queries/user';
 import { recordAudit } from '@/server/audit/record';
@@ -26,6 +27,11 @@ export const dynamic = 'force-dynamic';
  * The path is fixed by that registration, which is why this route sits at the
  * top level instead of under `/api`. Keycloak refuses the whole login on any
  * difference in scheme, port or trailing slash, so do not "tidy" it.
+ *
+ * Every redirect out of here is built on `SITE_URL`, never on `request.url`.
+ * Behind nginx the standalone server sees its own bind address, so `request.url`
+ * is `https://0.0.0.0:3000/…` — a Location header no browser can follow, which
+ * breaks the final hop of a login that otherwise succeeded.
  *
  * Account resolution follows section 4 of the manual, in this order:
  *   1. `sso_sub` matches  → sign in
@@ -45,14 +51,14 @@ export async function GET(request: NextRequest) {
   // Keycloak reports its own refusals here (`access_denied` when someone hits
   // "batal" on the login page, and so on).
   if (params.get('error')) {
-    return failure(request, 'gagal', `SSO menolak permintaan: ${params.get('error')}`);
+    return failure('gagal', `SSO menolak permintaan: ${params.get('error')}`);
   }
 
   // The state check is what makes this handshake non-forgeable: without it a
   // crafted `/callbacksso?code=…` link could sign a visitor into somebody else's
   // account. A missing cookie means the flow expired or never started here.
   if (!flow || !code || flow.state !== params.get('state')) {
-    return failure(request, 'kadaluarsa', 'State SSO tidak cocok atau sudah kedaluwarsa.');
+    return failure('kadaluarsa', 'State SSO tidak cocok atau sudah kedaluwarsa.');
   }
 
   let identity: SsoIdentity;
@@ -60,14 +66,13 @@ export async function GET(request: NextRequest) {
     identity = await fetchIdentity(config, code, flow.verifier);
   } catch (error) {
     console.error('[sso] Penukaran code gagal:', error);
-    return failure(request, 'gagal', 'Penukaran authorization code gagal.');
+    return failure('gagal', 'Penukaran authorization code gagal.');
   }
 
   const refusal = refusalReason(identity, config);
   if (refusal) {
     await recordSsoFailure(identity, refusal, meta);
     return failure(
-      request,
       identity.approvalStatus && identity.approvalStatus !== 'approved'
         ? 'belum-disetujui'
         : 'domain',
@@ -80,10 +85,9 @@ export async function GET(request: NextRequest) {
   if (linked) {
     if (linked.status !== 'Aktif') {
       await recordSsoFailure(identity, 'Akun dinonaktifkan', meta);
-      return failure(request, 'nonaktif', 'Akun dinonaktifkan.');
+      return failure('nonaktif', 'Akun dinonaktifkan.');
     }
     return signedIn(
-      request,
       flow.next,
       await completeSsoSignIn(linked, meta, `${linked.nama} masuk lewat SSO Kutai Timur`)
     );
@@ -96,10 +100,10 @@ export async function GET(request: NextRequest) {
   if (existing) {
     if (existing.status !== 'Aktif') {
       await recordSsoFailure(identity, 'Akun dinonaktifkan', meta);
-      return failure(request, 'nonaktif', 'Akun dinonaktifkan.');
+      return failure('nonaktif', 'Akun dinonaktifkan.');
     }
 
-    const response = NextResponse.redirect(new URL('/sso/hubungkan', request.url));
+    const response = NextResponse.redirect(new URL('/sso/hubungkan', SITE_URL));
     response.headers.append(
       'set-cookie',
       pendingLinkCookie(
@@ -117,11 +121,10 @@ export async function GET(request: NextRequest) {
   //    Pengaturan afterwards.
   const created = await createNewSsoUser(identity);
   if (!created) {
-    return failure(request, 'gagal', 'Pembuatan akun dari data SSO gagal.');
+    return failure('gagal', 'Pembuatan akun dari data SSO gagal.');
   }
 
   return signedIn(
-    request,
     flow.next,
     await completeSsoSignIn(
       created,
@@ -174,9 +177,9 @@ async function recordSsoFailure(
 }
 
 /** Back to the login page with a code the page can turn into a sentence. */
-function failure(request: NextRequest, code: SsoErrorCode, logDetail: string) {
+function failure(code: SsoErrorCode, logDetail: string) {
   console.error(`[sso] ${logDetail}`);
-  const target = new URL('/sign-in', request.url);
+  const target = new URL('/sign-in', SITE_URL);
   target.searchParams.set('sso', code);
 
   const response = NextResponse.redirect(target);
@@ -184,8 +187,10 @@ function failure(request: NextRequest, code: SsoErrorCode, logDetail: string) {
   return response;
 }
 
-function signedIn(request: NextRequest, next: string, setCookie: string) {
-  const response = NextResponse.redirect(new URL(next, request.url));
+function signedIn(next: string, setCookie: string) {
+  // `next` is already forced to a same-origin absolute path by `safeNextPath`
+  // before it is signed into the flow cookie, so it cannot escape this base.
+  const response = NextResponse.redirect(new URL(next, SITE_URL));
   response.headers.append('set-cookie', setCookie);
   response.headers.append('set-cookie', clearedFlowCookie());
   return response;
