@@ -76,6 +76,9 @@ function ctx() {
     fotoProfil: null,
     emailVerifiedAt: new Date(),
     terakhirMasuk: null,
+    // Akun lokal biasa: belum pernah masuk lewat SSO Kutai Timur.
+    ssoSub: null,
+    ssoSource: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   };

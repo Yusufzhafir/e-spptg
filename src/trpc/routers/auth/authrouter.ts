@@ -8,6 +8,7 @@ import {
 } from '@/lib/validation';
 import { passwordSchema } from '@/lib/password-policy';
 import { isValidEmail, EMAIL_ERROR } from '@/lib/email-address';
+import { positiveIntFromEnv } from '@/lib/env-number';
 import * as queries from '@/server/db/queries/user';
 import {
   fakeVerifyPassword,
@@ -77,8 +78,17 @@ const RESET_REQUEST_WINDOW_MS = 60 * 60 * 1000;
 // shared office NAT puts everyone in one bucket. The window is deliberately
 // short — 5 minutes rather than an hour — because a wrongly-throttled desa
 // office should be able to try again over a coffee break, not the next morning.
-const REGISTER_LIMIT = 10;
-const REGISTER_WINDOW_MS = 5 * 60 * 1000;
+//
+// Both numbers are overridable from the environment because there is one
+// legitimate case the default is simply wrong for: a training session. Fifty
+// peserta registering from one venue's WiFi are fifty requests from one IP, and
+// a budget of 10 stops the eleventh person with a message they cannot act on.
+// Raise `REGISTER_RATE_LIMIT` for that day and take it back out afterwards —
+// leaving it high permanently re-opens bulk account creation, which is the
+// whole thing this limit exists to prevent.
+const REGISTER_LIMIT = positiveIntFromEnv(process.env.REGISTER_RATE_LIMIT, 10);
+const REGISTER_WINDOW_MS =
+  positiveIntFromEnv(process.env.REGISTER_RATE_LIMIT_WINDOW_MINUTES, 5) * 60 * 1000;
 
 /** Same text whether the email is unknown or the password is wrong. */
 const INVALID_CREDENTIALS_MESSAGE = 'Email atau kata sandi salah.';
@@ -152,9 +162,12 @@ export const authRouter = router({
   }),
 
   getUser: protectedProcedure.query(async ({ ctx }) => {
-    // Never ship the row verbatim — it carries the scrypt digest.
-    const { passwordHash, ...rest } = ctx.appUser;
-    return { ...rest, hasPassword: passwordHash !== null };
+    // Never ship the row verbatim — it carries the scrypt digest, and `ssoSub`
+    // is the identifier Keycloak knows this person by. Both become booleans.
+    const { passwordHash, ssoSub, ...rest } = ctx.appUser;
+    // `!= null` so a missing column reads as "no", never as "yes" — see the
+    // same reasoning on `toClientUser` in usersRouter.
+    return { ...rest, hasPassword: passwordHash != null, ssoLinked: ssoSub != null };
   }),
 
   // ==========================================================================
@@ -296,6 +309,10 @@ export const authRouter = router({
 
       const user = await queries.getUserByEmail(email);
       if (user && user.status === 'Aktif' && !user.passwordHash) {
+        // An SSO account has no password because it never needed one. Sending it
+        // to "lupa sandi" would work, but it answers the wrong question — the
+        // button they want is right there on the same page.
+        if (user.ssoSub) return { next: 'sso' as const };
         return { next: 'reset' as const };
       }
       return { next: 'password' as const };
@@ -378,6 +395,13 @@ export const authRouter = router({
       }
 
       await resetRateLimit(`login:${email.toLowerCase()}:${ip}`);
+      // `checkEmail` runs once per visit to the sign-in form, and it has its own
+      // bucket. Clearing only the login bucket meant a *successful* sign-in still
+      // spent budget that was never given back: someone signing in and out ten
+      // times inside ten minutes — a training session, a shared demo laptop —
+      // was stopped at the very first step of the eleventh attempt without ever
+      // having typed a wrong password. Success clears both counters.
+      await resetRateLimit(`check-email:${email.toLowerCase()}:${ip}`);
 
       const { token, expiresAt } = await createSession(user.id, ctx.requestMeta);
       ctx.resHeaders?.append('set-cookie', sessionCookie(token, expiresAt));

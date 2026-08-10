@@ -50,6 +50,13 @@
       "when": 1786353665399,
       "tag": "0006_yielding_amazoness",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786372316672,
+      "tag": "0007_lazy_annihilus",
+      "breakpoints": true
     }
   ]
 }

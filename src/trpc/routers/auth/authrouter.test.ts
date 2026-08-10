@@ -94,6 +94,9 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
     // Verified: these fixtures stand in for existing, usable accounts.
     emailVerifiedAt: new Date(),
     terakhirMasuk: null,
+    // Akun lokal biasa: belum pernah masuk lewat SSO Kutai Timur.
+    ssoSub: null,
+    ssoSource: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -243,6 +246,22 @@ describe('auth.login', () => {
     expect(batas, 'batas login berubah dari 10 percobaan').toBe(10);
   });
 
+  it('gives back the checkEmail budget too when the login succeeds', async () => {
+    getUserByEmailMock.mockResolvedValue(userRow());
+    const caller = () => authRouter.createCaller(anonCtx());
+
+    // The sign-in form spends one checkEmail per visit. Ten sign-in cycles in
+    // ten minutes is a training room or a shared demo laptop, not an attack —
+    // without the reset it was stopped at the *first* step of the eleventh.
+    for (let i = 0; i < 9; i += 1) {
+      await caller().checkEmail({ email: 'budi@gmail.com' });
+    }
+    await caller().login({ email: 'budi@gmail.com', password: PASSWORD });
+
+    const batas = await hitungBatas(() => caller().checkEmail({ email: 'budi@gmail.com' }));
+    expect(batas, 'jatah checkEmail tidak dikembalikan setelah login berhasil').toBe(10);
+  });
+
   it('matches the email case-insensitively', async () => {
     getUserByEmailMock.mockResolvedValue(userRow());
     await authRouter
@@ -270,6 +289,27 @@ describe('auth.checkEmail', () => {
     await expect(
       authRouter.createCaller(anonCtx()).checkEmail({ email: 'budi@gmail.com' })
     ).resolves.toEqual({ next: 'reset' });
+  });
+
+  it('points a password-less SSO account at the SSO button, not the reset flow', async () => {
+    getUserByEmailMock.mockResolvedValue(
+      userRow({ passwordHash: null, ssoSub: 'uuid-keycloak', ssoSource: 'sso_kutim' })
+    );
+
+    // Mailing this person a link to invent a password answers a question they
+    // never asked; the door they want is on the same screen.
+    await expect(
+      authRouter.createCaller(anonCtx()).checkEmail({ email: 'budi@kutaitimurkab.go.id' })
+    ).resolves.toEqual({ next: 'sso' });
+  });
+
+  it('still asks for a password when an SSO account also has one', async () => {
+    // Linking SSO must not take the password login away from anybody.
+    getUserByEmailMock.mockResolvedValue(userRow({ ssoSub: 'uuid-keycloak' }));
+
+    await expect(
+      authRouter.createCaller(anonCtx()).checkEmail({ email: 'budi@kutaitimurkab.go.id' })
+    ).resolves.toEqual({ next: 'password' });
   });
 
   it('answers "password" for an unknown email, so it cannot enumerate accounts', async () => {

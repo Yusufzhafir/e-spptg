@@ -488,4 +488,32 @@ S3_PUBLIC_URL=          # Public URL prefix for files
 VAPID_PUBLIC_KEY=
 VAPID_PRIVATE_KEY=
 VAPID_SUBJECT=          # Contact for the push services, e.g. mailto:admin@…
+
+# Self-registration throttle. Optional — unset means 10 attempts per 5 minutes.
+# Keyed on IP alone (a new account has no email to key on yet), so everyone
+# behind one NAT shares one budget. Raise it only for a known event such as a
+# training session where dozens of people register from the same WiFi, and put
+# it back afterwards: a permanently high value re-opens bulk account creation.
+REGISTER_RATE_LIMIT=            # Attempts per window (default 10)
+REGISTER_RATE_LIMIT_WINDOW_MINUTES=  # Window length (default 5)
+
+# SSO Kutai Timur (Keycloak realm `kutimkab`). Optional and OFF by default.
+# Additive by design: with it on, email + password still works for every account
+# including @gmail.com ones — SSO only adds a second door for staff addresses.
+# With it off (or incompletely configured) every SSO route answers 404.
+SSO_ENABLED=false       # true/1/yes/on turns it on; anything else is off
+SSO_ISSUER=             # https://sso.kutaitimurkab.go.id/auth/realms/kutimkab
+SSO_CLIENT_ID=
+SSO_CLIENT_SECRET=      # Empty = public client (PKCE only); set = confidential
+SSO_REDIRECT_URI=       # Must match "Valid Redirect URIs" character for character
+SSO_ALLOWED_EMAIL_DOMAINS=  # Comma-separated; default kutaitimurkab.go.id, empty = any
+SSO_PROMPT=             # 'login' forces the SSO login screen every time
+SSO_STATE_SECRET=       # Only for a public client: signs the handshake cookies
+
+# Postgres connections held by one app container. Optional — default 20, which
+# is what "50 people working at once" needs. node-postgres' own default is 10,
+# and a saturated pool queues requests rather than failing them, so too low
+# looks like the app hanging. Never exceed the server's max_connections minus
+# headroom for psql, backups and the migrator.
+DATABASE_POOL_MAX=
 ```

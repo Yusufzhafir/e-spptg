@@ -26,7 +26,9 @@ describe('stampFeedbackAttribution', () => {
   });
 
   it('overwrites verifikator even when the client sent null', () => {
-    const result = stampFeedbackAttribution({ verifikator: null }, ACTOR) as {
+    // Through `unknown`: the input type says null, the assertion is about what
+    // the function replaced it with, and the two do not overlap.
+    const result = stampFeedbackAttribution({ verifikator: null }, ACTOR) as unknown as {
       verifikator: number;
     };
     expect(result.verifikator).toBe(7);

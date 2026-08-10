@@ -44,6 +44,9 @@ function createCtx(
     fotoProfil: null,
     // Verified: these fixtures stand in for existing, usable accounts.
     emailVerifiedAt: new Date(),
+    // Akun lokal biasa: belum pernah masuk lewat SSO Kutai Timur.
+    ssoSub: null,
+    ssoSource: null,
     terakhirMasuk: null,
     createdAt: new Date(),
     updatedAt: new Date(),

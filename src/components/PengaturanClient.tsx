@@ -5,8 +5,6 @@ import { RequireRole } from '@/components/RequireRole';
 import { trpc } from '@/trpc/client';
 import { User, Village } from '@/types';
 import { Suspense, useCallback, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { CreateProhibitedAreaInput, UpdateProhibitedAreaInput } from '@/types/prohibitedAreas';
 
@@ -22,8 +20,6 @@ export type PengaturanSection = 'pengguna' | 'desa' | 'kawasan' | 'log';
  */
 export default function PengaturanClient({ section }: { section: PengaturanSection }) {
   const utils = trpc.useUtils();
-  const router = useRouter();
-  const queryClient = useQueryClient();
 
   /**
    * The desa reference list is only wanted where a picker or a filter has to
@@ -79,12 +75,16 @@ export default function PengaturanClient({ section }: { section: PengaturanSecti
     onSuccess: (result) => {
       // Changing your own peran revokes every session server-side, so there is
       // nothing left to refetch — every query on this page would come back
-      // UNAUTHORIZED. Drop the cache and go to the login page instead.
+      // UNAUTHORIZED. Send them to the login page instead.
+      //
+      // A full page load, for the same reason `signOut` uses one: a client-side
+      // `router.replace` keeps the `/app` shell mounted, which then notices the
+      // dead session and fires its own redirect on top of this one — two
+      // navigations racing, and the shell stuck on its spinner. The toast stays
+      // readable while the browser fetches the new document.
       if (result.signedOut) {
-        queryClient.clear();
         toast.success('Peran Anda diubah. Silakan masuk kembali.');
-        router.replace('/sign-in');
-        router.refresh();
+        window.location.replace('/sign-in');
         return;
       }
       invalidateUsers();
