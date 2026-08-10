@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateStep1Fields } from './step-field-errors';
+import { STEP1_FIELD_LABELS, step1FieldLabels, validateStep1Fields } from './step-field-errors';
 import type { SubmissionDraft } from '@/types';
 
 const doc = { name: 'berkas.pdf', size: 1024 };
@@ -110,5 +110,35 @@ describe('validateStep1Fields', () => {
     draft.alamatKTP = '   ';
 
     expect(validateStep1Fields(draft).alamatKTP).toBe('Alamat KTP wajib diisi');
+  });
+});
+
+describe('step1FieldLabels', () => {
+  it('names the missing fields in form order, not in error order', () => {
+    const draft = completeStep1();
+    delete (draft as Partial<SubmissionDraft>).pekerjaan;
+    delete (draft as Partial<SubmissionDraft>).tempatLahir;
+
+    expect(step1FieldLabels(validateStep1Fields(draft))).toEqual([
+      'Tempat lahir',
+      'Pekerjaan',
+    ]);
+  });
+
+  it('has a label for every field validateStep1Fields can flag', () => {
+    // An unlabelled field would silently vanish from the "belum lengkap"
+    // message, leaving the user hunting for a red box with no name.
+    const everythingMissing = validateStep1Fields({
+      saksiList: [],
+      coordinatesGeografis: [],
+    } as unknown as SubmissionDraft);
+
+    for (const field of Object.keys(everythingMissing)) {
+      expect(STEP1_FIELD_LABELS[field], `label untuk ${field}`).toBeDefined();
+    }
+  });
+
+  it('returns nothing when Step 1 is complete', () => {
+    expect(step1FieldLabels(validateStep1Fields(completeStep1()))).toEqual([]);
   });
 });

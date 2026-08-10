@@ -50,8 +50,12 @@ import { useRouter } from 'next/navigation';
 import { buildDraftSavePayload } from '@/lib/draft-save-payload';
 import { normalizeCoordinateIds } from '@/lib/coordinate-ids';
 import { overlapJenisBadgeClassName } from '@/lib/overlap-results';
+import { certificateLabel } from '@/lib/nomor-spptg';
+import { blockingSubmissionOverlaps } from '@/lib/spptg-terdata';
+import { buildVillageDefaultsPatch } from '@/lib/village-defaults';
 import { viewerMaxVisibleStep } from '@/lib/viewer-step-access';
 import {
+  step1FieldLabels,
   validateStep1Fields,
   validateStep2Fields,
   validateStep4Fields,
@@ -65,7 +69,8 @@ interface SubmissionFlowProps {
   onComplete: (draft: SubmissionDraft) => void;
 }
 
-const steps = [
+/** Stage 4 is renamed per decision — see `issuanceStepLabel`. */
+const BASE_STEPS = [
   { id: 1, label: 'Berkas', icon: FileText },
   { id: 2, label: 'Lapangan', icon: MapPin },
   { id: 3, label: 'Hasil', icon: ClipboardCheck },
@@ -82,6 +87,18 @@ type ViewerNotice =
   | { kind: 'success' }
   | { kind: 'error'; message: string };
 
+/**
+ * Every save from a later step re-validates Step 1 server-side, so a berkas
+ * whose Step 1 predates a field becoming mandatory cannot be saved at all until
+ * that field is filled. This is the message the router raises; matching on it
+ * lets the wizard turn a wall into a redirect.
+ */
+const STEP1_INCOMPLETE_PREFIX = 'Step 1 belum lengkap';
+
+function isStep1IncompleteError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith(STEP1_INCOMPLETE_PREFIX);
+}
+
 export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlowProps) {
   const router = useRouter();
   const { hasRole, user } = useAuthRole();
@@ -92,6 +109,13 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
   const [draftProgressStep, setDraftProgressStep] = useState(1);
   const [lastSaved, setLastSaved] = useState<string>('');
   const [fieldErrors, setFieldErrors] = useState<StepFieldErrors>({});
+  /**
+   * The step a berkas was really on when it got sent back to Step 1 to fill in
+   * identity data that was optional when it was created. Non-null means "we are
+   * borrowing Step 1"; completing it returns the user straight here rather than
+   * making them walk the whole wizard again.
+   */
+  const [step1BackfillFromStep, setStep1BackfillFromStep] = useState<number | null>(null);
   const isSubmittingFromStep3 = useRef(false);
   /**
    * Step 4's "Terbitkan SPPTG" is in flight. Unlike the mutation's own
@@ -105,6 +129,8 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
 
   // Step 2 overlap-confirmation gate (shown before Simpan Draf / Berikutnya)
   const [isStep2ConfirmOpen, setIsStep2ConfirmOpen] = useState(false);
+  // Step 3/4 hard stop: issuance refused while the land still overlaps.
+  const [isOverlapBlockOpen, setIsOverlapBlockOpen] = useState(false);
   const [step2ConfirmChecked, setStep2ConfirmChecked] = useState(false);
   const [pendingStep2Action, setPendingStep2Action] = useState<'next' | 'save' | null>(null);
 
@@ -144,6 +170,10 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
   // Load draft from backend
   const utils = trpc.useUtils();
   const { data: draftData, isLoading: isLoadingDraft, error: draftError } = trpc.drafts.getById.useQuery({ draftId });
+
+  // Same globally cached query Step 1 uses to populate its desa picker; asking
+  // for it here costs nothing and lets every step see the desa's settings.
+  const { data: villagesData } = trpc.villages.list.useQuery({ limit: 1000, offset: 0 });
 
   // Hydrate local state from the backend only once per draft. Background
   // refetches (e.g. on window focus) must never clobber in-progress edits.
@@ -190,6 +220,46 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
   const viewerMaxStep = viewerMaxVisibleStep(draftProgressStep, draft.status);
   const isReadOnlyStep = isViewer && currentStep > 1;
 
+  /**
+   * What an overlap costs depends on the decision being issued under.
+   *
+   * A *terdaftar* certificate asserts a clean claim, so any overlap at all shuts
+   * Step 4 — issuing would grant land the check flagged as someone else's. A
+   * *terdata* certificate asserts only that the parcel was recorded and states
+   * on its face which kawasan it sits on, so a kawasan overlap is disclosed
+   * rather than blocking. Two claims to the same ground is the one thing no
+   * notice can paper over, so a clash with another pengajuan blocks either way.
+   */
+  const overlapCount = draft.overlapResults?.length ?? 0;
+  const hasOverlap = overlapCount > 0;
+  const isTerdataIssuance = draft.status === 'SPPTG terdata';
+  const conflictingSubmissions = blockingSubmissionOverlaps(draft.overlapResults);
+  const blocksIssuance = isTerdataIssuance ? conflictingSubmissions.length > 0 : hasOverlap;
+
+  // The stage is the same; what comes out of it is not, so it says which.
+  const certificateName = certificateLabel(draft.status);
+  const issuanceStepLabel = `Terbitkan ${certificateName}`;
+
+  /** Both decisions that produce a certificate, and so continue into Step 4. */
+  const canIssueCertificate = draft.status === 'SPPTG terdaftar' || isTerdataIssuance;
+  /** The decisions that end on Hasil: there is nothing to issue. */
+  const submitsFromStep3 = currentStep === 3 && Boolean(draft.status) && !canIssueCertificate;
+
+  /**
+   * On the terdata path the certificate is attached by the generator, so the
+   * issue button only appears once that has happened — pressing it earlier could
+   * only ever fail validation on a document the user cannot upload by hand.
+   */
+  const showIssueButton = !isTerdataIssuance || Boolean(draft.dokumenSPPTG);
+
+  /** Only the overlaps that actually stand in the way get listed in the modal. */
+  const blockingOverlapRows = isTerdataIssuance
+    ? conflictingSubmissions
+    : draft.overlapResults ?? [];
+  const steps = BASE_STEPS.map((step) =>
+    step.id === 4 ? { ...step, label: issuanceStepLabel } : step
+  );
+
   // Sync draft from backend (initial hydration only)
   useEffect(() => {
     if (draftData) {
@@ -213,7 +283,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
           }
         : { nama: '', nik: '', nomorHP: undefined, email: undefined };
 
-      setDraft({
+      const hydratedDraft: SubmissionDraft = {
         id: draftData.id,
         currentStep: allowedStep,
         lastSaved: draftData.lastSaved,
@@ -276,8 +346,19 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         dokumenSPPTG: payload.dokumenSPPTG,
         nomorSPPTG: payload.nomorSPPTG,
         tanggalTerbit: payload.tanggalTerbit,
-      });
-      setCurrentStep(allowedStep);
+      };
+
+      // A berkas created before a Step 1 field became mandatory opens on a later
+      // step it can no longer save from — the server rejects every write until
+      // the gap is filled. Better to land on Step 1 with the gap marked than to
+      // let someone work on Step 4 and lose it to an error toast.
+      const step1Errors = allowedStep > 1 ? validateStep1Fields(hydratedDraft) : {};
+      const needsStep1Backfill = Object.keys(step1Errors).length > 0;
+
+      setDraft(needsStep1Backfill ? { ...hydratedDraft, currentStep: 1 } : hydratedDraft);
+      setCurrentStep(needsStep1Backfill ? 1 : allowedStep);
+      setStep1BackfillFromStep(needsStep1Backfill ? allowedStep : null);
+      setFieldErrors(step1Errors);
       setDraftProgressStep(draftData.currentStep);
       if (draftData.lastSaved) {
         const time = new Date(draftData.lastSaved).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
@@ -285,6 +366,28 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
       }
     }
   }, [draftData, isViewer, user]);
+
+  /**
+   * Adopt whatever the desa's settings offer that this draft never captured —
+   * see `buildVillageDefaultsPatch` for why filling is safe and refreshing is
+   * not. Kept out of the hydration effect because `villages.list` often resolves
+   * after the draft does; this has to run again when it lands.
+   *
+   * Local state only: the patch rides along on the next save (autosave, step
+   * transition, Simpan Draf) rather than firing a write on page load, which
+   * would race the hydration and could be rejected on a draft whose Step 1 is
+   * still incomplete.
+   */
+  useEffect(() => {
+    if (!draft.id || !draft.villageId || isReadOnlyStep) return;
+    if (draft.juruUkur && draft.namaKepalaDesa) return;
+
+    const village = villagesData?.find((v) => v.id === draft.villageId);
+    const patch = buildVillageDefaultsPatch(draft, village);
+    if (Object.keys(patch).length === 0) return;
+
+    setDraft((prev) => ({ ...prev, ...patch }));
+  }, [draft, isReadOnlyStep, villagesData]);
 
   // Handle draft errors
   useEffect(() => {
@@ -312,11 +415,35 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         throw new Error('Draf belum dimuat');
       }
 
-      const result = await saveDraftMutation.mutateAsync({
-        draftId: draftSnapshot.id,
-        currentStep: step,
-        payload: buildDraftSavePayload(draftSnapshot),
-      });
+      let result;
+      try {
+        result = await saveDraftMutation.mutateAsync({
+          draftId: draftSnapshot.id,
+          currentStep: step,
+          payload: buildDraftSavePayload(draftSnapshot),
+        });
+      } catch (error) {
+        // Every save path lands here, so the redirect below covers the autosave
+        // and the per-field patches too, not just the explicit Simpan Draf.
+        if (!isStep1IncompleteError(error)) throw error;
+
+        const step1Errors = validateStep1Fields(draftSnapshot);
+        setFieldErrors(step1Errors);
+
+        const missing = step1FieldLabels(step1Errors);
+        const daftar = missing.length > 0 ? ` (${missing.join(', ')})` : '';
+
+        if (step > 1) {
+          setStep1BackfillFromStep(step);
+          setCurrentStep(1);
+          setDraft((prev) => ({ ...prev, currentStep: 1 }));
+          window.scrollTo(0, 0);
+          throw new Error(
+            `data pemohon pada Tahap 1 belum lengkap${daftar}. Formulir dikembalikan ke Tahap 1 — lengkapi kolom bertanda merah, lalu lanjutkan.`
+          );
+        }
+        throw new Error(`data pemohon belum lengkap${daftar}. Lengkapi kolom bertanda merah.`);
+      }
 
       // Keep the getById cache in sync so reopening the draft (within
       // staleTime) shows the saved values instead of a stale snapshot
@@ -506,6 +633,37 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     }
   };
 
+  /**
+   * Step 1 is complete again after a backfill: put the user back on the step
+   * they were pulled off. Saving at Step 1 has to land first — the server only
+   * accepts a save at a later step once these fields exist.
+   */
+  const resumeAfterStep1Backfill = async () => {
+    const target = step1BackfillFromStep;
+    if (target === null) return;
+
+    try {
+      await saveDraftToBackend(1, { silent: true });
+    } catch {
+      // saveDraftToBackend already said why; stay on Step 1 so they can retry.
+      return;
+    }
+
+    const restored = Math.min(Math.max(target, 1), 4) as 1 | 2 | 3 | 4;
+    setStep1BackfillFromStep(null);
+    setCurrentStep(restored);
+    setDraft((prev) => ({ ...prev, currentStep: restored }));
+
+    if (draft.id) {
+      void saveDraftToBackend(restored, { silent: true }).catch(() => undefined);
+    }
+
+    toast.success(
+      `Data pemohon tersimpan. Kembali ke tahap ${steps[restored - 1].label}.`
+    );
+    window.scrollTo(0, 0);
+  };
+
   const handleNext = async () => {
     // Validate current step before proceeding
     if (currentStep === 1) {
@@ -528,6 +686,12 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
       if (isViewer) {
         // Ask first — this save is the Viewer's final action on the berkas.
         showViewerNotice({ kind: 'confirm' });
+        return;
+      }
+
+      // Borrowed Step 1 for a backfill: jump back, don't restart the wizard.
+      if (step1BackfillFromStep !== null) {
+        await resumeAfterStep1Backfill();
         return;
       }
       // Non-viewer: saving happens once in the transition block below
@@ -560,13 +724,21 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         return;
       }
 
+      // Refuse the move into Step 4 while an overlap that matters still stands.
+      // Checked before the save so the berkas stays parked on Hasil, where the
+      // two ways out (fix the boundary, or change the decision) both live.
+      if (canIssueCertificate && blocksIssuance) {
+        setIsOverlapBlockOpen(true);
+        return;
+      }
+
       // Save decision first
       if (draft.id) {
         await saveDraftToBackend(3, { silent: true });
       }
 
       // If status requires Step 4, navigate there
-      if (draft.status === 'SPPTG terdaftar') {
+      if (canIssueCertificate) {
         const nextStep = 4 as const;
         setCurrentStep(nextStep);
         setDraft((prev) => ({ ...prev, currentStep: nextStep }));
@@ -575,7 +747,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
           void saveDraftToBackend(nextStep, { silent: true }).catch(() => undefined);
         }
 
-        toast.success('Keputusan tersimpan. Lanjut ke tahap Terbitkan SPPTG.');
+        toast.success(`Keputusan tersimpan. Lanjut ke tahap ${issuanceStepLabel}.`);
         window.scrollTo(0, 0);
         return;
       }
@@ -662,7 +834,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
     }
   };
 
-  const canAccessStep4 = draft.status === 'SPPTG terdaftar';
+  const canAccessStep4 = canIssueCertificate && !blocksIssuance;
 
   /**
    * Viewer navigation between the steps they may look at. Purely local: it must
@@ -685,7 +857,12 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         : 'Terbuka setelah petugas menyelesaikan tahap ini';
     }
     if (stepId === 4 && !canAccessStep4) {
-      return 'Hanya tersedia jika status "SPPTG terdaftar"';
+      if (blocksIssuance) {
+        return isTerdataIssuance
+          ? 'Selesaikan tumpang tindih dengan pengajuan lain terlebih dahulu'
+          : 'Selesaikan tumpang tindih lahan terlebih dahulu';
+      }
+      return 'Hanya tersedia jika status "SPPTG terdaftar" atau "SPPTG terdata"';
     }
     return null;
   };
@@ -845,6 +1022,29 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
               </div>
             )}
 
+            {currentStep === 1 && step1BackfillFromStep !== null && (
+              <div className="mb-6 flex gap-2.5 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div className="text-sm text-amber-900">
+                  <p className="font-semibold">Lengkapi data pemohon terlebih dahulu</p>
+                  <p className="mt-1 leading-relaxed">
+                    Berkas ini dibuat sebelum sebagian kolom identitas diwajibkan,
+                    sehingga datanya belum pernah terisi. Kolom yang perlu dilengkapi
+                    ditandai merah di bawah — salin dari scan KTP yang sudah diunggah.
+                  </p>
+                  <p className="mt-1 leading-relaxed">
+                    Data ini dicetak pada lembar SPPTG, jadi tidak dapat dilewati.
+                    Selama belum lengkap, berkas tidak dapat disimpan dari tahap
+                    mana pun. Setelah lengkap, tekan{' '}
+                    <strong>
+                      Kembali ke Tahap {steps[Math.min(Math.max(step1BackfillFromStep, 1), 4) - 1].label}
+                    </strong>
+                    .
+                  </p>
+                </div>
+              </div>
+            )}
+
             {currentStep === 1 && (
               <Step1DocumentUpload
                 draft={draft}
@@ -962,13 +1162,16 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
           )}
 
           {currentStep < 4 ? (
-            currentStep === 3 && draft.status && draft.status !== 'SPPTG terdaftar' ? (
+            submitsFromStep3 ? (
+              /* Ditolak and ditinjau ulang end here — there is no certificate to
+                 issue, so filing the decision is the only way out. Terdaftar and
+                 terdata both go on to Step 4 instead. */
               <Button
                 onClick={handleSubmitFromStep3}
                 className="bg-green-600 hover:bg-green-700"
                 disabled={isLoadingDraft || saveDraftMutation.isPending || submitDraftMutation.isPending}
               >
-                {submitDraftMutation.isPending ? 'Mengirim...' : draft.status === 'SPPTG terdata' ? 'Submit Pengajuan' : 'Submit Keputusan'}
+                {submitDraftMutation.isPending ? 'Mengirim...' : 'Submit Keputusan'}
               </Button>
             ) : (
               <Button
@@ -978,16 +1181,25 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
               >
                 {currentStep === 2 && checkOverlapsMutation.isPending
                   ? 'Mengecek...'
-                  : currentStep === 3 && draft.status === 'SPPTG terdaftar'
-                    ? 'Lanjut ke Penerbitan SPPTG'
-                    : 'Berikutnya'}
+                  : currentStep === 1 && step1BackfillFromStep !== null
+                    ? `Kembali ke Tahap ${steps[Math.min(Math.max(step1BackfillFromStep, 1), 4) - 1].label}`
+                    : currentStep === 3 && canIssueCertificate
+                      ? `Lanjut ke Penerbitan ${certificateName}`
+                      : 'Berikutnya'}
               </Button>
             )
-          ) : (
+          ) : showIssueButton ? (
             <Button
               onClick={async () => {
                 if (!draft.id || isIssuingSPPTG.current) {
                   if (!draft.id) toast.error('Draf belum dimuat');
+                  return;
+                }
+
+                // Closes the back door: a berkas parked on Step 4 before this
+                // rule existed would otherwise still be able to issue.
+                if (blocksIssuance) {
+                  setIsOverlapBlockOpen(true);
                   return;
                 }
 
@@ -1025,9 +1237,9 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
             >
               {isIssuingSPPTGView || submitDraftMutation.isPending || saveDraftMutation.isPending
                 ? 'Menyimpan...'
-                : 'Terbitkan SPPTG'}
+                : issuanceStepLabel}
             </Button>
-          )}
+          ) : null}
         </div>
         )}
       </div>
@@ -1207,6 +1419,106 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
               className="bg-blue-600 hover:bg-blue-700"
             >
               {pendingStep2Action === 'save' ? 'Simpan Draf' : 'Lanjutkan'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Step 3/4: issuance refused while the land still overlaps */}
+      <Dialog open={isOverlapBlockOpen} onOpenChange={setIsOverlapBlockOpen}>
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+              Tidak Dapat Melanjutkan ke Penerbitan
+            </DialogTitle>
+            <DialogDescription>
+              Tumpang tindih lahan harus diselesaikan sebelum SPPTG diterbitkan.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+              <p className="text-sm leading-relaxed text-red-900">
+                {isTerdataIssuance ? (
+                  <>
+                    Lahan pengajuan ini tumpang tindih dengan{' '}
+                    <strong>{conflictingSubmissions.length} pengajuan SPPTG lain</strong>{' '}
+                    yang sudah terdata/terdaftar. Tumpang tindih dengan kawasan masih
+                    dapat diterbitkan karena tercatat pada dokumen, tetapi dua klaim atas
+                    tanah yang sama tidak bisa dicatatkan begitu saja.
+                  </>
+                ) : (
+                  <>
+                    Lahan pengajuan ini masih tumpang tindih dengan{' '}
+                    <strong>{overlapCount} kawasan</strong>. Menerbitkan SPPTG di atas
+                    lahan yang masih bersengketa berarti mengesahkan klaim yang sudah
+                    ditandai bermasalah oleh hasil cek tumpang tindih.
+                  </>
+                )}
+              </p>
+            </div>
+
+            {blockingOverlapRows.length > 0 && (
+              <div className="max-h-52 overflow-y-auto rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-50">
+                      <TableHead>Nama Kawasan</TableHead>
+                      <TableHead>Jenis</TableHead>
+                      <TableHead>Luas Overlap</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {blockingOverlapRows.map((overlap, index) => (
+                      <TableRow key={index}>
+                        <TableCell>{overlap.namaKawasan}</TableCell>
+                        <TableCell>
+                          <Badge className={overlapJenisBadgeClassName(overlap)}>
+                            {overlap.jenisKawasan}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {Math.round(overlap.luasOverlap).toLocaleString('id-ID')} m²
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <p className="text-sm text-gray-700">Dua cara menyelesaikannya:</p>
+              <ul className="mt-2 space-y-1 text-sm text-gray-600">
+                <li>
+                  1. Perbaiki batas lahan pada tahap <strong>Lapangan</strong> sehingga
+                  tidak lagi memotong {isTerdataIssuance ? 'pengajuan' : 'kawasan'} di
+                  atas, lalu jalankan cek ulang.
+                </li>
+                <li>
+                  2. Ubah keputusan menjadi <strong>SPPTG ditinjau ulang</strong> atau{' '}
+                  <strong>SPPTG ditolak</strong> dan kembalikan berkasnya ke pemohon.
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsOverlapBlockOpen(false)}>
+              Tutup
+            </Button>
+            <Button
+              onClick={() => {
+                setIsOverlapBlockOpen(false);
+                setFieldErrors({});
+                setCurrentStep(2);
+                setDraft((prev) => ({ ...prev, currentStep: 2 }));
+                window.scrollTo(0, 0);
+              }}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              Perbaiki Batas Lahan
             </Button>
           </DialogFooter>
         </DialogContent>

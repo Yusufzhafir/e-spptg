@@ -78,7 +78,7 @@
 **8.** Tumpang tindih adalah kondisi ketika sebagian atau seluruh area sebidang tanah berimpit dengan bidang tanah lain atau dengan kawasan yang dilindungi/dilarang. Bila tidak terdeteksi sejak awal: terbit dokumen ganda di atas objek yang sama, sengketa antarwarga, dokumen berpotensi dibatalkan, kerugian hukum bagi pemohon, dan menurunnya kredibilitas pemerintah desa.
 *Kata kunci: area berimpit · dokumen ganda/sengketa · dokumen batal · risiko hukum & reputasi.*
 
-**9.** Minimal empat dari: **Hutan Lindung** (kawasan konservasi negara); **Tanah Pemerintah** (aset negara/pemda); **Cagar Alam**; **Sempadan Sungai** (jalur perlindungan tepi sungai); **Sempadan Pantai**; **Kawasan Rawan Bencana**; **Kawasan Industri**; **Fasum/Fasos** (fasilitas umum/sosial); **Aset TNI/POLRI**.
+**9.** Minimal empat dari: **Kawasan Hutan** (kawasan kehutanan negara); **Hak Guna Usaha**; **Hak Guna Bangunan**; **Hak Pakai**; **Hak Pengelolaan**; **Hak Pengelolaan Transmigrasi**; **Hak Milik**; **Areal SPPT yang sudah terbit**; **Kawasan Industri**; **Tanah Pemerintah** (aset negara/pemda); **Tanah TNI/Polri**; **Fasum/Fasos** (fasilitas umum/sosial); **Sempadan Sungai** (jalur perlindungan tepi sungai); **Sempadan Pantai**.
 *Kata kunci: 4 jenis benar + penjelasan singkat tiap jenis.*
 
 **10.** Agar tiap pengguna hanya dapat melihat dan mengubah data sesuai kewenangan dan wilayah kerjanya (prinsip *least privilege*). Bila semua orang berakses penuh: data desa lain bisa diubah tanpa hak, status pengajuan bisa diloloskan oleh yang tidak berwenang, data pribadi pemohon bocor, dan pertanggungjawaban kesalahan menjadi kabur.

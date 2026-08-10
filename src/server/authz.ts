@@ -102,6 +102,12 @@ export function getSubmissionScopeForUser(user: AppUser): {
  * other berkas. The desa staff who actually process the berkas (Admin,
  * Verifikator) and the Viewer who owns it keep full access.
  *
+ * `SPPG` is the category for **both** certificates a berkas can produce, the
+ * terdaftar one and the terdata one, so oversight sees whichever was issued.
+ * They are told apart by their nomor prefix and the document itself, not by a
+ * separate category — a second category would only mean a second place to
+ * remember to grant, and forgetting it hides a real certificate from oversight.
+ *
  * Drafts are deliberately not covered: the wizard has to show its own uploads,
  * and Kecamatan cannot reach a draft at all (see `canAccessDraft`).
  */

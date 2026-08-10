@@ -298,8 +298,8 @@ describe('CRUD Desa', () => {
 // ---------------------------------------------------------------------------
 describe('CRUD Kawasan Non-SPPTG', () => {
   const areaInput = {
-    namaKawasan: 'Hutan Lindung Cikole',
-    jenisKawasan: 'Hutan Lindung' as const,
+    namaKawasan: 'Kawasan Hutan Cikole',
+    jenisKawasan: 'Kawasan Hutan' as const,
     sumberData: 'KLHK',
     tanggalEfektif: new Date('2024-01-01'),
     warna: '#ef4444',

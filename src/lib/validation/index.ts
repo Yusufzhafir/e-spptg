@@ -5,6 +5,7 @@ import {
   PHONE_NUMBER_ERROR,
 } from '@/lib/phone-number';
 import { EMAIL_ERROR, isValidEmail } from '@/lib/email-address';
+import { PROHIBITED_AREA_TYPES } from '@/lib/prohibited-area-types';
 export * from './submission-draft';
 
 
@@ -89,18 +90,7 @@ export const updateVillageSchema = createVillageSchema.partial();
 
 export const createProhibitedAreaSchema = z.object({
   namaKawasan: z.string().min(2, 'Nama kawasan minimal 2 karakter'),
-  jenisKawasan: z.enum([
-    'Hutan Lindung',
-    'Tanah Pemerintah',
-    'Cagar Alam',
-    'Kawasan Industri',
-    'Fasum/Fasos',
-    'Sempadan Sungai',
-    'Sempadan Pantai',
-    'Kawasan Rawan Bencana',
-    'Aset TNI/POLRI',
-    'Lainnya',
-  ]),
+  jenisKawasan: z.enum(PROHIBITED_AREA_TYPES),
   sumberData: z.string().min(2, 'Sumber data minimal 2 karakter'),
   dasarHukum: z.string().optional(),
   tanggalEfektif: z.coerce.date(),

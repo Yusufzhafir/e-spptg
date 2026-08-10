@@ -1116,7 +1116,9 @@ export function Step3Results({
             <AlertDialogTitle>Peringatan Tumpang Tindih</AlertDialogTitle>
             <AlertDialogDescription>
               Lahan pengajuan ini tumpang tindih dengan {draft.overlapResults.length} kawasan
-              non-SPPTG. Tetap lanjutkan dengan status &quot;SPPTG terdaftar&quot;?
+              non-SPPTG. Keputusan &quot;SPPTG terdaftar&quot; tetap dapat disimpan, tetapi
+              penerbitan SPPTG akan ditolak sampai tumpang tindihnya diselesaikan.
+              Tetap simpan keputusan ini?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -64,7 +64,7 @@ const features = [
     accent: 'bg-red-50 text-red-600 group-hover:bg-red-600',
     title: "Deteksi Kawasan Terlarang",
     description:
-      "Polygon pengajuan diuji otomatis terhadap Hutan Lindung, Sempadan Sungai, Tanah Pemerintah, dan kawasan lain — luas tumpang tindih dihitung dalam m².",
+      "Polygon pengajuan diuji otomatis terhadap Kawasan Hutan, Sempadan Sungai, Tanah Pemerintah, dan kawasan lain — luas tumpang tindih dihitung dalam m².",
   },
   {
     icon: Layers,
@@ -390,7 +390,7 @@ export function LandingPage() {
                 Batas bidang digambar langsung di peta, diimpor dari berkas
                 KML/KMZ hasil pengukuran, atau diketik sebagai koordinat
                 geografis maupun UTM. Sistem lalu memeriksa tumpang tindih
-                dengan Hutan Lindung, Sempadan Sungai, Tanah Pemerintah, dan
+                dengan Kawasan Hutan, Sempadan Sungai, Tanah Pemerintah, dan
                 kawasan Non-SPPTG lain, serta menghitung luasnya dalam m².
               </dd>
             </Reveal>

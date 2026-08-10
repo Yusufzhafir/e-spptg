@@ -41,6 +41,10 @@ export const COLORS = {
   black: '#000000',
   text: '#000000',
   border: '#000000',
+  // The terdata disclosure notice. Kept dark enough to survive the photocopier
+  // a desa office will inevitably put this through.
+  noticeBackground: '#FDE68A',
+  noticeBorder: '#B45309',
 };
 
 /**
@@ -309,6 +313,83 @@ export const styles = StyleSheet.create({
     fontSize: FONT_SIZES.text,
     marginTop: 38,
     paddingLeft: 16,
+  },
+
+  // ---- Terdata disclosure notice ----
+  noticeBox: {
+    backgroundColor: COLORS.noticeBackground,
+    borderWidth: 1,
+    borderColor: COLORS.noticeBorder,
+    padding: 12,
+    marginTop: 16,
+  },
+
+  noticeText: {
+    fontFamily: FONTS.serif,
+    fontSize: FONT_SIZES.small,
+    lineHeight: 1.4,
+    textAlign: 'justify',
+  },
+
+  // Two columns of tick boxes, so 13 rows do not run off the page
+  noticeChecklist: {
+    flexDirection: 'row',
+    marginTop: 8,
+  },
+
+  noticeChecklistColumn: {
+    flex: 1,
+    paddingRight: 8,
+  },
+
+  noticeChecklistRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 3,
+  },
+
+  noticeCheckbox: {
+    width: 10,
+    height: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: '#FFFFFF',
+    marginRight: 5,
+    marginTop: 1,
+    padding: 1.5,
+  },
+
+  /**
+   * The tick is a filled square, not a glyph.
+   *
+   * A `Text` mark inside this box rendered as *nothing*: react-pdf drops a text
+   * line whose height exceeds the fixed box's content area, and a 10pt box has
+   * only ~8pt inside its border — less than the line box of even an 8pt glyph.
+   * It fails silently, so the certificate printed an all-blank checklist while
+   * the data behind it was correct. (Larger fixed boxes elsewhere, like
+   * `meteraiBox`, hold text fine — there is room for the line.)
+   *
+   * A nested `View` has no line box and always draws, whatever the size.
+   */
+  noticeCheckboxFill: {
+    flex: 1,
+    backgroundColor: COLORS.black,
+  },
+
+  noticeChecklistLabel: {
+    fontFamily: FONTS.serif,
+    fontSize: FONT_SIZES.small,
+    flex: 1,
+  },
+
+  noticeSignature: {
+    marginTop: 12,
+    alignItems: 'flex-end',
+  },
+
+  noticeSignatureBlock: {
+    width: 200,
+    alignItems: 'center',
   },
 
   meteraiBox: {

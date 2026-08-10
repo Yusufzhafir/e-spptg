@@ -1,6 +1,7 @@
 import type { SPPTGPDFData } from '@/components/pdf/types';
 import { generateStaticMapUrl } from '@/lib/map-static-api';
 import { numberToIndonesianWords } from '@/lib/number-to-words';
+import { checkedTerdataStatuses } from '@/lib/spptg-terdata';
 import type { SubmissionDraft } from '@/types';
 
 type VillageLike = {
@@ -129,5 +130,22 @@ export function buildSPPTGPDFData(
     namaKepalaDesa: resolvedNamaKepalaDesa || undefined,
     coordinatesGeografis: draft.coordinatesGeografis || [],
     mapImageUrl,
+    ...buildVariantData(draft),
+  };
+}
+
+/**
+ * The fields that only a terdata certificate uses. Derived from the draft's own
+ * Step 3 decision rather than passed in, so the document can never disagree with
+ * the status the berkas was issued under.
+ */
+function buildVariantData(draft: SubmissionDraft): Partial<SPPTGPDFData> {
+  if (draft.status !== 'SPPTG terdata') return { variant: 'terdaftar' };
+
+  return {
+    variant: 'terdata',
+    overlapStatuses: checkedTerdataStatuses(draft.overlapResults),
+    namaJuruUkur: draft.juruUkur?.nama,
+    jabatanJuruUkur: draft.juruUkur?.jabatan,
   };
 }

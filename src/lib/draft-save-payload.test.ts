@@ -21,7 +21,7 @@ function createDraftFixture(): SubmissionDraft {
       {
         kawasanId: 11,
         namaKawasan: 'Kawasan Uji',
-        jenisKawasan: 'Hutan Lindung',
+        jenisKawasan: 'Kawasan Hutan',
         sumber: 'ProhibitedArea',
         luasOverlap: 42,
       },

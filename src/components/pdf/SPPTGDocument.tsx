@@ -21,6 +21,8 @@ import { SPPTGPage1 } from './SPPTGPage1';
 import { SPPTGPage2 } from './SPPTGPage2';
 import { SPPTGPage3 } from './SPPTGPage3';
 import { SPPTGPage4 } from './SPPTGPage4';
+import { SPPTGPageTerdataNotice } from './TerdataNotice';
+import { isTerdataCertificate } from './pagination';
 import { SPPTGPDFData, PDFGenerationConfig } from './types';
 import { registerFonts } from './fonts';
 
@@ -53,6 +55,11 @@ export const SPPTGDocument: React.FC<SPPTGDocumentProps> = ({
       <SPPTGPage1 data={data} config={config} />
       <SPPTGPage2 data={data} config={config} />
       <SPPTGPage3 data={data} config={config} />
+      {/* Terdata only: the disclosure notice sits between the signatures and
+          the map, which is why the map page number is variant-dependent. */}
+      {isTerdataCertificate(data) && (
+        <SPPTGPageTerdataNotice data={data} config={config} />
+      )}
       <SPPTGPage4 data={data} config={config} />
     </Document>
   );

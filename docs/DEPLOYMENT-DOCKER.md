@@ -287,15 +287,21 @@ keputusan bagian 0.
 
 Autentikasi (login, daftar, aktif/nonaktif akun) sepenuhnya berjalan di aplikasi
 dan database — tidak ada layanan identitas pihak ketiga. Satu-satunya panggilan
-keluar yang tersisa untuk autentikasi adalah **Gmail SMTP**, dipakai hanya untuk
-email "lupa kata sandi" dan undangan akun baru:
+keluar yang tersisa untuk autentikasi adalah **SMTP**, dipakai hanya untuk email
+verifikasi, "lupa kata sandi", dan undangan akun baru:
 
-- `GMAIL_APP_PASSWORD` wajib **App Password 16 karakter** dari akun Google yang
-  sudah mengaktifkan 2FA (kata sandi akun biasa ditolak SMTP Gmail).
+- Produksi memakai mail server Pemkab: `SMTP_HOST=mail.kutaitimurkab.go.id`,
+  `SMTP_PORT=465` (TLS langsung; 587/STARTTLS juga aktif), `SMTP_USER` +
+  `SMTP_PASSWORD` adalah kredensial mailbox biasa — bukan App Password.
+- `SMTP_SECURE` opsional: default `true` hanya untuk port 465. Isi manual kalau
+  server memakai TLS langsung di port lain.
 - `NEXT_PUBLIC_APP_URL` menentukan tautan absolut di dalam email. Kalau salah,
   email terkirim tapi tautannya mengarah ke host yang keliru.
-- Server butuh **outbound TCP 465/587** ke `smtp.gmail.com`. Bila diblokir,
-  login tetap jalan; hanya reset kata sandi yang gagal.
+- Server butuh **outbound TCP 465/587** ke `SMTP_HOST`. Bila diblokir, login
+  tetap jalan; hanya reset kata sandi dan verifikasi yang gagal.
+- Deployment lama yang masih mengisi `GMAIL_USER`/`GMAIL_APP_PASSWORD` tetap
+  berfungsi selama `SMTP_*` kosong (App Password 16 karakter tetap wajib di
+  jalur itu), tapi sebaiknya dimigrasikan ke `SMTP_*`.
 
 Di Google Cloud Console: batasi API key Maps ke referrer domain di atas. Server
 tetap butuh **outbound HTTPS** ke Google Maps.
@@ -442,6 +448,6 @@ Dockerisasi ini menyentuh dua file aplikasi (keduanya minimal dan backward compa
 browser saat build, jadi compose mengirimkannya sebagai build arg dari `.env`;
 mengubahnya di runtime saja tidak berpengaruh.
 
-Variabel Gmail (`GMAIL_USER`, `GMAIL_APP_PASSWORD`) **bukan** `NEXT_PUBLIC_*` —
+Variabel SMTP (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, …) **bukan** `NEXT_PUBLIC_*` —
 hanya dibaca di server saat runtime, jadi mengubahnya cukup `docker compose up -d`
 tanpa rebuild.

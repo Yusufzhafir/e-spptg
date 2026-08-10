@@ -2,36 +2,54 @@ import 'server-only';
 import nodemailer, { type Transporter } from 'nodemailer';
 
 /**
- * Outbound mail goes through Gmail SMTP — the one third-party service the app
- * still talks to, because "reset sandi lewat Gmail" is a product requirement.
+ * Outbound mail goes through SMTP — the one third-party service the app still
+ * talks to, because "reset sandi lewat email" is a product requirement.
  *
- * `GMAIL_APP_PASSWORD` must be a Google App Password (16 characters, 2FA on the
- * account); Gmail rejects the normal account password over SMTP.
+ * Production uses the Pemkab Kutai Timur mail server (`SMTP_HOST` etc.). The
+ * legacy `GMAIL_USER`/`GMAIL_APP_PASSWORD` pair is still honoured as a fallback
+ * so a deployment that has not been migrated keeps sending; there Gmail rejects
+ * the normal account password and needs a 16-character App Password.
  */
-const GMAIL_USER = process.env.GMAIL_USER;
-const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
+const SMTP_HOST = process.env.SMTP_HOST;
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_USER = process.env.SMTP_USER || process.env.GMAIL_USER;
+const SMTP_PASSWORD = process.env.SMTP_PASSWORD || process.env.GMAIL_APP_PASSWORD;
 const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || 'SIAPTAH';
+const MAIL_FROM_ADDRESS = process.env.MAIL_FROM_ADDRESS || SMTP_USER;
+
+/**
+ * Implicit TLS on 465, STARTTLS on everything else — the nodemailer convention.
+ * `SMTP_SECURE` overrides it for servers that wrap TLS on a non-standard port.
+ */
+const SMTP_SECURE = process.env.SMTP_SECURE
+  ? process.env.SMTP_SECURE === 'true'
+  : SMTP_PORT === 465;
 
 let transporter: Transporter | null = null;
 
 /** Whether mail is configured at all; lets callers degrade instead of throwing. */
 export function isMailerConfigured(): boolean {
-  return Boolean(GMAIL_USER && GMAIL_APP_PASSWORD);
+  return Boolean(SMTP_USER && SMTP_PASSWORD);
 }
 
 function getTransporter(): Transporter {
-  if (!GMAIL_USER || !GMAIL_APP_PASSWORD) {
-    throw new Error(
-      'GMAIL_USER dan GMAIL_APP_PASSWORD belum diatur — email tidak dapat dikirim.'
-    );
+  if (!SMTP_USER || !SMTP_PASSWORD) {
+    throw new Error('SMTP_USER dan SMTP_PASSWORD belum diatur — email tidak dapat dikirim.');
   }
 
   // Created lazily and cached: nodemailer pools connections, and building a
   // transport per email would open a new TLS session every time.
-  transporter ??= nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD },
-  });
+  transporter ??= nodemailer.createTransport(
+    SMTP_HOST
+      ? {
+          host: SMTP_HOST,
+          port: SMTP_PORT,
+          secure: SMTP_SECURE,
+          auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
+        }
+      : // No host configured: this is a pre-migration deployment still on Gmail.
+        { service: 'gmail', auth: { user: SMTP_USER, pass: SMTP_PASSWORD } }
+  );
 
   return transporter;
 }
@@ -54,7 +72,7 @@ async function sendMail(options: {
   text: string;
 }): Promise<void> {
   await getTransporter().sendMail({
-    from: `"${MAIL_FROM_NAME}" <${GMAIL_USER}>`,
+    from: `"${MAIL_FROM_NAME}" <${MAIL_FROM_ADDRESS}>`,
     to: options.to,
     subject: options.subject,
     text: options.text,

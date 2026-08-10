@@ -43,6 +43,13 @@
       "when": 1786266217907,
       "tag": "0005_good_master_chief",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786353665399,
+      "tag": "0006_yielding_amazoness",
+      "breakpoints": true
     }
   ]
 }

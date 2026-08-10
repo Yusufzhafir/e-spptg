@@ -19,6 +19,7 @@ import { useServerPagination, useTableUrlState } from './table-url-state';
 import { useAuthRole } from './AuthRoleProvider';
 import { formatDate } from '@/lib/format-date';
 import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
+import { PROHIBITED_AREA_TYPES } from '@/lib/prohibited-area-types';
 import { trpc } from '@/trpc/client';
 import { StatusBadge } from './StatusBadge';
 import type { StatusSPPTG } from '../types';
@@ -304,18 +305,7 @@ export function ProhibitedAreasTab({
     toast.success('File GeoJSON berhasil diunduh.');
   };
 
-  const jenisKawasanOptions: ProhibitedAreaType[] = [
-    'Hutan Lindung',
-    'Tanah Pemerintah',
-    'Cagar Alam',
-    'Kawasan Industri',
-    'Fasum/Fasos',
-    'Sempadan Sungai',
-    'Sempadan Pantai',
-    'Kawasan Rawan Bencana',
-    'Aset TNI/POLRI',
-    'Lainnya',
-  ];
+  const jenisKawasanOptions: readonly ProhibitedAreaType[] = PROHIBITED_AREA_TYPES;
 
   return (
     <div className="space-y-6">

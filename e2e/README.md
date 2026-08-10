@@ -36,7 +36,7 @@ Set `E2E_TAG` to run two suites against one database without them colliding.
 
 ## Deliberately switched off during a run
 
-The dev server is started with `GMAIL_*` and `VAPID_*` blank. Both are supported
+The dev server is started with `SMTP_*`/`GMAIL_*` and `VAPID_*` blank. Both are supported
 "not configured" states in this codebase, and it keeps a test run from mailing
 anyone or pushing notifications to real subscribed browsers.
 

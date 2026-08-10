@@ -149,10 +149,24 @@ describe('status on submit — deriveSubmissionStatus', () => {
     dokumenSPPTG: { documentId: 7 },
   };
 
-  it('a completed Step 4 keeps the submission on terdaftar', () => {
+  it('a completed Step 4 keeps the Step 3 decision, whichever it was', () => {
     expect(deriveSubmissionStatus({ status: 'SPPTG terdaftar', ...issued })).toBe('SPPTG terdaftar');
-    // issuance must never invent a different bucket
-    expect(deriveSubmissionStatus({ status: 'SPPTG terdata', ...issued })).toBe('SPPTG terdaftar');
+    // Terdata issues its own, visibly different certificate. Promoting the
+    // berkas to terdaftar on issuance would contradict the paper it produced.
+    expect(deriveSubmissionStatus({ status: 'SPPTG terdata', ...issued })).toBe('SPPTG terdata');
+  });
+
+  it('treats a completed Step 4 as issuance only when no decision was recorded', () => {
+    expect(deriveSubmissionStatus({ ...issued })).toBe('SPPTG terdaftar');
+    expect(deriveSubmissionStatus({ status: 'Status Ngawur', ...issued })).toBe('SPPTG terdaftar');
+  });
+
+  it('does not count a bare prefix as a certificate number', () => {
+    // Step 4 seeds the prefix into the field, so "filled" is not the same as
+    // "numbered" — an untouched form must not read as issued.
+    expect(deriveSubmissionStatus({ ...issued, nomorSPPTG: 'TERDATA/SPPTG/' })).toBe(
+      'SPPTG terdata'
+    );
   });
 
   it.each([

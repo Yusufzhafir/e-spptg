@@ -40,7 +40,7 @@ pnpm push:stag / push:prod           # Push schema directly (can fail on PostGIS
    - **Step 1 — Berkas**: pick desa, applicant data (nama, NIK, alamat), upload mandatory KTP + KK plus supporting documents.
    - **Step 2 — Lapangan**: land boundary coordinates (geografis/UTM, map polygon drawing, or KML/KMZ import), area, boundary witnesses (saksi), survey team (juru ukur).
    - **Step 3 — Hasil**: PostGIS overlap check against `prohibited_areas`, then the verifier picks a status decision (see lifecycle below).
-   - **Step 4 — Terbitkan SPPTG**: auto-generate certificate number, render the 4-page SPPTG PDF (react-pdf, `src/components/pdf/`), upload it to S3 as a `SPPG`-category document.
+   - **Step 4 — Terbitkan SPPTG**: enter the certificate number, render the 4-page SPPTG PDF (react-pdf, `src/components/pdf/`), upload it to S3 as a `SPPG`-category document. Reachable from **two** decisions, and which one changes the whole stage — see "Two certificates" below.
 3. **Final submit**: `submissions.submitDraft` converts the draft into a permanent `submissions` row — `owner_user_id` (draft creator), `verifikator` (processor), `geom` (PostGIS polygon, SRID 4326), and the Step 3 status (default `'SPPTG terdata'`).
 4. **Post-submit**: dashboard (per-status KPIs, filters, map). Status can still change via `submissions.updateStatus` (verifikator+); every change is recorded in `status_history` / `riwayat` as an audit trail.
 
@@ -48,7 +48,7 @@ pnpm push:stag / push:prod           # Push schema directly (can fail on PostGIS
 
 | Status | Meaning | Rules in code |
 |---|---|---|
-| `SPPTG terdata` | Recorded, **no decision yet** — the initial/default status | Applied by `submitDraft` when the draft has no valid status |
+| `SPPTG terdata` | Recorded, **no approval** — the initial/default status; may still be issued its own certificate | Applied by `submitDraft` when the draft has no valid status. Reaches Step 4 and issues the *terdata* certificate |
 | `SPPTG terdaftar` | **Approved** — passed verification, officially registered; prerequisite for Step 4 issuance | Choosing it when PostGIS found overlaps triggers a confirmation warning (`Step3Results.tsx`) |
 | `SPPTG ditinjau ulang` | **Needs revision** — returned to applicant | Feedback/reason **required**; may attach `Lampiran Feedback` documents |
 | `SPPTG ditolak` | **Rejected** permanently | Feedback/reason **required** |
@@ -83,11 +83,23 @@ Two submission-flow gotchas that have caused real data loss:
 
 **Notifications** are two layers over one event. The durable layer is the `notifications` table written by `createNotification` — read back scoped-by-role in `listNotificationsScoped` and polled every 30s by `NotificationBell`. On top of it, **Web Push** (`src/server/push/`) delivers the same event to the browser and the installed PWA: `push_subscriptions` holds one row per browser endpoint, `webpush.ts` signs with VAPID (`VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`), and `public/sw.js` renders the notification. Three rules: push follows the `withRedis()` pattern — **unset VAPID keys are a supported configuration**, the whole thing no-ops and the bell still works; `pushSubmissionEvent` is called **after the transaction commits**, never inside it, so a rollback cannot notify people about a pengajuan that does not exist; and `listNotificationRecipientUserIds` must keep mirroring `listNotificationsScoped`, or someone gets pushed a pengajuan they cannot open. Events wired up today: `submissions.submitDraft` (created/updated) and `submissions.updateStatus` (status).
 
-**Spatial analysis**: `src/server/postgis.ts` runs raw PostGIS queries (`ST_Intersects`/`ST_Intersection`/`ST_Area`) to check submission polygons against `prohibited_areas.geom` (protected zones: Hutan Lindung, Tanah Pemerintah, Sempadan Sungai, …); results are cached in `overlap_results`. Coordinate/GeoJSON/UTM helpers live in `src/lib/` (`map-utils.ts`, `utm-conversion.ts`), with KMZ/KML **import** in `kmz-parser.ts` and the matching **export** (detail page → "Unduh Peta Lahan") in `kml-export.ts`.
+**Spatial analysis**: `src/server/postgis.ts` runs raw PostGIS queries (`ST_Intersects`/`ST_Intersection`/`ST_Area`) to check submission polygons against `prohibited_areas.geom` (protected zones: Kawasan Hutan, Tanah Pemerintah, Sempadan Sungai, … — the 14 values live in `src/lib/prohibited-area-types.ts`, the single source for the pgEnum, the TS union, the Zod schema and every dropdown); results are cached in `overlap_results`. Coordinate/GeoJSON/UTM helpers live in `src/lib/` (`map-utils.ts`, `utm-conversion.ts`), with KMZ/KML **import** in `kmz-parser.ts` and the matching **export** (detail page → "Unduh Peta Lahan") in `kml-export.ts`.
 
 **File storage**: uploads go client → base64 → `documents.uploadFile` → S3 (`src/server/s3/s3.ts`), keyed `submissions/{category}/{timestamp}-{randomId}-{filename}`. Official form templates live at `template-documents/{filename}`, fetched via `documents.getTemplateUrl` (signed URL) or `documents.fetchTemplatePDF` (base64).
 
 **PDF generation**: SPPTG certificates are rendered with react-pdf components in `src/components/pdf/`, with data mapping in `src/lib/spptg-pdf-data.ts` and `src/lib/pdf-generator.ts`.
+
+**Two certificates** — Step 4 issues a different document depending on the Step 3 decision, and the difference is the point, not a cosmetic variant:
+
+| | `SPPTG terdaftar` | `SPPTG terdata` |
+|---|---|---|
+| Nomor prefix | `TERDAFTAR/SPPTG/` | `TERDATA/SPPTG/` (`src/lib/nomor-spptg.ts`; the prefix is a fixed label beside the input, never part of its value, and `hasNomorSPPTGBody` is what "filled in" means) |
+| Kepala Desa endorsement | printed | **dropped** — no desa signs off on contested land |
+| Disclosure notice | none | yellow `TerdataNotice` block: a 13-row checklist of jenis kawasan, ticked from `overlapResults`, signed by the juru ukur |
+| Softcopy | uploaded by hand | **generated and attached automatically**; the issue button only appears once it exists |
+| Overlap rule | *any* overlap shuts Step 4 | only a clash with **another pengajuan** blocks; kawasan overlaps are disclosed on the notice instead |
+
+The split lives in `src/lib/spptg-terdata.ts` (`blockingSubmissionOverlaps`, `checkedTerdataStatuses`) and is selected by `data.variant` inside the PDF. Two things that look tempting and are wrong: `deriveSubmissionStatus` must **not** promote an issued terdata berkas to `terdaftar` (the status would contradict the paper it just produced), and the terdata certificate stays in the `SPPG` document category so oversight roles keep seeing it — a separate category would be a second grant to forget.
 
 ## Gotchas
 

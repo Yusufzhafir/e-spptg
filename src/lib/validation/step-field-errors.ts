@@ -1,8 +1,40 @@
 import { SubmissionDraft } from '@/types';
 import { isValidPhoneNumber, PHONE_NUMBER_ERROR } from '@/lib/phone-number';
 import { EMAIL_ERROR, isValidEmail } from '@/lib/email-address';
+import { hasNomorSPPTGBody, nomorSPPTGPrefix } from '@/lib/nomor-spptg';
 
 export type StepFieldErrors = Record<string, string>;
+
+/**
+ * Human labels for the Step 1 fields, used when a message has to name what is
+ * missing rather than mark it in place — the server rejects a save with raw Zod
+ * text ("tempatLahir: expected string, received undefined"), which is the field
+ * key, not something a petugas desa can act on.
+ */
+export const STEP1_FIELD_LABELS: Record<string, string> = {
+  namaPemohon: 'Nama pemohon',
+  nik: 'NIK',
+  villageId: 'Desa',
+  tempatLahir: 'Tempat lahir',
+  tanggalLahir: 'Tanggal lahir',
+  pekerjaan: 'Pekerjaan',
+  alamatKTP: 'Alamat KTP',
+  nomorHP: 'Nomor HP',
+  email: 'Email',
+  dokumenKTP: 'Dokumen KTP',
+  dokumenKK: 'Dokumen KK',
+  dokumenKwitansi: 'Dokumen Kwitansi',
+  dokumenPermohonan: 'Surat Permohonan',
+  dokumenTidakSengketa: 'Surat Pernyataan Tidak Sengketa',
+  persetujuanData: 'Pernyataan kebenaran data',
+};
+
+/** The labels behind a `validateStep1Fields` result, in form order. */
+export function step1FieldLabels(errors: StepFieldErrors): string[] {
+  return Object.keys(STEP1_FIELD_LABELS)
+    .filter((key) => key in errors)
+    .map((key) => STEP1_FIELD_LABELS[key]);
+}
 
 /**
  * Per-field validation for Step 1 (Berkas), mirroring the rules enforced by
@@ -140,8 +172,10 @@ export function validateStep4Fields(draft: SubmissionDraft): StepFieldErrors {
     errors.dokumenSPPTG = 'Softcopy SPPTG wajib diunggah sebelum diterbitkan';
   }
 
-  if (!draft.nomorSPPTG?.trim()) {
-    errors.nomorSPPTG = 'Nomor SPPTG wajib diisi';
+  // The prefix is seeded into the field, so a plain emptiness check would wave
+  // through a certificate numbered "TERDAFTAR/" and nothing else.
+  if (!hasNomorSPPTGBody(draft.nomorSPPTG)) {
+    errors.nomorSPPTG = `Nomor SPPTG wajib diisi setelah awalan ${nomorSPPTGPrefix(draft.status)}`;
   }
 
   if (!draft.tanggalTerbit) {
