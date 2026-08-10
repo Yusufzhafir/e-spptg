@@ -27,6 +27,45 @@ export async function getUserByEmail(email: string, tx?: DBTransaction) {
   });
 }
 
+/**
+ * The primary lookup for an SSO login. `sub` is a Keycloak UUID that never
+ * changes, so this keeps working after an admin edits someone's email in the
+ * realm — which is exactly the case an email-based lookup gets wrong.
+ */
+export async function getUserBySsoSub(ssoSub: string, tx?: DBTransaction) {
+  const queryDb = tx || db;
+  return queryDb.query.users.findFirst({
+    where: eq(users.ssoSub, ssoSub),
+  });
+}
+
+/**
+ * Attach an SSO identity to an existing account, after the person confirmed the
+ * link. Also stamps the email verified: the IdP just proved they own it, so
+ * leaving an unverified account unable to sign in would be nonsense.
+ */
+export async function linkSsoAccount(
+  id: number,
+  ssoSub: string,
+  ssoSource: string,
+  tx?: DBTransaction
+) {
+  const queryDb = tx || db;
+  const result = await queryDb
+    .update(users)
+    .set({
+      ssoSub,
+      ssoSource,
+      emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())`,
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, id))
+    .returning();
+
+  await invalidateUser(id);
+  return result[0];
+}
+
 export async function getUserById(id: number, tx?: DBTransaction) {
   const queryDb = tx || db;
   return queryDb.query.users.findFirst(
@@ -52,6 +91,9 @@ export async function createUser(data: {
    * left null by self-registration, which must prove the address first.
    */
   emailVerifiedAt?: Date | null;
+  /** Keycloak `sub` for an account created by an SSO first login. */
+  ssoSub?: string | null;
+  ssoSource?: string | null;
 }, tx?: DBTransaction) {
   const queryDb = tx || db;
 
@@ -68,6 +110,8 @@ export async function createUser(data: {
       status: data.status || 'Aktif',
       nomorHP: data.nomorHP || null,
       emailVerifiedAt: data.emailVerifiedAt ?? null,
+      ssoSub: data.ssoSub ?? null,
+      ssoSource: data.ssoSource ?? null,
     })
     .returning();
 

@@ -137,6 +137,22 @@ export const users = pgTable(
      */
     fotoProfil: varchar('foto_profil', { length: 500 }),
     terakhirMasuk: timestamp('terakhir_masuk'),
+    /**
+     * The `sub` claim from SSO Kutai Timur (Keycloak) — a UUID that is unique per
+     * person and never changes, which is exactly why it, and not the email, is
+     * the identifier an SSO login looks up.
+     *
+     * An admin editing someone in Keycloak can change their email; matching on
+     * email would then either fail to find the account or, worse, match a
+     * different one. Email is used only once, to offer to link an SSO identity to
+     * an account that already existed here.
+     *
+     * NULL means "never signed in through SSO" — the normal state for every
+     * account created before SSO existed and for anyone using a password.
+     */
+    ssoSub: varchar('sso_sub', { length: 100 }).unique(),
+    /** Which provider `sso_sub` came from, so a second one can be added later. */
+    ssoSource: varchar('sso_source', { length: 20 }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },

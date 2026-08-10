@@ -86,8 +86,13 @@ function assertNotSelfDeactivation(
  * put scrypt digests for the whole desa into the browser.
  */
 function toClientUser(user: typeof users.$inferSelect) {
-  const { passwordHash, ...rest } = user;
-  return { ...rest, hasPassword: passwordHash !== null };
+  // `ssoSub` goes the same way as the digest: it is the identifier another
+  // system knows this person by, and the UI only ever needs the yes/no.
+  const { passwordHash, ssoSub, ...rest } = user;
+  // `!= null`, not `!== null`: a row that reached here without the column —
+  // a narrowed select, a stub — has `undefined`, and `!== null` would read that
+  // as "has a password" and "linked to SSO". Absent must mean no, never yes.
+  return { ...rest, hasPassword: passwordHash != null, ssoLinked: ssoSub != null };
 }
 
 /**

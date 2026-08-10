@@ -81,4 +81,8 @@ export const PRIVATE_PATH_PREFIXES = [
   '/lupa-sandi',
   '/atur-ulang-sandi',
   '/verifikasi-email',
+  // SSO handshake: the redirect URI Diskominfo registered, and the account-link
+  // confirmation it can land on. Both are transactional and carry query state.
+  '/callbacksso',
+  '/sso',
 ] as const;

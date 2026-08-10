@@ -29,14 +29,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   const pathname = usePathname();
   const router = useRouter();
-  const { isAuthenticated, isLoading, isDeactivated, signOut } = useAuthRole();
+  const { isAuthenticated, isLoading, isDeactivated, isSigningOut, signOut } = useAuthRole();
 
-  // This layout stays mounted for the whole navigation away from /app, and a
-  // deliberate "Keluar" makes `isAuthenticated` false long before that
-  // navigation lands. Without the latch the effect below would read that as a
-  // dead session and sign out again — and each `signOut` clears the query
-  // cache, which refetches `auth.me`, which re-runs the effect: an endless
-  // POST /logout + GET /me loop until the route finally changes.
+  // This layout stays mounted for the whole navigation away from /app, so a
+  // deliberate "Keluar" must not be mistaken for a dead session by the effect
+  // below — it would start a second sign-out towards a different destination
+  // and race the first. `isSigningOut` covers the sign-out in flight; the latch
+  // covers everything after it, including the repeat that each `signOut` would
+  // otherwise trigger by making `auth.me` fail again.
   const bounced = useRef(false);
 
   // `src/proxy.ts` only checks that a session cookie *exists* — it runs on the
@@ -45,10 +45,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   // shows up as a failing `auth.me`. Clear it and send them to sign in, rather
   // than leaving them on a shell whose every query 401s.
   useEffect(() => {
-    if (isLoading || isAuthenticated || isDeactivated || bounced.current) return;
+    if (isLoading || isAuthenticated || isDeactivated || isSigningOut || bounced.current) return;
     bounced.current = true;
     void signOut(`/sign-in?next=${encodeURIComponent(pathname)}`);
-  }, [isLoading, isAuthenticated, isDeactivated, signOut, pathname]);
+  }, [isLoading, isAuthenticated, isDeactivated, isSigningOut, signOut, pathname]);
 
   // infer "currentPage" from the route (under /app)
   const currentPage =

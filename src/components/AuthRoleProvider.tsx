@@ -1,8 +1,6 @@
 'use client';
 
 import { createContext, useCallback, useContext, useState, ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
 import { trpc } from '@/trpc/client';
 import { ACCOUNT_DEACTIVATED_MESSAGE } from '@/lib/account-status';
 
@@ -33,7 +31,11 @@ type AuthRoleContextType = {
   isDeactivated: boolean;
   hasRole: (role: UserRole) => boolean;
   hasAnyRole: (roles: UserRole[]) => boolean;
-  /** Clears the session cookie server-side, then drops all cached queries. */
+  /**
+   * Clears the session cookie server-side, then hands `redirectTo` to the
+   * browser as a full page load — never resolves, because the document it was
+   * called from is replaced.
+   */
   signOut: (redirectTo?: string) => Promise<void>;
   isSigningOut: boolean;
 };
@@ -41,9 +43,6 @@ type AuthRoleContextType = {
 const AuthRoleContext = createContext<AuthRoleContextType | undefined>(undefined);
 
 export function AuthRoleProvider({ children }: { children: ReactNode }) {
-  const router = useRouter();
-  const queryClient = useQueryClient();
-
   // The session cookie is HttpOnly, so the client cannot tell in advance whether
   // it is signed in — `auth.me` is the check. It is allowed to fail (401 on
   // public pages is the normal case), hence `retry: false`.
@@ -67,30 +66,36 @@ export function AuthRoleProvider({ children }: { children: ReactNode }) {
     async (redirectTo = '/') => {
       setIsSigningOut(true);
       try {
-        try {
-          await utils.client.auth.logout.mutate();
-        } catch {
-          // A failed logout still has to get the user out of the app: the cookie
-          // may already be invalid, which is exactly when this throws.
-        }
-        // Wipe every cached query, not just auth.me — otherwise the next account
-        // to sign in on this browser briefly sees the previous user's data.
-        queryClient.clear();
-        router.replace(redirectTo);
-        router.refresh();
-      } finally {
-        // This provider sits above the router, so it is *not* unmounted by the
-        // navigation above and survives into the next sign-in. Leaving the flag
-        // set left "Keluar" disabled for the rest of the browser session — the
-        // next person to sign in on this tab could never sign out again.
-        //
-        // Clearing it here is safe rather than flashy: `queryClient.clear()`
-        // has already emptied `auth.me`, so `user` is null and `UserMenu`
-        // renders nothing at all until the next session resolves.
-        setIsSigningOut(false);
+        await utils.client.auth.logout.mutate();
+      } catch {
+        // A failed logout still has to get the user out of the app: the cookie
+        // may already be invalid, which is exactly when this throws.
       }
+
+      // A **full document navigation**, not `router.replace` + `router.refresh`.
+      //
+      // Signing out changes what the server renders for every route, and a
+      // client-side navigation leaves the whole authenticated tree mounted while
+      // it flies. That is what made "Keluar" hang on a spinner: clearing the
+      // query cache made `auth.me` fail immediately, `/app`'s layout — still
+      // mounted, because its own navigation had not landed yet — read that as a
+      // dead session and started a *second* sign-out towards `/sign-in`, and the
+      // two `router.replace` calls raced. The URL settled on one destination and
+      // the rendered tree on neither, so the app shell kept spinning until the
+      // page was reloaded by hand.
+      //
+      // Handing the redirect to the browser throws away the React tree, Next's
+      // router cache and every cached query in one step, and makes `src/proxy.ts`
+      // re-read the now-cleared cookie server-side. No cache clearing is needed
+      // here any more: the query client is an in-memory singleton (see
+      // `src/trpc/client.tsx`) and does not survive the reload, so the next
+      // account to sign in cannot see this one's data.
+      //
+      // `isSigningOut` is deliberately left set — the document is on its way out,
+      // and clearing it would only re-enable "Keluar" for the frames in between.
+      window.location.replace(redirectTo);
     },
-    [utils, queryClient, router]
+    [utils]
   );
 
   const isDeactivated = error?.message === ACCOUNT_DEACTIVATED_MESSAGE;

@@ -164,6 +164,9 @@ function ctx(
     nomorHP: null,
     fotoProfil: null,
     emailVerifiedAt: new Date(),
+    // Akun lokal biasa: belum pernah masuk lewat SSO Kutai Timur.
+    ssoSub: null,
+    ssoSource: null,
     terakhirMasuk: null,
     createdAt: new Date(),
     updatedAt: new Date(),

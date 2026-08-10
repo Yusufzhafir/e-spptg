@@ -14,17 +14,7 @@ import { PasswordInput } from './PasswordInput';
 import { AuthFormError } from './AuthFormError';
 import { isValidEmail } from '@/lib/email-address';
 import { EMAIL_NOT_VERIFIED_MESSAGE } from '@/lib/account-status';
-
-/**
- * Only same-origin, absolute-path targets are accepted for `?next=`. Anything
- * else — a full URL, or a protocol-relative `//evil.example` — would turn the
- * login form into an open redirect.
- */
-function safeNext(raw: string | null): string {
-  if (!raw) return '/app';
-  if (!raw.startsWith('/') || raw.startsWith('//')) return '/app';
-  return raw;
-}
+import { safeNextPath } from '@/lib/safe-next';
 
 /**
  * Sign-in in two steps: email first, then a password — but only once the server
@@ -55,10 +45,19 @@ export function SignInForm() {
   const [resendNotice, setResendNotice] = useState<string | null>(null);
 
   const passwordRef = useRef<HTMLInputElement>(null);
-  const next = safeNext(searchParams.get('next'));
+  const next = safeNextPath(searchParams.get('next'));
 
   const checkEmail = trpc.auth.checkEmail.useMutation({
     onSuccess: (result) => {
+      if (result.next === 'sso') {
+        // This address signs in through SSO Kutai Timur and has no password to
+        // ask for. Point at the button rather than sending them round the reset
+        // flow for a password they will never use.
+        setFormError(
+          'Akun ini masuk lewat SSO Kutai Timur. Gunakan tombol "Masuk dengan SSO Kutai Timur" di atas.'
+        );
+        return;
+      }
       if (result.next === 'reset') {
         // The account exists but has never had a password set. Hand off to the
         // reset flow with the address prefilled and the reason spelled out, so

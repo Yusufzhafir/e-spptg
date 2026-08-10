@@ -64,6 +64,9 @@ function ctx(peran: UserRole = 'Superadmin'): TRPCContext {
       fotoProfil: null,
       emailVerifiedAt: new Date(),
       terakhirMasuk: null,
+      // Akun lokal biasa: belum pernah masuk lewat SSO Kutai Timur.
+      ssoSub: null,
+      ssoSource: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     },
@@ -145,5 +148,33 @@ describe('users.create — invite by email', () => {
     });
     // The account itself survives — the fix is resending, not recreating.
     expect(createUserMock).toHaveBeenCalled();
+  });
+});
+
+describe('toClientUser — what a user row is allowed to become', () => {
+  it('replaces the scrypt digest and the SSO subject with booleans', async () => {
+    createUserMock.mockImplementationOnce(
+      async (data: Record<string, unknown>) =>
+        ({
+          id: 99,
+          ...data,
+          passwordHash: 'scrypt$16384$8$1$c2FsdA==$aGFzaA==',
+          ssoSub: 'uuid-keycloak',
+          ssoSource: 'sso_kutim',
+        }) as never
+    );
+
+    const result = await usersRouter.createCaller(ctx()).create(payload);
+
+    // Both are identifiers another system knows this person by, and the UI only
+    // ever needs the yes/no. Shipping either is a leak, not a convenience.
+    expect(result).not.toHaveProperty('passwordHash');
+    expect(result).not.toHaveProperty('ssoSub');
+    expect(result).toMatchObject({ hasPassword: true, ssoLinked: true });
+  });
+
+  it('reports ssoLinked false for an account that has never used SSO', async () => {
+    const result = await usersRouter.createCaller(ctx()).create(payload);
+    expect(result).toMatchObject({ ssoLinked: false });
   });
 });
