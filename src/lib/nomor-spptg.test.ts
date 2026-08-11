@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   certificateLabel,
   hasNomorSPPTGBody,
+  namaFileSPPTG,
   nomorSPPTGBody,
   nomorSPPTGPrefix,
   NOMOR_SPPTG_PREFIX_TERDAFTAR,
@@ -97,6 +98,30 @@ describe('hasNomorSPPTGBody', () => {
 
   it('accepts a prefix with a real number behind it', () => {
     expect(hasNomorSPPTGBody('TERDATA/SPPTG/145/KTM/2026')).toBe(true);
+  });
+});
+
+describe('namaFileSPPTG', () => {
+  it('states the decision once — the stored nomor already carries it', () => {
+    expect(namaFileSPPTG('TERDATA/SPPTG/145/KTM/2026', 'SPPTG terdata')).toBe(
+      'SPPTG_TERDATA_145_KTM_2026'
+    );
+    expect(namaFileSPPTG('TERDAFTAR/SPPTG/145/KTM/2026', 'SPPTG terdaftar')).toBe(
+      'SPPTG_TERDAFTAR_145_KTM_2026'
+    );
+  });
+
+  it('names a pre-prefix number after its decision all the same', () => {
+    expect(namaFileSPPTG('470/123/2025', 'SPPTG terdata')).toBe('SPPTG_TERDATA_470_123_2025');
+  });
+
+  it('falls back rather than ending on a bare lead', () => {
+    expect(namaFileSPPTG('TERDATA/SPPTG/', 'SPPTG terdata')).toBe('SPPTG_TERDATA_dokumen');
+    expect(namaFileSPPTG(undefined, 'SPPTG terdaftar')).toBe('SPPTG_TERDAFTAR_dokumen');
+  });
+
+  it('leaves no separator that a filesystem would read as a path', () => {
+    expect(namaFileSPPTG('TERDATA/SPPTG/145 \\ KTM', 'SPPTG terdata')).not.toMatch(/[\\/]/);
   });
 });
 

@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import {
   certificateLabel,
   hasNomorSPPTGBody,
+  namaFileSPPTG,
   nomorSPPTGBody,
   nomorSPPTGPrefix,
   withNomorSPPTGPrefix,
@@ -362,9 +363,7 @@ export function Step4Issuance({
         URL.revokeObjectURL(generatedDocs.pdfUrl);
       }
 
-      const baseName = `${isTerdata ? 'SPPTG_TERDATA' : 'SPPTG'}_${(
-        draft.nomorSPPTG || 'dokumen'
-      ).replace(/[\\/]/g, '_')}`;
+      const baseName = namaFileSPPTG(draft.nomorSPPTG, draft.status);
       setGeneratedDocs({
         pdfUrl: pdfResult.url,
         baseName,
