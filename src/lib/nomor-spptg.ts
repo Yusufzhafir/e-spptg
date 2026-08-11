@@ -83,6 +83,20 @@ export function withNomorSPPTGPrefix(body: string, status?: string | null): stri
 }
 
 /**
+ * The base filename (no extension) for the certificate a nomor belongs to.
+ *
+ * Built from the *body*, never the stored nomor: that already begins with
+ * `TERDATA/SPPTG/`, so pasting it whole behind a `SPPTG_TERDATA` lead produced
+ * `SPPTG_TERDATA_TERDATA_SPPTG_145…`. The decision is stated once, by the lead,
+ * and the slashes inside the number become underscores.
+ */
+export function namaFileSPPTG(value: string | null | undefined, status?: string | null): string {
+  const body = nomorSPPTGBody(value).replace(/[\\/\s]+/g, '_').replace(/^_+|_+$/g, '');
+  const decision = nomorSPPTGPrefix(status).split('/')[0];
+  return `SPPTG_${decision}_${body || 'dokumen'}`;
+}
+
+/**
  * Whether a nomor carries an actual number, not just the prefix. The prefix is
  * seeded into the field, so a plain emptiness check would let a certificate be
  * issued with no number at all.
