@@ -143,6 +143,7 @@ const fileCategoryEnum = z.enum([
     'Tidak Sengketa',
     'Foto Lahan',
     'SPPG',
+    'SPPTG Induk',
     'Lampiran Feedback',
     'Lainnya',
   ])

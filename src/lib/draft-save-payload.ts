@@ -75,6 +75,7 @@ export function buildDraftSavePayload(draft: SubmissionDraft): Record<string, un
 
     // Step 4: Issuance
     dokumenSPPTG: draft.dokumenSPPTG,
+    dokumenSPPTGInduk: draft.dokumenSPPTGInduk,
     nomorSPPTG: draft.nomorSPPTG,
     tanggalTerbit: draft.tanggalTerbit,
   };

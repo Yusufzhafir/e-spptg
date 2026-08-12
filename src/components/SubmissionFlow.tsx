@@ -344,6 +344,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         feedback: payload.feedback,
         // Step 4: Issuance
         dokumenSPPTG: payload.dokumenSPPTG,
+        dokumenSPPTGInduk: payload.dokumenSPPTGInduk,
         nomorSPPTG: payload.nomorSPPTG,
         tanggalTerbit: payload.tanggalTerbit,
       };

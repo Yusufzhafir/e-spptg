@@ -158,7 +158,7 @@ type DocumentCategory =
   | 'KTP' | 'KK' | 'Kwitansi' | 'Permohonan' 
   | 'SK Kepala Desa' | 'Berita Acara' | 'Pernyataan Jual Beli'
   | 'Asal Usul' | 'Tidak Sengketa' | 'Foto Lahan'
-  | 'SPPG' | 'Lampiran Feedback' | 'Lainnya'
+  | 'SPPG' | 'SPPTG Induk' | 'Lampiran Feedback' | 'Lainnya'
 ```
 
 ### Spatial Data
