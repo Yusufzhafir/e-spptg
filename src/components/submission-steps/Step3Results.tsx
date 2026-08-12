@@ -76,7 +76,7 @@ const alasanOptions = [
 const dokumentOptions = [
   'KTP',
   'KK',
-  'Kwitansi/Hibah/Warisan',
+  'Surat Asal Usul Kwitansi Jual Beli/Hibah/Keterangan Waris/Bukti Lain',
   'Surat Permohonan',
   'Berita Acara Lapangan',
   'Pernyataan Jual Beli',
@@ -390,7 +390,10 @@ export function Step3Results({
   const documents = [
     { label: 'KTP', uploaded: !!draft.dokumenKTP },
     { label: 'KK', uploaded: !!draft.dokumenKK },
-    { label: 'Kwitansi Jual Beli', uploaded: !!draft.dokumenKwitansi },
+    {
+      label: 'Surat Asal Usul Kwitansi Jual Beli/Hibah/Keterangan Waris/Bukti Lain',
+      uploaded: !!draft.dokumenKwitansi,
+    },
     { label: 'Surat Permohonan', uploaded: !!draft.dokumenPermohonan },
     { label: 'Berita Acara Lapangan', uploaded: !!draft.dokumenBeritaAcara },
   ];

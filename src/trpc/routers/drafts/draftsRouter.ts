@@ -17,6 +17,7 @@ const DOC_CATEGORY_TO_KEY: Record<string, string> = {
   'Asal Usul': 'dokumenAsalUsul',
   'Tidak Sengketa': 'dokumenTidakSengketa',
   SPPG: 'dokumenSPPTG',
+  'SPPTG Induk': 'dokumenSPPTGInduk',
 };
 
 function geoJsonToCoordinates(

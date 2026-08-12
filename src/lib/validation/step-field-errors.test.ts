@@ -36,14 +36,11 @@ describe('validateStep1Fields', () => {
     expect(validateStep1Fields(completeStep1())).toEqual({});
   });
 
-  it('requires Surat Pernyataan Tidak Sengketa', () => {
+  it('lets the step through without Surat Pernyataan Tidak Sengketa', () => {
     const draft = completeStep1();
     delete (draft as Partial<SubmissionDraft>).dokumenTidakSengketa;
 
-    const errors = validateStep1Fields(draft);
-    expect(errors.dokumenTidakSengketa).toBe(
-      'Dokumen Surat Pernyataan Tidak Sengketa wajib diunggah'
-    );
+    expect(validateStep1Fields(draft)).toEqual({});
   });
 
   it.each([
@@ -51,7 +48,6 @@ describe('validateStep1Fields', () => {
     ['dokumenKK'],
     ['dokumenKwitansi'],
     ['dokumenPermohonan'],
-    ['dokumenTidakSengketa'],
   ] as const)('blocks the step when %s is missing', (field) => {
     const draft = completeStep1();
     delete (draft as Partial<SubmissionDraft>)[field];

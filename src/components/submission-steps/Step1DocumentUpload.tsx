@@ -314,7 +314,7 @@ export function Step1DocumentUpload({
 
           <div>
             <FileUploadField
-              label="Softcopy Kwitansi Jual Beli/Hibah/Keterangan Warisan"
+              label="Softcopy Surat Asal Usul Kwitansi Jual Beli/Hibah/Keterangan Waris/Bukti Lain"
               accept=".pdf,.jpg,.jpeg,.png"
               maxSize={10}
               value={draft.dokumenKwitansi}
@@ -343,9 +343,10 @@ export function Step1DocumentUpload({
 
           <div>
             <FileUploadField
-              label="Surat Pernyataan Tidak Sengketa"
+              label="Surat Pernyataan Tidak Sengketa (Opsional)"
               accept=".pdf"
               maxSize={10}
+              required={false}
               value={draft.dokumenTidakSengketa}
               onChange={(doc) => onPersistDraftPatch({ dokumenTidakSengketa: doc })}
               category="Tidak Sengketa"

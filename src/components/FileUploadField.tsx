@@ -17,7 +17,7 @@ export interface FileUploadFieldProps {
   onChange: (doc?: UploadedDocument) => void | Promise<void>;
   required?: boolean;
   helpText?: string;
-  category: 'KTP' | 'KK' | 'Kwitansi' | 'Permohonan' | 'SK Kepala Desa' | 'Pernyataan Jual Beli' | 'Asal Usul' | 'Tidak Sengketa' | 'Berita Acara';
+  category: 'KTP' | 'KK' | 'Kwitansi' | 'Permohonan' | 'SK Kepala Desa' | 'Pernyataan Jual Beli' | 'Asal Usul' | 'Tidak Sengketa' | 'Berita Acara' | 'SPPTG Induk';
   draftId?: number;
   templateType?: TemplateType;
   notes?: string | React.ReactNode;

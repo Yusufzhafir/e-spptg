@@ -26,7 +26,7 @@ const steps = [
     accent: 'from-sky-500 to-blue-600',
     title: "Berkas",
     description:
-      "Data pemohon dan dokumen wajib — KTP, KK, kwitansi, surat permohonan, dan surat pernyataan tidak sengketa.",
+      "Data pemohon dan dokumen wajib — KTP, KK, surat asal usul kwitansi jual beli/hibah/keterangan waris/bukti lain, dan surat permohonan.",
   },
   {
     icon: MapPin,
@@ -378,9 +378,10 @@ export function LandingPage() {
               <dd className="mt-2 text-sm leading-relaxed text-gray-600">
                 <span className="font-medium text-gray-900">KTP</span> dan{' '}
                 <span className="font-medium text-gray-900">Kartu Keluarga</span>{' '}
-                wajib diunggah. Siapkan pula kwitansi, surat permohonan, dan
-                surat pernyataan tidak sengketa — templat ketiganya bisa diunduh
-                langsung dari dalam aplikasi.
+                wajib diunggah. Siapkan pula surat asal usul kwitansi jual
+                beli/hibah/keterangan waris/bukti lain dan surat permohonan;
+                surat pernyataan tidak sengketa bersifat opsional — templatnya
+                bisa diunduh langsung dari dalam aplikasi.
               </dd>
             </Reveal>
 

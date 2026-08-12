@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/trpc/client';
+import { FileUploadField } from '../FileUploadField';
 import { usePDFGenerator } from '@/hooks/usePDFGenerator';
 import { buildSPPTGPDFData } from '@/lib/spptg-pdf-data';
 import { cn } from '@/lib/utils';
@@ -776,6 +777,22 @@ export function Step4Issuance({
               </div>
             )}
           </div>
+
+          {/* Parent certificate. Terdaftar only: a berkas issued as terdata is
+              not split off an existing SPPTG, so the box would never apply. */}
+          {!isTerdata && (
+            <FileUploadField
+              label="Softcopy SPPTG Induk (Opsional)"
+              accept=".pdf"
+              maxSize={10}
+              required={false}
+              value={draft.dokumenSPPTGInduk}
+              onChange={(doc) => onPersistDraftPatch({ dokumenSPPTGInduk: doc })}
+              category="SPPTG Induk"
+              draftId={draft.id}
+              helpText="Unggah bila SPPTG ini merupakan pecahan dari SPPTG induk yang sudah terbit."
+            />
+          )}
 
           {/* Summary — only when nomor, tanggal, and softcopy are all filled */}
           {isFormComplete && (

@@ -23,9 +23,8 @@ export const STEP1_FIELD_LABELS: Record<string, string> = {
   email: 'Email',
   dokumenKTP: 'Dokumen KTP',
   dokumenKK: 'Dokumen KK',
-  dokumenKwitansi: 'Dokumen Kwitansi',
+  dokumenKwitansi: 'Surat Asal Usul Kwitansi Jual Beli/Hibah/Keterangan Waris/Bukti Lain',
   dokumenPermohonan: 'Surat Permohonan',
-  dokumenTidakSengketa: 'Surat Pernyataan Tidak Sengketa',
   persetujuanData: 'Pernyataan kebenaran data',
 };
 
@@ -105,17 +104,15 @@ export function validateStep1Fields(draft: SubmissionDraft): StepFieldErrors {
 
   if (!draft.dokumenKwitansi) {
     errors.dokumenKwitansi =
-      'Dokumen Kwitansi Jual Beli/Hibah/Keterangan Warisan wajib diunggah';
+      'Dokumen Surat Asal Usul Kwitansi Jual Beli/Hibah/Keterangan Waris/Bukti Lain wajib diunggah';
   }
 
   if (!draft.dokumenPermohonan) {
     errors.dokumenPermohonan = 'Dokumen Surat Permohonan wajib diunggah';
   }
 
-  if (!draft.dokumenTidakSengketa) {
-    errors.dokumenTidakSengketa =
-      'Dokumen Surat Pernyataan Tidak Sengketa wajib diunggah';
-  }
+  // Surat Pernyataan Tidak Sengketa is deliberately not checked: it is optional,
+  // so a berkas without it still passes Step 1 (mirrors step1BerkasSchema).
 
   if (!draft.persetujuanData) {
     errors.persetujuanData =

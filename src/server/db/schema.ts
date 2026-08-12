@@ -63,6 +63,9 @@ export const documentCategoryEnum = pgEnum('document_category', [
   'Tidak Sengketa',
   'Foto Lahan',
   'SPPG',
+  // The parent certificate a terdaftar berkas is split from — optional, and a
+  // category of its own so it is never mistaken for the SPPTG being issued.
+  'SPPTG Induk',
   'Lampiran Feedback',
   'Lainnya',
 ]);

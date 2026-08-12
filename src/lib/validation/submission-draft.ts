@@ -109,7 +109,7 @@ export const step1BerkasSchema = z.object({
   dokumenPermohonan: uploadedDocumentSchema,
   dokumenPernyataanJualBeli: uploadedDocumentSchema.optional(),
   dokumenAsalUsul: uploadedDocumentSchema.optional(),
-  dokumenTidakSengketa: uploadedDocumentSchema,
+  dokumenTidakSengketa: uploadedDocumentSchema.optional(),
 
   // Consent
   persetujuanData: z.literal(true, {
@@ -219,6 +219,7 @@ export type Step3Hasil = z.infer<typeof step3HasilSchema>;
 
 export const step4IssuanceSchema = z.object({
   dokumenSPPTG: uploadedDocumentSchema.optional(),
+  dokumenSPPTGInduk: uploadedDocumentSchema.optional(),
 
   nomorSPPTG: z
     .string()
@@ -295,6 +296,7 @@ export const submissionDraftPayloadSchema = z.object({
 
   // Step 4 data
   dokumenSPPTG: uploadedDocumentSchema.optional(),
+  dokumenSPPTGInduk: uploadedDocumentSchema.optional(),
   nomorSPPTG: z.string().optional(),
   tanggalTerbit: z.string().datetime().optional(),
 

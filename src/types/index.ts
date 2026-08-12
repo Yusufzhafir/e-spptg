@@ -297,6 +297,8 @@ export interface SubmissionDraft {
   
   // Step 4: Issuance
   dokumenSPPTG?: UploadedDocument;
+  /** Optional parent certificate this SPPTG is derived from. */
+  dokumenSPPTGInduk?: UploadedDocument;
   nomorSPPTG?: string;
   tanggalTerbit?: string;
 }
