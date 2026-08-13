@@ -1,5 +1,5 @@
 import type { SubmissionDraft } from '@/types';
-import { normalizeCoordinateIds } from './coordinate-ids';
+import { draftPolygons, polygonsPatch } from './land-polygons';
 
 /**
  * Builds a complete, serializable payload for draft persistence.
@@ -11,6 +11,10 @@ import { normalizeCoordinateIds } from './coordinate-ids';
  * from the stored payload.
  */
 export function buildDraftSavePayload(draft: SubmissionDraft): Record<string, unknown> {
+  // Normalised together so the mirrored `coordinatesGeografis` can never be
+  // saved out of step with the polygon it mirrors.
+  const geometry = polygonsPatch(draftPolygons(draft));
+
   const payload: Record<string, unknown> = {
     // Step 1: Applicant Data
     namaPemohon: draft.namaPemohon,
@@ -39,13 +43,16 @@ export function buildDraftSavePayload(draft: SubmissionDraft): Record<string, un
     tahunPerolehan: draft.tahunPerolehan,
     namaKepalaDesa: draft.namaKepalaDesa,
     saksiList: draft.saksiList || [],
-    coordinatesGeografis: normalizeCoordinateIds(draft.coordinatesGeografis || []),
+    coordinatesGeografis: geometry.coordinatesGeografis,
+    polygons: geometry.polygons,
     coordinateSystem: draft.coordinateSystem,
     fotoLahan: draft.fotoLahan || [],
     overlapResults: draft.overlapResults || [],
     luasLahan: draft.luasLahan,
     luasManual: draft.luasManual,
     kelilingLahan: draft.kelilingLahan,
+    panjangLahan: draft.panjangLahan,
+    lebarLahan: draft.lebarLahan,
 
     // Documents
     dokumenKTP: draft.dokumenKTP,

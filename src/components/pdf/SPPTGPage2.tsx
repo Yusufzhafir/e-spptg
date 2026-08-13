@@ -207,7 +207,7 @@ export const SPPTGPage2: React.FC<PageProps> = ({ data }) => {
         hari terdapat unsur-unsur yang tidak dibenarkan dalam pernyataan ini
         maka segala akibat yang timbul menjadi tanggung jawab saya dan bersedia
         dituntut sesuai dengan ketentuan peraturan perundang-undangan serta
-        tidak akan melibatkan pihak lain dan saya bersedia sertipikat yang saya
+        tidak akan melibatkan pihak lain dan saya bersedia surat pernyataan yang saya
         terima dibatalkan oleh pejabat yang berwenang.
       </Text>
 

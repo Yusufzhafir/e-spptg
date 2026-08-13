@@ -3,6 +3,7 @@ import { LandingPage } from '@/components/LandingPage';
 import { RedirectSignedInHome } from '@/components/RedirectSignedInHome';
 import { landingStructuredData } from '@/lib/structured-data';
 import { SITE_META_DESCRIPTION, SITE_TITLE } from '@/lib/site';
+import { getLandingStats } from '@/server/landing-stats';
 
 /**
  * The landing page is a **server component on purpose**.
@@ -30,7 +31,23 @@ export const metadata: Metadata = {
   ],
 };
 
-export default function HomePage() {
+/**
+ * The page stays **prerendered**, just with a 15-minute lifetime instead of
+ * forever, so the public statistics section ships inside the HTML rather than
+ * arriving later over the network.
+ *
+ * A per-request read would be wrong twice over: it would put a database query in
+ * front of every anonymous visitor (including crawlers), and it would drop the
+ * page out of the static shell that makes the first paint fast. The numbers are
+ * a recap, not a live counter — fifteen minutes of lag costs nothing.
+ */
+export const revalidate = 900;
+
+export default async function HomePage() {
+  // Never throws: `getLandingStats` returns null when the database is
+  // unreachable, so a build with no DATABASE_URL still produces this page.
+  const stats = await getLandingStats();
+
   return (
     <>
       <script
@@ -40,7 +57,7 @@ export default function HomePage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(landingStructuredData()) }}
       />
       <RedirectSignedInHome />
-      <LandingPage />
+      <LandingPage stats={stats} />
     </>
   );
 }

@@ -3,13 +3,31 @@
  * Converts to GeoJSON Polygon format for backend submission
  */
 
+export interface ParsedCoordinate {
+  id: string;
+  latitude: number;
+  longitude: number;
+}
+
+/**
+ * One polygon out of the file. A KML may carry several — a pengajuan can consist
+ * of more than one bidang, and a kawasan import is usually a whole batch — so
+ * the parser returns all of them and lets the caller decide how many it wants.
+ */
+export interface ParsedPolygon {
+  /** `<name>` of the owning Placemark, when it had one. */
+  name?: string;
+  coordinates: ParsedCoordinate[];
+}
+
 export interface ParseResult {
   success: boolean;
-  coordinates: Array<{
-    id: string;
-    latitude: number;
-    longitude: number;
-  }>;
+  /**
+   * The first polygon's ring, kept so callers that only ever handle a single
+   * boundary keep working unchanged. Read `polygons` for the whole file.
+   */
+  coordinates: ParsedCoordinate[];
+  polygons: ParsedPolygon[];
   geoJSON?: {
     type: 'Polygon';
     coordinates: [[[number, number]]];
@@ -20,45 +38,50 @@ export interface ParseResult {
 // Legacy type alias for backward compatibility
 export type KMZParseResult = ParseResult;
 
+/** Failure shape shared by every parser entry point. */
+function parseFailure(error: string): ParseResult {
+  return { success: false, coordinates: [], polygons: [], error };
+}
+
+/**
+ * Validate every polygon found and package them into a ParseResult.
+ * The first polygon doubles as the flat `coordinates`/`geoJSON` result.
+ */
+function buildParseResult(polygons: ParsedPolygon[], emptyError: string): ParseResult {
+  if (polygons.length === 0) {
+    return parseFailure(emptyError);
+  }
+
+  for (const [index, polygon] of polygons.entries()) {
+    const validation = validatePolygonCoordinates(polygon.coordinates);
+    if (!validation.valid) {
+      const label = polygon.name?.trim() || `Polygon ${index + 1}`;
+      return parseFailure(`${label}: ${validation.error}`);
+    }
+  }
+
+  return {
+    success: true,
+    coordinates: polygons[0].coordinates,
+    polygons,
+    geoJSON: convertCoordinatesToGeoJSONPolygon(polygons[0].coordinates),
+  };
+}
+
 /**
  * Parse KML file directly (not zipped)
  */
 export async function parseKMLFile(file: File): Promise<ParseResult> {
   try {
     const content = await file.text();
-    const coordinates = parseKMLCoordinates(content);
+    const polygons = parseKMLPolygons(content);
 
-    if (coordinates.length === 0) {
-      return {
-        success: false,
-        coordinates: [],
-        error: 'Tidak ada koordinat yang ditemukan dalam file KML',
-      };
-    }
-
-    const validation = validatePolygonCoordinates(coordinates);
-    if (!validation.valid) {
-      return {
-        success: false,
-        coordinates: [],
-        error: validation.error,
-      };
-    }
-
-    const geoJSON = convertCoordinatesToGeoJSONPolygon(coordinates);
-
-    return {
-      success: true,
-      coordinates,
-      geoJSON,
-    };
+    return buildParseResult(polygons, 'Tidak ada koordinat yang ditemukan dalam file KML');
   } catch (error) {
     console.error('Error parsing KML:', error);
-    return {
-      success: false,
-      coordinates: [],
-      error: error instanceof Error ? error.message : 'Gagal membaca file KML',
-    };
+    return parseFailure(
+      error instanceof Error ? error.message : 'Gagal membaca file KML'
+    );
   }
 }
 
@@ -70,37 +93,16 @@ export async function parseGPXFile(file: File): Promise<ParseResult> {
     const content = await file.text();
     const coordinates = parseGPXCoordinates(content);
 
-    if (coordinates.length === 0) {
-      return {
-        success: false,
-        coordinates: [],
-        error: 'Tidak ada koordinat yang ditemukan dalam file GPX',
-      };
-    }
+    // A GPX track is a single path — one polygon, never a batch.
+    const polygons: ParsedPolygon[] =
+      coordinates.length > 0 ? [{ coordinates }] : [];
 
-    const validation = validatePolygonCoordinates(coordinates);
-    if (!validation.valid) {
-      return {
-        success: false,
-        coordinates: [],
-        error: validation.error,
-      };
-    }
-
-    const geoJSON = convertCoordinatesToGeoJSONPolygon(coordinates);
-
-    return {
-      success: true,
-      coordinates,
-      geoJSON,
-    };
+    return buildParseResult(polygons, 'Tidak ada koordinat yang ditemukan dalam file GPX');
   } catch (error) {
     console.error('Error parsing GPX:', error);
-    return {
-      success: false,
-      coordinates: [],
-      error: error instanceof Error ? error.message : 'Gagal membaca file GPX',
-    };
+    return parseFailure(
+      error instanceof Error ? error.message : 'Gagal membaca file GPX'
+    );
   }
 }
 
@@ -207,94 +209,43 @@ export async function parseKMZFile(file: File): Promise<KMZParseResult> {
     }
 
     if (!kmlContent) {
-      return {
-        success: false,
-        coordinates: [],
-        error: 'File KML tidak ditemukan dalam KMZ',
-      };
+      return parseFailure('File KML tidak ditemukan dalam KMZ');
     }
 
-    // Parse KML and extract coordinates
-    const coordinates = parseKMLCoordinates(kmlContent);
+    const polygons = parseKMLPolygons(kmlContent);
 
-    if (coordinates.length === 0) {
-      return {
-        success: false,
-        coordinates: [],
-        error: 'Tidak ada koordinat yang ditemukan dalam file KML',
-      };
-    }
-
-
-    const validation = validatePolygonCoordinates(coordinates);
-    if (!validation.valid) {
-      return {
-        success: false,
-        coordinates: [],
-        error: validation.error,
-      };
-    }
-
-    const geoJSON = convertCoordinatesToGeoJSONPolygon(coordinates);
-    return {
-      success: true,
-      coordinates,
-      geoJSON,
-    };
+    return buildParseResult(polygons, 'Tidak ada koordinat yang ditemukan dalam file KML');
   } catch (error) {
     console.error('Error parsing KMZ:', error);
-    return {
-      success: false,
-      coordinates: [],
-      error: error instanceof Error ? error.message : 'Gagal membaca file KMZ',
-    };
+    return parseFailure(
+      error instanceof Error ? error.message : 'Gagal membaca file KMZ'
+    );
   }
 }
 
+/** Read the `<name>` a Placemark declares directly (not a child feature's). */
+function placemarkName(placemark: Element): string | undefined {
+  const names = placemark.getElementsByTagName('name');
+  for (let i = 0; i < names.length; i++) {
+    if (names[i].parentNode === placemark) {
+      return names[i].textContent?.trim() || undefined;
+    }
+  }
+  return undefined;
+}
+
 /**
- * Parse KML string and extract coordinates from LinearRing elements
+ * The outer ring of a `<Polygon>`.
+ *
+ * `outerBoundaryIs` is preferred over the first `<coordinates>` descendant so an
+ * `innerBoundaryIs` (a hole) is never mistaken for the boundary itself; files
+ * that omit the wrapper fall back to the first coordinates element.
  */
-function parseKMLCoordinates(
-  kmlContent: string
-): Array<{ id: string; latitude: number; longitude: number }> {
-  // Parse XML
-  const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(kmlContent, 'text/xml');
-
-  if (xmlDoc.getElementsByTagName('parsererror').length > 0) {
-    throw new Error('Format KML tidak valid');
-  }
-
-  // Find all placemarks and enforce exactly one polygon across file
-  const placemarks = xmlDoc.getElementsByTagName('Placemark');
-  let selectedPolygon: Element | null = null;
-  let selectedPlacemarkIndex = -1;
-  let polygonCount = 0;
-
-  for (let i = 0; i < placemarks.length; i++) {
-    const polygonElements = placemarks[i].getElementsByTagName('Polygon');
-    if (polygonElements.length === 0) {
-      continue;
-    }
-
-    if (polygonElements.length > 1) {
-      throw new Error('Placemark tidak boleh memiliki lebih dari 1 polygon');
-    }
-
-    polygonCount += 1;
-    if (polygonCount > 1) {
-      throw new Error('File KML/KMZ harus berisi tepat 1 polygon');
-    }
-
-    selectedPolygon = polygonElements[0];
-    selectedPlacemarkIndex = i;
-  }
-
-  if (!selectedPolygon || polygonCount === 0) {
-    throw new Error('File KML/KMZ harus berisi tepat 1 polygon');
-  }
-
-  const coordinateElements = selectedPolygon.getElementsByTagName('coordinates');
+function polygonOuterRing(polygon: Element): Array<{ lat: number; lng: number }> {
+  const outerBoundary = polygon.getElementsByTagName('outerBoundaryIs')[0];
+  const coordinateElements = (outerBoundary ?? polygon).getElementsByTagName(
+    'coordinates'
+  );
   if (coordinateElements.length === 0) {
     throw new Error('Elemen coordinates pada polygon tidak ditemukan');
   }
@@ -309,11 +260,50 @@ function parseKMLCoordinates(
     throw new Error('Tidak ada koordinat valid pada polygon');
   }
 
-  return path.map((coord, index) => ({
-    id: `placemark-${selectedPlacemarkIndex}-polygon-0-point-${index}`,
-    latitude: coord.lat,
-    longitude: coord.lng,
-  }));
+  return path;
+}
+
+/**
+ * Every polygon in a KML document, in file order.
+ *
+ * A Placemark may hold more than one `<Polygon>` (inside a `<MultiGeometry>`),
+ * and a document may hold any number of Placemarks — all of them are returned.
+ * Names are taken from the Placemark so a batch import can label each row.
+ */
+export function parseKMLPolygons(kmlContent: string): ParsedPolygon[] {
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(kmlContent, 'text/xml');
+
+  if (xmlDoc.getElementsByTagName('parsererror').length > 0) {
+    throw new Error('Format KML tidak valid');
+  }
+
+  const placemarks = xmlDoc.getElementsByTagName('Placemark');
+  const polygons: ParsedPolygon[] = [];
+
+  for (let i = 0; i < placemarks.length; i++) {
+    const placemark = placemarks[i];
+    const polygonElements = placemark.getElementsByTagName('Polygon');
+    if (polygonElements.length === 0) continue;
+
+    const name = placemarkName(placemark);
+
+    for (let j = 0; j < polygonElements.length; j++) {
+      const ring = polygonOuterRing(polygonElements[j]);
+      polygons.push({
+        // A multi-geometry Placemark shares one name across its parts, so number
+        // them — otherwise a batch import shows the same label several times.
+        name: polygonElements.length > 1 && name ? `${name} (${j + 1})` : name,
+        coordinates: ring.map((coord, index) => ({
+          id: `placemark-${i}-polygon-${j}-point-${index}`,
+          latitude: coord.lat,
+          longitude: coord.lng,
+        })),
+      });
+    }
+  }
+
+  return polygons;
 }
 
 const processCoordinates = (coordsString: string): Array<{ lat: number; lng: number }> => {
@@ -419,10 +409,8 @@ export async function parseGeospatialFile(file: File): Promise<ParseResult> {
     case 'gpx':
       return parseGPXFile(file);
     default:
-      return {
-        success: false,
-        coordinates: [],
-        error: `Format file tidak didukung. Format yang didukung: KMZ, KML, GPX`,
-      };
+      return parseFailure(
+        'Format file tidak didukung. Format yang didukung: KMZ, KML, GPX'
+      );
   }
 }

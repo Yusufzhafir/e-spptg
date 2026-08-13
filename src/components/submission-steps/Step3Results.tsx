@@ -37,8 +37,19 @@ import { CheckCircle2, XCircle, MapPin, AlertTriangle, Upload, File, X } from 'l
 import { toast } from 'sonner';
 import { ReadOnlyMap } from '@/components/maps/ReadOnlyMap';
 import type { ReferencePolygon } from '@/components/maps/DrawingMap';
-import { coordinatesToGeoJSON, geoJSONToPaths } from '@/lib/map-utils';
-import { overlapJenisBadgeClassName } from '@/lib/overlap-results';
+import { geoJSONToPaths } from '@/lib/map-utils';
+import {
+  allPolygonCoordinates,
+  draftPolygons,
+  isUsablePolygon,
+  polygonsToMultiPolygon,
+} from '@/lib/land-polygons';
+import {
+  describeOverlapSources,
+  overlapJenisBadgeClassName,
+  overlapSourceLabel,
+  summariseOverlaps,
+} from '@/lib/overlap-results';
 import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
 import { trpc } from '@/trpc/client';
 import { DocumentActions } from '@/components/DocumentActions';
@@ -131,6 +142,10 @@ export function Step3Results({
   const deleteDocumentMutation = trpc.documents.delete.useMutation();
 
   const hasOverlap = draft.overlapResults && draft.overlapResults.length > 0;
+  // Split by source: an overlap with an already-filed SPPTG is a competing claim,
+  // not a protected zone, and reporting both as "kawasan Non-SPPTG" sent
+  // verifikator after the wrong remedy.
+  const overlapSummary = summariseOverlaps(draft.overlapResults);
   const requiresFeedback = selectedStatus === 'SPPTG ditolak' || selectedStatus === 'SPPTG ditinjau ulang';
 
   const handleAlasanToggle = (alasan: string) => {
@@ -398,8 +413,22 @@ export function Step3Results({
     { label: 'Berita Acara Lapangan', uploaded: !!draft.dokumenBeritaAcara },
   ];
 
+  // Every bidang of the pengajuan, so a multi-parcel claim previews in full.
+  const polygons = useMemo(() => draftPolygons(draft), [draft]);
+  const usablePolygons = useMemo(
+    () => polygons.filter(isUsablePolygon),
+    [polygons]
+  );
+  const previewCenter = useMemo(() => {
+    const first = allPolygonCoordinates(usablePolygons)[0];
+    return {
+      lat: first?.latitude ?? -6.9175,
+      lng: first?.longitude ?? 107.6191,
+    };
+  }, [usablePolygons]);
+
   const mapPreviewSubmission = useMemo<Submission | null>(() => {
-    const geoJSON = coordinatesToGeoJSON(draft.coordinatesGeografis || []);
+    const geoJSON = polygonsToMultiPolygon(draftPolygons(draft));
     if (!geoJSON) return null;
 
     return {
@@ -565,7 +594,16 @@ export function Step3Results({
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
             <h3 className="text-gray-900 mb-3">Saksi Batas Lahan</h3>
             {draft.saksiList.length === 0 ? (
-              <p className="text-sm text-gray-500">Belum ada saksi</p>
+              // A decision is being made on this screen, and a certificate with
+              // no witness block is a defect on the paper — too quiet a line to
+              // leave in plain grey.
+              <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <p className="text-sm text-amber-900">
+                  Belum ada saksi batas lahan pada pengajuan ini. SPPTG akan
+                  tercetak tanpa identitas dan tanda tangan saksi.
+                </p>
+              </div>
             ) : (
               <div className="space-y-2">
                 {draft.saksiList.map((saksi) => (
@@ -597,7 +635,9 @@ export function Step3Results({
               <MapPin className="w-10 h-10 text-blue-600" />
             </div>
             <p className="text-xs text-blue-700 mt-2">
-              {draft.coordinatesGeografis.length} titik koordinat tercatat
+              {allPolygonCoordinates(usablePolygons).length} titik koordinat
+              tercatat
+              {usablePolygons.length > 1 ? ` pada ${usablePolygons.length} bidang` : ''}
             </p>
           </div>
 
@@ -618,7 +658,8 @@ export function Step3Results({
                       <strong>Ada Tumpang Tindih</strong>
                     </p>
                     <p className="text-sm text-orange-700 mt-1">
-                      {draft.overlapResults.length} kawasan non-SPPTG terdeteksi
+                      {overlapSummary.total} terdeteksi:{' '}
+                      {describeOverlapSources(draft.overlapResults)}
                     </p>
                     <Button
                       variant="link"
@@ -637,7 +678,8 @@ export function Step3Results({
                       <strong>Tidak Ada Tumpang Tindih</strong>
                     </p>
                     <p className="text-sm text-green-700 mt-1">
-                      Lahan tidak overlap dengan kawasan non-SPPTG
+                      Lahan tidak overlap dengan kawasan Non-SPPTG maupun SPPTG
+                      eksisting
                     </p>
                   </div>
                 </>
@@ -657,10 +699,7 @@ export function Step3Results({
                 selectedSubmission={mapPreviewSubmission}
                 height="24rem"
                 zoom={16}
-                center={{
-                  lat: draft.coordinatesGeografis[0]?.latitude || -6.9175,
-                  lng: draft.coordinatesGeografis[0]?.longitude || 107.6191,
-                }}
+                center={previewCenter}
               />
             ) : (
               <div className="bg-gray-100 rounded-lg border border-gray-300 h-96 flex items-center justify-center">
@@ -978,10 +1017,7 @@ export function Step3Results({
                 showNonSpptgLegend
                 height="20rem"
                 zoom={16}
-                center={{
-                  lat: draft.coordinatesGeografis[0]?.latitude || -6.9175,
-                  lng: draft.coordinatesGeografis[0]?.longitude || 107.6191,
-                }}
+                center={previewCenter}
               />
             </div>
           )}
@@ -999,7 +1035,7 @@ export function Step3Results({
                       </Badge>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">
-                      Sumber: {overlap.sumber === 'Submission' ? 'SPPTG Eksisting' : 'Kawasan Non-SPPTG'}
+                      Sumber: {overlapSourceLabel(overlap)}
                     </p>
                   </div>
                   <Badge variant="outline" className="text-orange-700 border-orange-300">
@@ -1118,10 +1154,11 @@ export function Step3Results({
           <AlertDialogHeader>
             <AlertDialogTitle>Peringatan Tumpang Tindih</AlertDialogTitle>
             <AlertDialogDescription>
-              Lahan pengajuan ini tumpang tindih dengan {draft.overlapResults.length} kawasan
-              non-SPPTG. Keputusan &quot;SPPTG terdaftar&quot; tetap dapat disimpan, tetapi
-              penerbitan SPPTG akan ditolak sampai tumpang tindihnya diselesaikan.
-              Tetap simpan keputusan ini?
+              Lahan pengajuan ini tumpang tindih dengan{' '}
+              {describeOverlapSources(draft.overlapResults)}. Keputusan &quot;SPPTG
+              terdaftar&quot; tetap dapat disimpan, tetapi penerbitan SPPTG akan
+              ditolak sampai tumpang tindihnya diselesaikan. Tetap simpan keputusan
+              ini?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

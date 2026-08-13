@@ -81,8 +81,12 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
+  // `scroll-smooth` is what makes the landing page's in-page nav links
+  // (#tentang-kami, #statistik, #kontak) glide instead of jumping; it has to sit
+  // on the scrolling element. `motion-reduce` opts out for anyone who asked the
+  // OS for less motion.
   return (
-    <html lang="id">
+    <html lang="id" className="scroll-smooth motion-reduce:scroll-auto">
       <body>
         <Providers>{children}</Providers>
       </body>

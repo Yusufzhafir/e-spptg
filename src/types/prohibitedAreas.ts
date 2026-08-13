@@ -1,4 +1,4 @@
-import { ProhibitedArea } from ".";
+import { GeoJSONMultiPolygon, GeoJSONPolygon, ProhibitedArea } from ".";
 
 /**
  * Input type for creating a prohibited area via API
@@ -15,10 +15,11 @@ export type CreateProhibitedAreaInput = {
   aktifDiValidasi?: boolean;
   warna: string;
   catatan: string | null; // nullable() = string | null
-  geomGeoJSON: {
-    type: 'Polygon';
-    coordinates: [[[number, number]]];
-  };
+  /**
+   * Polygon or MultiPolygon — a kawasan is often a set of detached blocks under
+   * one SK, and the boundary files that define them arrive that way.
+   */
+  geomGeoJSON: GeoJSONPolygon | GeoJSONMultiPolygon;
 };
 
 /**

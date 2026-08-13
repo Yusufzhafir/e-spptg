@@ -92,6 +92,7 @@ const ACTION_LABEL: Record<string, string> = {
   'villages.delete': 'Hapus desa',
 
   'prohibitedAreas.create': 'Tambah kawasan Non-SPPTG',
+  'prohibitedAreas.createBulk': 'Impor kawasan Non-SPPTG',
   'prohibitedAreas.update': 'Ubah kawasan Non-SPPTG',
   'prohibitedAreas.delete': 'Hapus kawasan Non-SPPTG',
 

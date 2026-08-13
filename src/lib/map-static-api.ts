@@ -218,8 +218,62 @@ export function generateStaticMapUrl(
 }
 
 /**
+ * The same map image, for a pengajuan that covers several separated bidang.
+ *
+ * One `path` parameter per bidang (the Static API accepts repeats), with the
+ * centre and zoom computed across all of them so no parcel falls outside the
+ * frame. Falls back to the single-polygon builder for one bidang so nothing
+ * about the existing certificate image changes.
+ */
+export function generateStaticMapUrlForPolygons(
+  polygons: GeographicCoordinate[][],
+  config: MapImageConfig = {}
+): string | null {
+  const usable = polygons.filter((polygon) => polygon.length >= 3);
+  if (usable.length === 0) return null;
+  if (usable.length === 1) return generateStaticMapUrl(usable[0], config);
+
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    console.warn('Google Maps API key not found');
+    return null;
+  }
+
+  const mergedConfig = { ...DEFAULT_CONFIG, ...config };
+  const allCoordinates = usable.flat();
+  const centroid = calculateCentroid(allCoordinates);
+  const zoom = calculateZoomLevel(
+    allCoordinates,
+    mergedConfig.width || DEFAULT_CONFIG.width!,
+    mergedConfig.height || DEFAULT_CONFIG.height!,
+    mergedConfig.contextZoomOut ?? DEFAULT_CONFIG.contextZoomOut
+  );
+
+  const params = new URLSearchParams({
+    key: apiKey,
+    center: `${centroid.lat},${centroid.lng}`,
+    zoom: zoom.toString(),
+    size: `${mergedConfig.width}x${mergedConfig.height}`,
+    scale: String(mergedConfig.scale || 1),
+    maptype: mergedConfig.mapType || 'roadmap',
+  });
+
+  for (const polygon of usable) {
+    params.append(
+      'path',
+      `fillcolor:0x${mergedConfig.fillColor}55|weight:${mergedConfig.strokeWeight}|color:0x${mergedConfig.strokeColor}FF|enc:${encodePolyline([
+        ...polygon,
+        polygon[0],
+      ])}`
+    );
+  }
+
+  return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
+}
+
+/**
  * Generate a map image URL with custom styling
- * 
+ *
  * This function allows more control over the map appearance
  */
 export function generateStyledMapUrl(

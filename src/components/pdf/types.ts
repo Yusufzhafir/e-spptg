@@ -12,7 +12,12 @@ import { GeographicCoordinate } from '@/types';
  * Allows dynamic inclusion/exclusion of document sections
  */
 export interface PDFGenerationConfig {
-  /** Include witnesses table on page 2 */
+  /**
+   * Include the witness blocks on the signature page. Does not affect the saksi
+   * continuation sheets: those pages exist only because there are more saksi
+   * than the signature page holds, and the page count is derived from the data
+   * alone (see `pagination.ts`).
+   */
   includeWitnesses: boolean;
   /** Include administrative section (Kepala Desa) on page 2 */
   includeAdministrative: boolean;
@@ -111,7 +116,7 @@ export interface SPPTGPDFData {
   /** Northwest boundary land use */
   penggunaanBatasBaratLaut?: string;
 
-  // Witnesses (1-4 witnesses)
+  // Witnesses (at least one; no upper bound — see pagination.ts)
   /** List of boundary witnesses */
   saksiList: Array<{
     /** Witness name */
@@ -153,8 +158,18 @@ export interface SPPTGPDFData {
   jabatanJuruUkur?: string;
 
   // Map Data
-  /** Geographic coordinates of land polygon */
+  /**
+   * Geographic coordinates of the first (or only) land polygon. Kept for
+   * certificates issued before a pengajuan could cover several bidang; the
+   * attachment reads `polygons` when it is present.
+   */
   coordinatesGeografis: GeographicCoordinate[];
+  /** Every bidang of the pengajuan, each with its own boundary. */
+  polygons?: Array<{
+    /** Label printed above the bidang's coordinate tables. */
+    nama?: string;
+    coordinates: GeographicCoordinate[];
+  }>;
   /** URL to map image (Google Maps Static API) */
   mapImageUrl?: string;
 }

@@ -9,6 +9,7 @@
  */
 
 import JSZip from 'jszip';
+import type { SubmissionGeometry } from '@/types';
 
 export type KMLExportSubmission = {
   id: number;
@@ -24,8 +25,20 @@ export type KMLExportSubmission = {
   penggunaanLahan?: string | null;
   status: string;
   tanggalPengajuan: Date | string;
-  geoJSON?: { type: 'Polygon'; coordinates: number[][][] } | null;
+  /**
+  * Polygon or MultiPolygon — a pengajuan may cover several separated bidang.
+  */
+  geoJSON?: SubmissionGeometry | null;
 };
+
+/** The polygons of a geometry, each as its list of rings (outer ring first). */
+function geometryPolygons(geometry: SubmissionGeometry | null | undefined): number[][][][] {
+  if (!geometry) return [];
+  if (geometry.type === 'MultiPolygon') {
+    return geometry.coordinates as number[][][][];
+  }
+  return [geometry.coordinates as number[][][]];
+}
 
 /** KML is XML — every value interpolated into it has to be escaped. */
 function escapeXml(value: string): string {
@@ -101,9 +114,10 @@ function extendedData(rows: Array<[string, string]>): string {
  * @throws when the submission has no usable polygon — there is nothing to export.
  */
 export function buildSubmissionKML(submission: KMLExportSubmission): string {
-  const rings = submission.geoJSON?.coordinates ?? [];
-  const outerRing = rings[0];
-  if (!outerRing || outerRing.length < 3) {
+  const polygons = geometryPolygons(submission.geoJSON).filter(
+    (rings) => (rings[0]?.length ?? 0) >= 3
+  );
+  if (polygons.length === 0) {
     throw new Error('Pengajuan ini tidak memiliki polygon batas lahan.');
   }
 
@@ -148,16 +162,37 @@ export function buildSubmissionKML(submission: KMLExportSubmission): string {
 
   // Inner rings are holes in the parcel. The app cannot draw them today, but a
   // KML import can carry them, so round-trip whatever is stored.
-  const innerBoundaries = rings
-    .slice(1)
-    .filter((ring) => ring.length >= 3)
-    .map(
-      (ring) =>
-        `          <innerBoundaryIs><LinearRing><coordinates>${ringToCoordinates(
-          ring
-        )}</coordinates></LinearRing></innerBoundaryIs>`
-    )
+  const polygonXml = polygons
+    .map((rings) => {
+      const innerBoundaries = rings
+        .slice(1)
+        .filter((ring) => ring.length >= 3)
+        .map(
+          (ring) =>
+            `          <innerBoundaryIs><LinearRing><coordinates>${ringToCoordinates(
+              ring
+            )}</coordinates></LinearRing></innerBoundaryIs>`
+        )
+        .join('\n');
+
+      return `      <Polygon>
+        <tessellate>1</tessellate>
+        <altitudeMode>clampToGround</altitudeMode>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>${ringToCoordinates(rings[0])}</coordinates>
+          </LinearRing>
+        </outerBoundaryIs>${innerBoundaries ? `\n${innerBoundaries}` : ''}
+      </Polygon>`;
+    })
     .join('\n');
+
+  // Several bidang go into one MultiGeometry Placemark so the pengajuan stays a
+  // single feature in whatever GIS desk opens it.
+  const geometryXml =
+    polygons.length > 1
+      ? `      <MultiGeometry>\n${polygonXml}\n      </MultiGeometry>`
+      : polygonXml;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
@@ -178,15 +213,7 @@ export function buildSubmissionKML(submission: KMLExportSubmission): string {
       <description>${escapeXml(description)}</description>
       <styleUrl>#batasLahan</styleUrl>
 ${extendedData(data)}
-      <Polygon>
-        <tessellate>1</tessellate>
-        <altitudeMode>clampToGround</altitudeMode>
-        <outerBoundaryIs>
-          <LinearRing>
-            <coordinates>${ringToCoordinates(outerRing)}</coordinates>
-          </LinearRing>
-        </outerBoundaryIs>${innerBoundaries ? `\n${innerBoundaries}` : ''}
-      </Polygon>
+${geometryXml}
     </Placemark>
   </Document>
 </kml>

@@ -9,6 +9,7 @@ import { usersRouter } from './users/usersRouter';
 import { commentsRouter } from './comments/commentsRouter';
 import { notificationsRouter } from './notifications/notificationsRouter';
 import { auditRouter } from './audit/auditRouter';
+import { kunjunganRouter } from './kunjungan/kunjunganRouter';
 
 export const appRouter = router({
   auth: authRouter,
@@ -21,6 +22,7 @@ export const appRouter = router({
   comments: commentsRouter,
   notifications: notificationsRouter,
   audit: auditRouter,
+  kunjungan: kunjunganRouter,
 });
 
 export type AppRouter = typeof appRouter;

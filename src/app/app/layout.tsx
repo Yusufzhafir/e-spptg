@@ -11,7 +11,7 @@ import { AccountDeactivatedNotice } from '@/components/AccountDeactivatedNotice'
 
 export type AppStateContextValue = {
   handleStatusChange: (id: number, status: StatusSPPTG, alasan: string) => void;
-  handleCompleteSubmission: (draft: SubmissionDraft) => void;
+  handleCompleteSubmission: (draft: SubmissionDraft, submissionId: number) => void;
 };
 
 const AppStateContext = createContext<AppStateContextValue | null>(null);
@@ -94,7 +94,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     );
   };
 
-  const handleCompleteSubmission = (draft: SubmissionDraft) => {
+  const handleCompleteSubmission = (draft: SubmissionDraft, submissionId: number) => {
     const newSubmission: Submission = {
       id: 0, // Will be replaced by database
       namaPemilik: draft.namaPemohon,
@@ -127,11 +127,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     };
 
     setSubmissions((prev) => [newSubmission, ...prev]);
-    // `?terbit=1` rather than a toast fired here: raising it before `push`
-    // announces success while the wizard is still on screen and the button is
-    // still spinning. The dashboard shows it on arrival and strips the flag —
-    // the same pattern the draft editor uses for `?baru=1`.
-    router.push('/app?terbit=1');
+    // The issued pengajuan itself, not the dashboard: the certificate that was
+    // just produced is on that page. `?terbit=1` rather than a toast fired
+    // here: raising it before `push` announces success while the wizard is
+    // still on screen and the button is still spinning. The detail page shows
+    // it on arrival and strips the flag — the same pattern the draft editor
+    // uses for `?baru=1`.
+    router.push(`/app/pengajuan/${submissionId}?terbit=1`);
   };
 
   const contextValue: AppStateContextValue = {

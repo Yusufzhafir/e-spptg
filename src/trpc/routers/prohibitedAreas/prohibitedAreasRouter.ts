@@ -2,6 +2,7 @@ import { protectedProcedure, adminProcedure, router } from '../../init';
 import { z } from 'zod';
 import {
   createProhibitedAreaSchema,
+  createProhibitedAreasBulkSchema,
   updateProhibitedAreaSchema,
 } from '@/lib/validation';
 import * as queries from '@/server/db/queries/prohibitedAreas';
@@ -16,6 +17,26 @@ import {
   cached,
   invalidateProhibitedAreas,
 } from '@/server/redis/cache';
+import { geometryToMultiPolygonWKT } from '@/lib/land-polygons';
+import type { GeomGeoJSONArea } from '@/lib/validation';
+
+/**
+ * The kawasan's geometry as a MultiPolygon WKT literal.
+ *
+ * Rejects anything unusable up front with a 400 rather than letting an invalid
+ * literal reach Postgres, where it would surface as an opaque 500.
+ */
+function areaGeometryWKT(geometry: GeomGeoJSONArea): string {
+  try {
+    return geometryToMultiPolygonWKT(geometry);
+  } catch (error) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message:
+        error instanceof Error ? error.message : 'Format koordinat GeoJSON tidak valid',
+    });
+  }
+}
 
 export const prohibitedAreasRouter = router({
   // Cached: the kawasan layer is redrawn on every map render but only changes
@@ -106,33 +127,10 @@ export const prohibitedAreasRouter = router({
         });
       }
 
-      // Validate GeoJSON structure
-      if (!input.geomGeoJSON || input.geomGeoJSON.type !== 'Polygon') {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'GeoJSON harus berupa Polygon',
-        });
-      }
-
-      if (!input.geomGeoJSON.coordinates || !Array.isArray(input.geomGeoJSON.coordinates[0])) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Format koordinat GeoJSON tidak valid',
-        });
-      }
-
-            // Explicitly ensure all coordinates are valid numbers
-      const sanitizedCoords = input.geomGeoJSON.coordinates[0].map((c) => {
-        const lon = Number(c[0]);
-        const lat = Number(c[1]);
-        if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'Koordinat harus berupa angka yang valid',
-          });
-        }
-        return `${lon} ${lat}`;
-      }).join(',');
+      // A kawasan may consist of several detached blocks, so the geometry is
+      // always written as a MultiPolygon — the column's typmod would reject a
+      // bare Polygon literal.
+      const wkt = areaGeometryWKT(input.geomGeoJSON);
 
       try {
         const result = await ctx.db.transaction(async (tx) => {
@@ -147,7 +145,7 @@ export const prohibitedAreasRouter = router({
             aktifDiValidasi: input.aktifDiValidasi ?? true,
             warna: input.warna,
             catatan: input.catatan,
-            geom: sql.raw(`ST_PolygonFromText('POLYGON((${sanitizedCoords}))',4326)`),
+            geom: sql.raw(`ST_MPolyFromText('${wkt}',4326)`),
           }).returning({
             id : prohibitedAreas.id,
           })
@@ -169,6 +167,80 @@ export const prohibitedAreasRouter = router({
       }
     }),
 
+  /**
+   * Import a whole boundary file: one kawasan row per polygon, all sharing the
+   * batch's jenis/sumber/dasar hukum.
+   *
+   * One transaction, so a file that fails halfway leaves no half-imported
+   * kawasan behind — a partial set would silently under-report overlaps on
+   * every subsequent validation.
+   */
+  createBulk: adminProcedure
+    .input(createProhibitedAreasBulkSchema)
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.appUser) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'User tidak ditemukan',
+        });
+      }
+
+      const rows = input.areas.map((area) => {
+        let wkt: string;
+        try {
+          wkt = areaGeometryWKT(area.geomGeoJSON);
+        } catch {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `Polygon "${area.namaKawasan}" tidak memiliki koordinat yang valid`,
+          });
+        }
+
+        return {
+          namaKawasan: area.namaKawasan,
+          jenisKawasan: input.jenisKawasan,
+          sumberData: input.sumberData,
+          dasarHukum: input.dasarHukum,
+          tanggalEfektif: input.tanggalEfektif,
+          diunggahOleh: ctx.appUser!.id,
+          statusValidasi: input.statusValidasi ?? 'Lolos',
+          aktifDiValidasi: input.aktifDiValidasi ?? true,
+          warna: input.warna,
+          catatan: input.catatan,
+          geom: sql.raw(`ST_MPolyFromText('${wkt}',4326)`),
+        };
+      });
+
+      try {
+        const created = await ctx.db.transaction(async (tx) =>
+          tx
+            .insert(prohibitedAreas)
+            .values(rows)
+            .returning({ id: prohibitedAreas.id })
+        );
+
+        await invalidateProhibitedAreas();
+        ctx.audit.set({
+          ringkasan: `Impor ${created.length} kawasan Non-SPPTG (${input.jenisKawasan}) dari file geospasial`,
+          // Names only: the geometry would bloat every audit row well past
+          // anything a reader could use.
+          sesudah: {
+            jenisKawasan: input.jenisKawasan,
+            sumberData: input.sumberData,
+            namaKawasan: input.areas.map((area) => area.namaKawasan),
+          },
+        });
+        return { created: created.length, ids: created.map((row) => row.id) };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        console.error(error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Gagal mengimpor kawasan Non-SPPTG',
+        });
+      }
+    }),
+
   update: adminProcedure
     .input(
       z.object({
@@ -183,23 +255,6 @@ export const prohibitedAreasRouter = router({
       const sebelumRaw = await queries.getProhibitedAreaById(input.id);
       const sebelumUbah = Array.isArray(sebelumRaw) ? sebelumRaw[0] : sebelumRaw;
 
-      // Validate GeoJSON if provided
-      if (input.data.geomGeoJSON) {
-        if (input.data.geomGeoJSON.type !== 'Polygon') {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'GeoJSON harus berupa Polygon',
-          });
-        }
-
-        if (!input.data.geomGeoJSON.coordinates || !Array.isArray(input.data.geomGeoJSON.coordinates[0])) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'Format koordinat GeoJSON tidak valid',
-          });
-        }
-      }
-
       // Convert GeoJSON to geometry if provided
       const updateData: Record<string, unknown> = { ...input.data };
       if (input.data.geomGeoJSON) {
@@ -212,17 +267,7 @@ export const prohibitedAreasRouter = router({
           });
         }
 
-        const sanitizedCoords = input.data.geomGeoJSON.coordinates[0].map((c) => {
-          const lon = Number(c[0]);
-          const lat = Number(c[1]);
-          if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: 'Koordinat harus berupa angka yang valid',
-            });
-          }
-          return `${lon} ${lat}`;
-        }).join(',');
+        const wkt = areaGeometryWKT(input.data.geomGeoJSON);
 
         // Update with geometry conversion.
         // NB: only return the id — a bare .returning() reads back the `geom`
@@ -235,7 +280,7 @@ export const prohibitedAreasRouter = router({
             ...Object.fromEntries(
               Object.entries(updateData).filter(([key]) => key !== 'geomGeoJSON')
             ),
-            geom: sql.raw(`ST_PolygonFromText('POLYGON((${sanitizedCoords}))',4326)`),
+            geom: sql.raw(`ST_MPolyFromText('${wkt}',4326)`),
             updatedAt: new Date(),
           })
           .where(eq(prohibitedAreas.id, input.id))

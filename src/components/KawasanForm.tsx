@@ -17,11 +17,13 @@ import { SearchableSelect } from './SearchableSelect';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { PROHIBITED_AREA_TYPES } from '@/lib/prohibited-area-types';
+import type { GeoJSONMultiPolygon } from '@/types';
 
 const jenisKawasanOptions: readonly ProhibitedAreaType[] = PROHIBITED_AREA_TYPES;
 
 type KawasanFormData = Partial<Omit<ProhibitedArea, 'geomGeoJSON'>> & {
-  geomGeoJSON?: { type: 'Polygon'; coordinates: [[[number, number]]] } | null;
+  /** MultiPolygon: a kawasan may consist of several detached blocks. */
+  geomGeoJSON?: GeoJSONMultiPolygon | null;
 };
 
 interface KawasanFormProps {
@@ -136,9 +138,7 @@ export function KawasanForm({ mode, initialArea, isSubmitting, onSubmit }: Kawas
           <KawasanGeometryEditor
             initialGeoJSON={formData.geomGeoJSON}
             excludeAreaId={mode === 'edit' ? initialArea?.id : undefined}
-            onChange={(g) =>
-              setFormData((prev) => ({ ...prev, geomGeoJSON: g as typeof prev.geomGeoJSON }))
-            }
+            onChange={(g) => setFormData((prev) => ({ ...prev, geomGeoJSON: g }))}
           />
         </div>
 

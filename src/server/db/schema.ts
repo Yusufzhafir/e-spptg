@@ -379,8 +379,10 @@ export const prohibitedAreas = pgTable(
     warna: varchar('warna', { length: 7 }).notNull(), // Hex color
     catatan: text('catatan'),
     
-    // PostGIS Geometry
-    geom: geometry('geom', { type: 'polygon', srid: 4326 }).notNull(),
+    // PostGIS Geometry — a MultiPolygon: a kawasan is often a set of detached
+    // blocks under one SK, and the boundary files that define them arrive that
+    // way. Rows created before this are stored as single-part MultiPolygons.
+    geom: geometry('geom', { type: 'multipolygon', srid: 4326 }).notNull(),
     
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -459,8 +461,11 @@ export const submissions = pgTable(
     catatan: text('catatan'),
     
     // Peta & Dokumen
-    // PostGIS Geometry (Polygon of the land boundary)
-    geom: geometry('geom', { type: 'polygon', srid: 4326 }),
+    // PostGIS Geometry — a MultiPolygon: one pengajuan can cover several
+    // separated bidang. Rows written before that are stored as a single-part
+    // MultiPolygon; every predicate (ST_Intersects/ST_Intersection/ST_Area)
+    // behaves identically either way.
+    geom: geometry('geom', { type: 'multipolygon', srid: 4326 }),
     geoJSON: jsonb('geo_json'), // Fallback/reference
     // Full draft payload snapshot at submit time — lets the submission be
     // re-opened for editing with every field/upload pre-filled.
@@ -557,9 +562,12 @@ export const overlapResults = pgTable(
     namaKawasan: varchar('nama_kawasan', { length: 255 }).notNull(),
     jenisKawasan: prohibitedAreaTypeEnum('jenis_kawasan').notNull(),
     
-    // Geometry of the intersection (for visualization)
+    // Geometry of the intersection (for visualization). Untyped `geometry`
+    // because ST_Intersection of a multi-bidang submission with a kawasan can
+    // come back as a Polygon, a MultiPolygon or (when boundaries only touch) a
+    // GeometryCollection — a Polygon typmod would reject the insert outright.
     intersectionGeom: geometry('intersection_geom', {
-      type: 'polygon',
+      type: 'geometry',
       srid: 4326,
     }),
     
@@ -689,5 +697,62 @@ export const pushSubscriptions = pgTable(
   },
   (t) => [
     index('push_subscriptions_user_idx').on(t.userId),
+  ]
+);
+
+// ============================================================================
+// PAGE VISITS (Statistik Kunjungan Portal)
+// ============================================================================
+
+/**
+ * One row per page view of the **public** landing page.
+ *
+ * Written by `POST /api/kunjungan`, a beacon the landing page fires once per
+ * load — the page is prerendered (ISR), so there is no per-visit server render
+ * that could count it instead. Read back only as aggregates
+ * (`kunjungan.statistik`); no individual row ever leaves the server.
+ *
+ * `ip` holds the **raw visitor address**, which is a deliberate choice made by
+ * the operator rather than the default. That makes this the only table in the
+ * app carrying personal data about people who never signed in, so two things
+ * follow: it must never be selected into a public response (the read path
+ * returns counts and `COUNT(DISTINCT ip)` only), and rows older than
+ * `VISIT_RETENTION_DAYS` should be deleted — see `hapusKunjunganLama`.
+ *
+ * `negara`/`kota` are filled from proxy headers (CF-IPCountry, X-Geo-*) when the
+ * deployment sits behind a proxy that sends them, and stay null otherwise; the
+ * app makes no outbound geolocation call.
+ */
+export const pageVisits = pgTable(
+  'page_visits',
+  {
+    id: bigint({ mode: 'number' }).primaryKey().generatedByDefaultAsIdentity({
+      name: 'page_visits_id_seq',
+      startWith: 1,
+      increment: 1,
+      minValue: 1,
+      maxValue: (9223372036854775807n) as unknown as number,
+      cache: 1,
+    }),
+    waktu: timestamp('waktu').defaultNow().notNull(),
+    /** Which public path was viewed. */
+    path: varchar('path', { length: 255 }).notNull(),
+    /** IPv4/IPv6 literal, 45 chars covers IPv4-mapped IPv6. */
+    ip: varchar('ip', { length: 45 }),
+    /** 'internal' | 'langsung' | 'eksternal' — how the visitor arrived. */
+    rujukanJenis: varchar('rujukan_jenis', { length: 20 }).notNull(),
+    /** Host of the referrer, e.g. `google.com`. Null for direct visits. */
+    rujukanHost: varchar('rujukan_host', { length: 255 }),
+    browser: varchar('browser', { length: 60 }).notNull(),
+    os: varchar('os', { length: 60 }).notNull(),
+    perangkat: varchar('perangkat', { length: 20 }).notNull(),
+    negara: varchar('negara', { length: 80 }),
+    kota: varchar('kota', { length: 120 }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    // Every aggregate is a window over `waktu` (5 minutes, today, this month,
+    // the last 15 days), so this index carries all of them.
+    index('page_visits_waktu_idx').on(t.waktu),
   ]
 );

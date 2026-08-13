@@ -11,6 +11,18 @@ export interface GeoJSONPolygon {
   coordinates: number[][][];
 }
 
+export interface GeoJSONMultiPolygon {
+  type: 'MultiPolygon';
+  coordinates: number[][][][];
+}
+
+/**
+ * A pengajuan may cover several separated bidang, so `submissions.geom` is a
+ * MultiPolygon. Older rows were written as a plain Polygon and are still read
+ * back as one — every consumer must accept both.
+ */
+export type SubmissionGeometry = GeoJSONPolygon | GeoJSONMultiPolygon;
+
 export interface Submission {
   id: number;
   // Data Pemilik
@@ -34,7 +46,7 @@ export interface Submission {
   catatan: string | null;
   
   // Peta & Dokumen
-  geoJSON?: GeoJSONPolygon | null;
+  geoJSON?: SubmissionGeometry | null;
   /**
    * Snapshot of the draft payload at submit time. Holds the applicant fields
    * the submissions table has no column for (tempat/tanggal lahir, pekerjaan,
@@ -74,6 +86,9 @@ export interface SubmissionPayloadSnapshot {
   tanggalLahir?: string;
   pekerjaan?: string;
   alamatKTP?: string;
+  /** Field tape measurements from Step 2, in metres. */
+  panjangLahan?: number;
+  lebarLahan?: number;
   /**
    * Step 3 feedback. Newer submissions also have it in the `feedback` column;
    * this is the only place older rows carry it, so the detail page reads both.
@@ -214,6 +229,23 @@ export interface GeographicCoordinate {
   longitude: number;
 }
 
+/**
+ * One bidang of a pengajuan. Several of these make up a claim that covers
+ * separated parcels — see `@/lib/land-polygons`.
+ */
+export interface LandPolygon {
+  id: string;
+  /** Free-text label, usually the KML placemark name. */
+  nama?: string;
+  coordinates: GeographicCoordinate[];
+  /**
+   * Imported from a geospatial file, so the vertices are the file's record and
+   * are not editable — a wrong import is deleted and re-imported rather than
+   * unlocked.
+   */
+  locked?: boolean;
+}
+
 export interface UTMCoordinate {
   id: string;
   zone: string;
@@ -275,7 +307,14 @@ export interface SubmissionDraft {
   saksiList: BoundaryWitness[];
   
   coordinateSystem: CoordinateSystem;
+  /**
+   * Mirror of `polygons[0].coordinates`, kept for drafts filed before a
+   * pengajuan could hold more than one bidang. Never write it on its own — use
+   * `polygonsPatch` from `@/lib/land-polygons`.
+   */
   coordinatesGeografis: GeographicCoordinate[];
+  /** Every bidang of this pengajuan. Absent on pre-multi-polygon drafts. */
+  polygons?: LandPolygon[];
   
   fotoLahan: UploadedDocument[];
   dokumenBeritaAcara?: UploadedDocument;
@@ -287,6 +326,9 @@ export interface SubmissionDraft {
   luasLahan?: number; // m² calculated from polygon
   luasManual?: number | null; // m² input manual
   kelilingLahan?: number; // m
+  /** Tape measurement at the patok, in metres. Optional, printed on no document. */
+  panjangLahan?: number;
+  lebarLahan?: number;
   
   // Step 3: Results
   status?: StatusSPPTG;

@@ -68,7 +68,7 @@ describe('buildSubmissionKML', () => {
       geoJSON: {
         type: 'Polygon',
         coordinates: [
-          baseSubmission.geoJSON!.coordinates[0],
+          (baseSubmission.geoJSON!.coordinates as number[][][])[0],
           [
             [117.52, 0.52],
             [117.53, 0.52],
@@ -140,5 +140,67 @@ describe('submissionExportFilename', () => {
 
   it('falls back when the name reduces to nothing', () => {
     expect(sanitiseFilename('///')).toBe('pengajuan');
+  });
+});
+
+describe('buildSubmissionKML — pengajuan covering several bidang', () => {
+  const multiBidang: KMLExportSubmission = {
+    ...baseSubmission,
+    geoJSON: {
+      type: 'MultiPolygon',
+      coordinates: [
+        (baseSubmission.geoJSON!.coordinates as number[][][]),
+        [
+          [
+            [118.1, 1.1],
+            [118.2, 1.1],
+            [118.2, 1.2],
+            [118.1, 1.1],
+          ],
+        ],
+      ],
+    },
+  };
+
+  it('writes every bidang, wrapped in one MultiGeometry placemark', () => {
+    const kml = buildSubmissionKML(multiBidang);
+
+    expect(kml).toContain('<MultiGeometry>');
+    expect(kml.match(/<Polygon>/g)).toHaveLength(2);
+    expect(kml).toContain('118.1,1.1,0 118.2,1.1,0 118.2,1.2,0 118.1,1.1,0');
+    // Still one feature: the pengajuan is one record wherever it is opened.
+    expect(kml.match(/<Placemark>/g)).toHaveLength(1);
+  });
+
+  it('leaves a single-bidang pengajuan as a bare Polygon', () => {
+    const kml = buildSubmissionKML(baseSubmission);
+
+    expect(kml).not.toContain('<MultiGeometry>');
+    expect(kml.match(/<Polygon>/g)).toHaveLength(1);
+  });
+
+  it('skips a part with too few points instead of emitting a broken ring', () => {
+    const kml = buildSubmissionKML({
+      ...multiBidang,
+      geoJSON: {
+        type: 'MultiPolygon',
+        coordinates: [
+          (baseSubmission.geoJSON!.coordinates as number[][][]),
+          [[[118.1, 1.1], [118.2, 1.1]]],
+        ],
+      },
+    });
+
+    expect(kml.match(/<Polygon>/g)).toHaveLength(1);
+    expect(kml).not.toContain('<MultiGeometry>');
+  });
+
+  it('still refuses a pengajuan with no usable polygon at all', () => {
+    expect(() =>
+      buildSubmissionKML({
+        ...baseSubmission,
+        geoJSON: { type: 'MultiPolygon', coordinates: [[[[117.5, 0.5]]]] },
+      })
+    ).toThrow(/tidak memiliki polygon/);
   });
 });

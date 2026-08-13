@@ -13,19 +13,30 @@ import {
   GeographicCoordinate,
   BoundaryDirection,
   CoordinateSystem,
+  LandPolygon,
 } from '../../types';
 import { trpc } from '@/trpc/client';
 import { useAuthRole } from '../AuthRoleProvider';
 import { DrawingMap, type ReferencePolygon } from '../maps/DrawingMap';
 import { geoJSONToPaths } from '@/lib/map-utils';
-import { overlapJenisBadgeClassName } from '@/lib/overlap-results';
-import { MAX_WITNESSES } from '@/lib/spptg-pdf-data';
+import {
+  describeOverlapSources,
+  overlapJenisBadgeClassName,
+  overlapSourceLabel,
+} from '@/lib/overlap-results';
 import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
 import { parseKMLFile } from '@/lib/kmz-parser';
 import {
-  coordinatesNeedIdNormalization,
-  normalizeCoordinateIds,
-} from '@/lib/coordinate-ids';
+  createPolygonId,
+  draftPolygons,
+  isUsablePolygon,
+  MIN_POLYGON_POINTS,
+  polygonLabel,
+  polygonsPatch,
+  totalPolygonArea,
+  validCoordinates,
+} from '@/lib/land-polygons';
+import { normalizeCoordinateIds } from '@/lib/coordinate-ids';
 import { createCoordinateRowMatcher } from '@/lib/coordinate-row-match';
 import {
   parseUtmInputStrings,
@@ -58,7 +69,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog';
-import { Plus, Trash2, MapPin, AlertTriangle, Pencil, X, Check } from 'lucide-react';
+import {
+  Plus,
+  Trash2,
+  MapPin,
+  AlertTriangle,
+  Pencil,
+  X,
+  Check,
+  Lock,
+  Shapes,
+  Users,
+} from 'lucide-react';
 import { SearchableSelect } from '../SearchableSelect';
 import { Badge } from '../ui/badge';
 import { toast } from 'sonner';
@@ -137,25 +159,18 @@ function formatUtmValue(value: number): string {
   return value.toFixed(2);
 }
 
-function hasValidPolygonCoordinates(coordinates: GeographicCoordinate[]): boolean {
-  const validCoordinates = coordinates.filter(
-    (coord) => {
-      const latitude = Number(coord.latitude);
-      const longitude = Number(coord.longitude);
-
-      return (
-        Number.isFinite(latitude) &&
-        Number.isFinite(longitude) &&
-        latitude >= -90 &&
-        latitude <= 90 &&
-        longitude >= -180 &&
-        longitude <= 180
-      );
-    }
-  );
-
-  return validCoordinates.length >= 3;
+/**
+ * An optional measurement input. Clearing the box stores `undefined`, not 0 —
+ * "not measured" and "measured as zero" are different things, and the draft
+ * schema rejects a non-positive number anyway.
+ */
+function parseMeasurement(value: string): number | undefined {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
+
+/** Colour of the other bidang of this same pengajuan on the map. */
+const OTHER_POLYGON_COLOR = '#a855f7';
 
 export function Step2FieldValidation({
   draft,
@@ -168,7 +183,7 @@ export function Step2FieldValidation({
   const [isOverlapDialogOpen, setIsOverlapDialogOpen] = useState(false);
   const [isParsingKml, setIsParsingKml] = useState(false);
   const [recenterSignal, setRecenterSignal] = useState(() =>
-    hasValidPolygonCoordinates(draft.coordinatesGeografis) ? 1 : 0
+    draftPolygons(draft).some(isUsablePolygon) ? 1 : 0
   );
   const [newWitness, setNewWitness] = useState<NewWitnessWithUsage>(EMPTY_WITNESS_FORM);
   // Set while an existing witness is being edited; the form doubles as the edit form.
@@ -179,18 +194,65 @@ export function Step2FieldValidation({
   const [utmCoordinates, setUtmCoordinates] = useState<LocalUTMCoordinate[]>([]);
   const [editingUtmField, setEditingUtmField] = useState<EditingUtmField | null>(null);
 
+  // Which bidang the coordinate table and the drawing tool are pointed at. The
+  // rest render behind it as read-only reference.
+  const [activePolygonId, setActivePolygonId] = useState<string | null>(null);
+
   // Initialize coordinate system from draft or default to geografis
   const coordinateSystem = draft.coordinateSystem || 'geografis';
 
-  useEffect(() => {
-    if (!coordinatesNeedIdNormalization(draft.coordinatesGeografis)) {
-      return;
-    }
+  // Keyed on the geometry fields, not the whole draft: `draft` gets a new
+  // identity on every keystroke in this step, and a fresh `polygons` array
+  // cascades into `referencePolygons`, which makes the map tear down and rebuild
+  // every kawasan and SPPTG polygon it is drawing as reference.
+  const polygons = useMemo(
+    () => draftPolygons(draft),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the geometry matters here
+    [draft.polygons, draft.coordinatesGeografis]
+  );
 
-    onUpdateDraft({
-      coordinatesGeografis: normalizeCoordinateIds(draft.coordinatesGeografis),
-    });
-  }, [draft.coordinatesGeografis, onUpdateDraft]);
+  const activePolygonIndex = useMemo(() => {
+    const index = polygons.findIndex((polygon) => polygon.id === activePolygonId);
+    // Falls back to the first bidang whenever the selected one is gone (deleted,
+    // or replaced wholesale by a KML import).
+    return index >= 0 ? index : 0;
+  }, [polygons, activePolygonId]);
+
+  const activePolygon: LandPolygon | undefined = polygons[activePolygonIndex];
+  // Memoised: a fresh `[]` on every render would re-run every effect and
+  // callback keyed on the active bidang's coordinates.
+  const activeCoordinates = useMemo(
+    () => activePolygon?.coordinates ?? [],
+    [activePolygon]
+  );
+  const isActiveLocked = Boolean(activePolygon?.locked);
+  // The coordinate table and the map are frozen for a Viewer *and* for a bidang
+  // whose vertices came from a KML: the file is the survey record.
+  const coordinatesReadOnly = readOnly || isActiveLocked;
+
+  /** Persist a new polygon list, keeping the mirrored fields in step. */
+  const applyPolygons = useCallback(
+    (next: LandPolygon[]) => {
+      onUpdateDraft(polygonsPatch(next));
+    },
+    [onUpdateDraft]
+  );
+
+  /** Replace the coordinates of the bidang currently being edited. */
+  const updateActiveCoordinates = useCallback(
+    (coordinates: GeographicCoordinate[]) => {
+      if (polygons.length === 0) {
+        applyPolygons([{ id: createPolygonId(), coordinates }]);
+        return;
+      }
+      applyPolygons(
+        polygons.map((polygon, index) =>
+          index === activePolygonIndex ? { ...polygon, coordinates } : polygon
+        )
+      );
+    },
+    [applyPolygons, polygons, activePolygonIndex]
+  );
 
   const toLocalUtmCoordinate = useCallback((geo: GeographicCoordinate): LocalUTMCoordinate => {
     const converted = toUtmFromLatLon(geo.latitude, geo.longitude);
@@ -204,13 +266,13 @@ export function Step2FieldValidation({
     };
   }, []);
 
-  // Sync UTM local state when switching to UTM mode or when draft coordinates change externally (e.g. map draw)
+  // Sync UTM local state when switching to UTM mode, when the active bidang
+  // changes, or when its coordinates change externally (map draw, KML import)
   useEffect(() => {
     if (coordinateSystem === 'utm' && !editingUtmField) {
-       
-      setUtmCoordinates(draft.coordinatesGeografis.map(toLocalUtmCoordinate));
+      setUtmCoordinates(activeCoordinates.map(toLocalUtmCoordinate));
     }
-  }, [draft.coordinatesGeografis, coordinateSystem, toLocalUtmCoordinate, editingUtmField]);
+  }, [activeCoordinates, coordinateSystem, toLocalUtmCoordinate, editingUtmField]);
 
   const handleSystemChange = (value: CoordinateSystem) => {
     onUpdateDraft({ coordinateSystem: value });
@@ -227,13 +289,6 @@ export function Step2FieldValidation({
 
   /** Adds a new witness, or saves the one currently being edited. */
   const handleSaveWitness = () => {
-    // The schema caps saksiList at 4 and the certificate prints at most 4, so a
-    // fifth would be dropped without a word — refuse it here instead.
-    if (!editingWitnessId && draft.saksiList.length >= MAX_WITNESSES) {
-      toast.error(`Maksimal ${MAX_WITNESSES} saksi batas lahan`);
-      return;
-    }
-
     if (!newWitness.nama?.trim()) {
       toast.error('Nama saksi harus diisi');
       return;
@@ -249,22 +304,14 @@ export function Step2FieldValidation({
       return;
     }
 
-    // Umur/pekerjaan/alamat fill in the witness block of the SPPTG, which names
-    // each saksi in full — a blank line there is not acceptable on a
-    // certificate, so they are required just like the rest.
-    const umur = newWitness.umur ? parseInt(newWitness.umur, 10) : NaN;
-    if (!Number.isFinite(umur) || umur < 1 || umur > 150) {
-      toast.error('Umur saksi harus diisi antara 1 dan 150');
-      return;
-    }
-
-    if (!newWitness.pekerjaan?.trim()) {
-      toast.error('Pekerjaan saksi harus diisi');
-      return;
-    }
-
-    if (!newWitness.alamat?.trim()) {
-      toast.error('Alamat saksi harus diisi');
+    // Umur/pekerjaan/alamat are optional — a surveyor often records a saksi in
+    // the field without them, and the certificate prints a blank dotted line
+    // just as the paper form did. Only the range is enforced when a value is
+    // actually given.
+    const umurRaw = newWitness.umur?.trim();
+    const umur = umurRaw ? parseInt(umurRaw, 10) : undefined;
+    if (umurRaw && (!Number.isFinite(umur) || umur! < 1 || umur! > 150)) {
+      toast.error('Umur saksi harus antara 1 dan 150');
       return;
     }
 
@@ -274,8 +321,8 @@ export function Step2FieldValidation({
       sisi: newWitness.sisi,
       penggunaanLahanBatas: newWitness.penggunaanLahanBatas.trim(),
       umur,
-      pekerjaan: newWitness.pekerjaan.trim(),
-      alamat: newWitness.alamat.trim(),
+      pekerjaan: newWitness.pekerjaan?.trim() || undefined,
+      alamat: newWitness.alamat?.trim() || undefined,
     };
 
     if (editingWitnessId) {
@@ -315,17 +362,13 @@ export function Step2FieldValidation({
   };
 
   const handleAddCoordinate = () => {
-    const id = `C-${Date.now()}`;
     const newCoord: GeographicCoordinate = {
-      id,
+      id: `C-${Date.now()}`,
       latitude: 0,
       longitude: 0,
     };
-    
-    // Add to draft
-    onUpdateDraft({
-      coordinatesGeografis: [...draft.coordinatesGeografis, newCoord],
-    });
+
+    updateActiveCoordinates([...activeCoordinates, newCoord]);
   };
 
   const handleUpdateCoordinate = (
@@ -334,11 +377,29 @@ export function Step2FieldValidation({
     field: 'latitude' | 'longitude',
     value: number
   ) => {
-    const matcher = createCoordinateRowMatcher(draft.coordinatesGeografis, id, index);
-    const updated = draft.coordinatesGeografis.map((coord, coordIndex) =>
-      matcher(coord, coordIndex) ? { ...coord, [field]: value } : coord
+    const matcher = createCoordinateRowMatcher(activeCoordinates, id, index);
+    updateActiveCoordinates(
+      activeCoordinates.map((coord, coordIndex) =>
+        matcher(coord, coordIndex) ? { ...coord, [field]: value } : coord
+      )
     );
-    onUpdateDraft({ coordinatesGeografis: updated });
+  };
+
+  /** Start a new, empty bidang and point the editor at it. */
+  const handleAddPolygon = () => {
+    const created: LandPolygon = { id: createPolygonId(), coordinates: [] };
+    applyPolygons([...polygons, created]);
+    setActivePolygonId(created.id);
+    toast.info('Bidang baru ditambahkan. Gambar polygon-nya di peta.');
+  };
+
+  const handleRemovePolygon = (polygonId: string) => {
+    const remaining = polygons.filter((polygon) => polygon.id !== polygonId);
+    applyPolygons(remaining);
+    if (activePolygonId === polygonId) {
+      setActivePolygonId(remaining[0]?.id ?? null);
+    }
+    toast.info('Bidang dihapus');
   };
 
   const handleGeographicCoordinateBlur = () => {
@@ -356,8 +417,8 @@ export function Step2FieldValidation({
 
   const resetUtmRowFromDraft = useCallback(
     (id: string | undefined, index: number) => {
-      const draftMatcher = createCoordinateRowMatcher(draft.coordinatesGeografis, id, index);
-      const geoCoord = draft.coordinatesGeografis.find((coord, coordIndex) =>
+      const draftMatcher = createCoordinateRowMatcher(activeCoordinates, id, index);
+      const geoCoord = activeCoordinates.find((coord, coordIndex) =>
         draftMatcher(coord, coordIndex)
       );
       if (!geoCoord) return;
@@ -370,7 +431,7 @@ export function Step2FieldValidation({
         );
       });
     },
-    [draft.coordinatesGeografis, toLocalUtmCoordinate]
+    [activeCoordinates, toLocalUtmCoordinate]
   );
 
   const commitUtmCoordinate = useCallback(
@@ -397,16 +458,17 @@ export function Step2FieldValidation({
         return false;
       }
 
-      const draftMatcher = createCoordinateRowMatcher(draft.coordinatesGeografis, id, index);
-      const updatedGeo = draft.coordinatesGeografis.map((coord, coordIndex) =>
-        draftMatcher(coord, coordIndex)
-          ? { ...coord, latitude: latLon.latitude, longitude: latLon.longitude }
-          : coord
+      const draftMatcher = createCoordinateRowMatcher(activeCoordinates, id, index);
+      updateActiveCoordinates(
+        activeCoordinates.map((coord, coordIndex) =>
+          draftMatcher(coord, coordIndex)
+            ? { ...coord, latitude: latLon.latitude, longitude: latLon.longitude }
+            : coord
+        )
       );
-      onUpdateDraft({ coordinatesGeografis: updatedGeo });
       return true;
     },
-    [draft.coordinatesGeografis, onUpdateDraft, resetUtmRowFromDraft, utmCoordinates]
+    [activeCoordinates, updateActiveCoordinates, resetUtmRowFromDraft, utmCoordinates]
   );
 
   const getUtmRow = useCallback(
@@ -479,16 +541,15 @@ export function Step2FieldValidation({
   };
 
   const handleRemoveCoordinate = (id: string | undefined, index: number) => {
-    const matcher = createCoordinateRowMatcher(draft.coordinatesGeografis, id, index);
-    onUpdateDraft({
-      coordinatesGeografis: draft.coordinatesGeografis.filter(
-        (coord, coordIndex) => !matcher(coord, coordIndex)
-      ),
-    });
+    const matcher = createCoordinateRowMatcher(activeCoordinates, id, index);
+    updateActiveCoordinates(
+      activeCoordinates.filter((coord, coordIndex) => !matcher(coord, coordIndex))
+    );
   };
 
   const normalizeImportedCoordinates = (
-    coordinates: Array<{ latitude: number; longitude: number }>
+    coordinates: Array<{ latitude: number; longitude: number }>,
+    importId: string
   ): GeographicCoordinate[] => {
     const sanitized = coordinates.filter(
       (coord) => Number.isFinite(coord.latitude) && Number.isFinite(coord.longitude)
@@ -502,14 +563,19 @@ export function Step2FieldValidation({
       }
     }
 
-    const importId = Date.now();
     return sanitized.map((coord, index) => ({
-      id: `C-${importId}-${index}-${crypto.randomUUID().slice(0, 8)}`,
+      id: `C-${importId}-${index}`,
       latitude: coord.latitude,
       longitude: coord.longitude,
     }));
   };
 
+  /**
+   * Import every polygon in the file — a surveyor's KML routinely carries all the
+   * bidang of one claim. The imported bidang replace the current list and come in
+   * locked: the file is the survey record, so its vertices are not something to
+   * nudge by hand afterwards (the lock can be lifted per bidang).
+   */
   const handleKmlUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.target;
     const file = input.files?.[0];
@@ -530,16 +596,38 @@ export function Step2FieldValidation({
         return;
       }
 
-      const normalizedCoordinates = normalizeImportedCoordinates(result.coordinates);
-      if (normalizedCoordinates.length < 3) {
-        toast.error('File KML harus berisi minimal 3 titik koordinat');
+      const importId = Date.now().toString(36);
+      const imported: LandPolygon[] = [];
+      result.polygons.forEach((parsed, index) => {
+        const coordinates = normalizeImportedCoordinates(
+          parsed.coordinates,
+          `${importId}-${index}`
+        );
+        if (coordinates.length < MIN_POLYGON_POINTS) return;
+        imported.push({
+          id: `P-${importId}-${index}`,
+          nama: parsed.name,
+          coordinates,
+          locked: true,
+        });
+      });
+
+      if (imported.length === 0) {
+        toast.error(
+          `File KML harus berisi minimal ${MIN_POLYGON_POINTS} titik koordinat per polygon`
+        );
         return;
       }
 
-      onUpdateDraft({ coordinatesGeografis: normalizedCoordinates });
+      applyPolygons(imported);
+      setActivePolygonId(imported[0].id);
       triggerMapRecenter();
+      const totalPoints = imported.reduce(
+        (total, polygon) => total + polygon.coordinates.length,
+        0
+      );
       toast.success(
-        `File KML berhasil diimpor. ${normalizedCoordinates.length} titik koordinat dimuat.`
+        `File KML berhasil diimpor: ${imported.length} bidang, ${totalPoints} titik koordinat. Polygon terkunci.`
       );
     } catch (error) {
       toast.error(
@@ -551,24 +639,6 @@ export function Step2FieldValidation({
       setIsParsingKml(false);
       input.value = '';
     }
-  };
-
-  const calculateArea = () => {
-    // Simplified area calculation (Shoelace formula)
-    const coords = draft.coordinatesGeografis;
-    if (coords.length < 3) return 0;
-
-    let area = 0;
-    for (let i = 0; i < coords.length; i++) {
-      const j = (i + 1) % coords.length;
-      area += coords[i].longitude * coords[j].latitude;
-      area -= coords[j].longitude * coords[i].latitude;
-    }
-    area = Math.abs(area / 2);
-
-    // Convert to approximate m² (very rough estimate)
-    const areaM2 = area * 111000 * 111000;
-    return Math.round(areaM2);
   };
 
   const checkOverlapsMutation = trpc.submissions.checkOverlapsFromCoordinates.useMutation({
@@ -614,6 +684,26 @@ export function Step2FieldValidation({
 
   const referencePolygons = useMemo<ReferencePolygon[]>(() => {
     const result: ReferencePolygon[] = [];
+
+    // The other bidang of this same pengajuan. Only one polygon is editable at a
+    // time (Terra Draw owns a single feature), so the rest are drawn as static
+    // reference — otherwise adding a second bidang would look like it erased the
+    // first.
+    polygons.forEach((polygon, index) => {
+      if (index === activePolygonIndex) return;
+      const path = validCoordinates(polygon.coordinates).map((coord) => ({
+        lat: Number(coord.latitude),
+        lng: Number(coord.longitude),
+      }));
+      if (path.length < MIN_POLYGON_POINTS) return;
+      result.push({
+        id: `bidang-${polygon.id}`,
+        path,
+        strokeColor: OTHER_POLYGON_COLOR,
+        fillColor: OTHER_POLYGON_COLOR,
+        label: `Bidang lain: ${polygonLabel(polygon, index)}`,
+      });
+    });
 
     // Kawasan Non-SPPTG (prohibited areas)
     const areas = (prohibitedAreasData ?? []) as Array<{
@@ -686,37 +776,52 @@ export function Step2FieldValidation({
 
     return result;
   }, [
+    polygons,
+    activePolygonIndex,
     prohibitedAreasData,
     existingSubmissionsData,
     allVillagePolygons,
     canSeeAllVillages,
   ]);
 
+  /** Bidang complete enough to be checked, measured and submitted. */
+  const usablePolygons = useMemo(
+    () => polygons.filter(isUsablePolygon),
+    [polygons]
+  );
+
   const handleCheckOverlap = () => {
-    if (draft.coordinatesGeografis.length < 3) {
-      toast.error('Minimal 3 titik koordinat diperlukan');
+    if (usablePolygons.length === 0) {
+      toast.error(`Minimal ${MIN_POLYGON_POINTS} titik koordinat diperlukan`);
       return;
     }
 
+    // Every bidang is checked in one call: a claim overlaps a kawasan if any of
+    // its parcels does, and checking only the active one would clear a pengajuan
+    // whose second bidang sits inside a Kawasan Hutan.
     checkOverlapsMutation.mutate({
-      coordinates: draft.coordinatesGeografis.map((c) => ({
-        latitude: c.latitude,
-        longitude: c.longitude,
-      })),
+      // The draft id lets the server leave out the pengajuan this draft is
+      // editing — otherwise the new boundary is reported as clashing with the
+      // berkas's own filed polygon.
+      draftId: draft.id,
+      polygons: usablePolygons.map((polygon) =>
+        validCoordinates(polygon.coordinates).map((coord) => ({
+          latitude: coord.latitude,
+          longitude: coord.longitude,
+        }))
+      ),
     });
   };
 
-  const luas = calculateArea();
+  const luas = useMemo(() => totalPolygonArea(polygons), [polygons]);
 
-  // Update luasLahan when coordinates change
+  // Keep luasLahan in step with the drawn bidang (sum across all of them)
   useEffect(() => {
-    if (draft.coordinatesGeografis.length >= 3) {
-      const calculatedArea = calculateArea();
-      if (calculatedArea !== draft.luasLahan) {
-        onUpdateDraft({ luasLahan: calculatedArea });
-      }
+    if (usablePolygons.length === 0) return;
+    if (luas !== draft.luasLahan) {
+      onUpdateDraft({ luasLahan: luas });
     }
-  }, [draft.coordinatesGeografis, calculateArea, onUpdateDraft, draft.luasLahan]);
+  }, [luas, usablePolygons.length, onUpdateDraft, draft.luasLahan]);
 
   return (
     // `disabled` on the fieldset cascades to every input, select and button
@@ -834,9 +939,7 @@ export function Step2FieldValidation({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="saksiUmur">
-                  Umur <span className="text-red-600">*</span>
-                </Label>
+                <Label htmlFor="saksiUmur">Umur (opsional)</Label>
                 <Input
                   id="saksiUmur"
                   type="number"
@@ -851,9 +954,7 @@ export function Step2FieldValidation({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="saksiPekerjaan">
-                  Pekerjaan <span className="text-red-600">*</span>
-                </Label>
+                <Label htmlFor="saksiPekerjaan">Pekerjaan (opsional)</Label>
                 <Input
                   id="saksiPekerjaan"
                   placeholder="Contoh: Petani"
@@ -865,9 +966,7 @@ export function Step2FieldValidation({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="saksiAlamat">
-                  Alamat <span className="text-red-600">*</span>
-                </Label>
+                <Label htmlFor="saksiAlamat">Alamat (opsional)</Label>
                 <Input
                   id="saksiAlamat"
                   placeholder="Alamat sesuai KTP"
@@ -899,6 +998,28 @@ export function Step2FieldValidation({
                   </>
                 )}
               </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Nothing was rendered here at all when the list was empty, so a berkas
+            with no saksi looked the same as one whose saksi were simply below
+            the fold — and the omission only surfaced as a validation error on
+            the way to the next step. */}
+        {draft.saksiList.length === 0 && (
+          <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50 p-4">
+            <div className="flex items-start gap-3">
+              <Users className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+              <div>
+                <p className="text-sm font-medium text-amber-900">
+                  Belum ada saksi batas lahan
+                </p>
+                <p className="mt-1 text-sm text-amber-800">
+                  {readOnly
+                    ? 'Pengajuan ini tidak mencantumkan satu pun saksi batas lahan.'
+                    : 'Minimal 1 saksi diperlukan sebelum lanjut ke tahap berikutnya. Isi formulir di atas lalu klik "Tambah" — jumlah saksi tidak dibatasi.'}
+                </p>
+              </div>
             </div>
           </div>
         )}
@@ -1112,7 +1233,12 @@ export function Step2FieldValidation({
             {!readOnly && <span className="text-red-600">*</span>}
           </h3>
           {!readOnly && (
-            <Button onClick={handleAddCoordinate} variant="outline" size="sm">
+            <Button
+              onClick={handleAddCoordinate}
+              variant="outline"
+              size="sm"
+              disabled={coordinatesReadOnly}
+            >
               <Plus className="w-4 h-4 mr-2" />
               Tambah Titik
             </Button>
@@ -1133,15 +1259,106 @@ export function Step2FieldValidation({
             disabled={isParsingKml}
           />
           <p className="text-xs text-gray-500">
-            Unggah file KML untuk menggantikan seluruh titik koordinat saat ini.
+            Unggah file KML untuk menggantikan seluruh bidang saat ini. File dengan
+            banyak polygon akan dimuat sebagai beberapa bidang sekaligus, dan
+            terkunci agar sama persis dengan file aslinya.
           </p>
           {isParsingKml && <p className="text-xs text-blue-600">Memproses file...</p>}
         </div>
         )}
 
+        {/* Bidang (polygon) selector — a pengajuan may cover several parcels */}
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Shapes className="w-4 h-4 text-gray-600" />
+              <p className="text-sm font-medium text-gray-900">
+                Bidang Lahan ({polygons.length || 0})
+              </p>
+            </div>
+            {!readOnly && (
+              <Button onClick={handleAddPolygon} variant="outline" size="sm">
+                <Plus className="w-4 h-4 mr-2" />
+                Tambah Bidang
+              </Button>
+            )}
+          </div>
+
+          {polygons.length === 0 ? (
+            <p className="text-xs text-gray-500">
+              Belum ada bidang. Gambar polygon di peta, impor KML, atau tambah titik
+              koordinat.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {polygons.map((polygon, index) => {
+                const isActive = index === activePolygonIndex;
+                return (
+                  <div
+                    key={polygon.id}
+                    className={`flex items-center gap-1 rounded-md border px-2 py-1 text-xs ${
+                      isActive
+                        ? 'border-orange-400 bg-orange-50 text-orange-900'
+                        : 'border-gray-200 bg-white text-gray-700'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActivePolygonId(polygon.id);
+                        triggerMapRecenter();
+                      }}
+                      className="font-medium"
+                    >
+                      {polygonLabel(polygon, index)}
+                      <span className="ml-1 font-normal text-gray-500">
+                        ({polygon.coordinates.length} titik)
+                      </span>
+                    </button>
+                    {polygon.locked && (
+                      <Lock className="w-3 h-3 text-gray-500" aria-label="Terkunci" />
+                    )}
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePolygon(polygon.id)}
+                        className="text-red-600 hover:text-red-700"
+                        aria-label={`Hapus ${polygonLabel(polygon, index)}`}
+                        title="Hapus bidang"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {isActiveLocked && !readOnly && (
+            <p className="flex items-center gap-1.5 text-xs text-amber-700">
+              <Lock className="w-3.5 h-3.5" />
+              Bidang ini diimpor dari file KML dan tidak dapat diubah. Hapus bidang
+              lalu impor ulang bila koordinatnya keliru.
+            </p>
+          )}
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Coordinate Table */}
-          <fieldset disabled={readOnly} className="space-y-3 min-w-0">
+          {/* Coordinate Table — always the active bidang */}
+          <div className="space-y-3 min-w-0">
+            {/* Only the coordinates themselves are frozen for an imported
+                bidang — the measurements below are hand-recorded either way. */}
+            <fieldset disabled={coordinatesReadOnly} className="space-y-3 min-w-0">
+             {polygons.length > 1 && (
+               <p className="text-xs text-gray-600">
+                 Menampilkan koordinat{' '}
+                 <strong>
+                   {activePolygon ? polygonLabel(activePolygon, activePolygonIndex) : '-'}
+                 </strong>
+                 . Pilih bidang lain di atas untuk mengubahnya.
+               </p>
+             )}
              <div className="flex items-center space-x-4 mb-4">
                 <Label>Sistem Koordinat:</Label>
                 <RadioGroup
@@ -1150,7 +1367,7 @@ export function Step2FieldValidation({
                     // Explicit rather than relying on the fieldset: Radix drives
                     // its own roving-focus/keyboard selection, so the group has
                     // to be told it is disabled.
-                    disabled={readOnly}
+                    disabled={coordinatesReadOnly}
                     className="flex space-x-4"
                 >
                     <div className="flex items-center space-x-2">
@@ -1168,7 +1385,7 @@ export function Step2FieldValidation({
                 </RadioGroup>
             </div>
             
-            {draft.coordinatesGeografis.length === 0 ? (
+            {activeCoordinates.length === 0 ? (
               <div className="border border-gray-200 rounded-lg p-8 text-center text-gray-500">
                 <MapPin className="w-12 h-12 mx-auto mb-2 text-gray-400" />
                 <p>Belum ada titik koordinat</p>
@@ -1198,7 +1415,7 @@ export function Step2FieldValidation({
                   </TableHeader>
                   <TableBody>
                     {coordinateSystem === 'geografis' ? (
-                        draft.coordinatesGeografis.map((coord, index) => (
+                        activeCoordinates.map((coord, index) => (
                           <TableRow key={`${coord.id}-${index}`}>
                             <TableCell>{index + 1}</TableCell>
                             <TableCell>
@@ -1341,17 +1558,29 @@ export function Step2FieldValidation({
               </div>
             )}
 
-            {draft.coordinatesGeografis.length >= 3 && (
+            </fieldset>
+
+            {usablePolygons.length > 0 && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                 <p className="text-sm text-blue-900">
                   <strong>Luas terhitung:</strong> {luas.toLocaleString('id-ID')} m²
                 </p>
+                {usablePolygons.length > 1 && (
+                  <p className="text-xs text-blue-700 mt-1">
+                    Total dari {usablePolygons.length} bidang.
+                  </p>
+                )}
               </div>
             )}
 
-            <div className="space-y-1">
-                 <Label>Luas Manual (m²)</Label>
+            {/* Hand measurements taken at the patok. They stand beside the drawn
+                boundary rather than feeding it: the area on the certificate still
+                comes from the polygon (or Luas Manual). */}
+            <fieldset disabled={readOnly} className="space-y-3 min-w-0">
+              <div className="space-y-1">
+                 <Label htmlFor="luasManual">Luas Manual (m²)</Label>
                  <Input
+                    id="luasManual"
                     type="number"
                     step="0.01"
                     placeholder="Masukkan luas manual jika berbeda"
@@ -1361,23 +1590,67 @@ export function Step2FieldValidation({
                  <p className="text-xs text-gray-500">
                     Opsional: Masukkan luas hasil pengukuran manual jika berbeda dengan perhitungan otomatis.
                  </p>
-            </div>
-          </fieldset>
+              </div>
 
-          {/* Map Preview */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="panjangLahan">Panjang (m)</Label>
+                  <Input
+                    id="panjangLahan"
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    placeholder="Contoh: 40"
+                    value={draft.panjangLahan ?? ''}
+                    onChange={(e) =>
+                      onUpdateDraft({
+                        panjangLahan: parseMeasurement(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="lebarLahan">Lebar (m)</Label>
+                  <Input
+                    id="lebarLahan"
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    placeholder="Contoh: 25"
+                    value={draft.lebarLahan ?? ''}
+                    onChange={(e) =>
+                      onUpdateDraft({
+                        lebarLahan: parseMeasurement(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-gray-500">
+                Opsional: ukuran hasil pengukuran di lapangan. Tidak mengubah luas
+                terhitung dari polygon.
+              </p>
+            </fieldset>
+          </div>
+
+          {/* Map Preview — draws the active bidang, shows the rest behind it */}
           <div className="space-y-3">
-            <Label>Pratinjau Peta</Label>
+            <Label>
+              Pratinjau Peta
+              {polygons.length > 1 && activePolygon
+                ? ` — ${polygonLabel(activePolygon, activePolygonIndex)}`
+                : ''}
+            </Label>
             <DrawingMap
-              coordinates={draft.coordinatesGeografis}
+              coordinates={activeCoordinates}
               recenterSignal={recenterSignal}
               referencePolygons={referencePolygons}
-              readOnly={readOnly}
+              readOnly={coordinatesReadOnly}
               onCoordinatesChange={(coords) => {
-                // This callback is triggered when user draws/edits on the map
-                // The coordinates are already synced, just update the draft
-                onUpdateDraft({
-                  coordinatesGeografis: normalizeCoordinateIds(coords),
-                });
+                // This callback is triggered when user draws/edits on the map.
+                // It only ever concerns the bidang currently selected.
+                updateActiveCoordinates(normalizeCoordinateIds(coords));
               }}
             />
 
@@ -1389,7 +1662,14 @@ export function Step2FieldValidation({
               <div className="grid grid-cols-2 gap-1">
                 <div className="flex items-center gap-2 text-xs text-gray-700">
                   <span className="w-3.5 h-3.5 rounded-sm border" style={{ backgroundColor: '#f97316', borderColor: '#f97316' }} />
-                  Lahan yang diajukan (digambar)
+                  Bidang aktif (digambar)
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-700">
+                  <span
+                    className="w-3.5 h-3.5 rounded-sm border"
+                    style={{ backgroundColor: OTHER_POLYGON_COLOR, borderColor: OTHER_POLYGON_COLOR }}
+                  />
+                  Bidang lain pengajuan ini
                 </div>
                 <div className="flex items-center gap-2 text-xs text-gray-700">
                   <span className="w-3.5 h-3.5 rounded-sm border" style={{ backgroundColor: '#22c55e', borderColor: '#22c55e' }} />
@@ -1405,7 +1685,8 @@ export function Step2FieldValidation({
                 </div>
               </div>
               <p className="text-[11px] text-gray-500 mt-2">
-                Polygon kawasan & SPPTG lain hanya tampil sebagai referensi (tidak dapat diedit).
+                Polygon kawasan, SPPTG lain, dan bidang lain hanya tampil sebagai
+                referensi (tidak dapat diedit di sini).
               </p>
             </div>
 
@@ -1419,10 +1700,14 @@ export function Step2FieldValidation({
                 onClick={handleCheckOverlap}
                 variant="outline"
                 className="w-full"
-                disabled={draft.coordinatesGeografis.length < 3 || checkOverlapsMutation.isPending}
+                disabled={usablePolygons.length === 0 || checkOverlapsMutation.isPending}
               >
                 <AlertTriangle className="w-4 h-4 mr-2" />
-                {checkOverlapsMutation.isPending ? 'Mengecek...' : 'Cek Tumpang Tindih'}
+                {checkOverlapsMutation.isPending
+                  ? 'Mengecek...'
+                  : usablePolygons.length > 1
+                    ? `Cek Tumpang Tindih (${usablePolygons.length} bidang)`
+                    : 'Cek Tumpang Tindih'}
               </Button>
             )}
           </div>
@@ -1463,7 +1748,8 @@ export function Step2FieldValidation({
           <DialogHeader>
             <DialogTitle>Hasil Cek Tumpang Tindih</DialogTitle>
             <DialogDescription>
-              Pengecekan overlap dengan kawasan non-SPPTG yang aktif
+              Pengecekan overlap dengan kawasan Non-SPPTG yang aktif dan SPPTG
+              yang sudah terdata/terdaftar
             </DialogDescription>
           </DialogHeader>
 
@@ -1471,7 +1757,8 @@ export function Step2FieldValidation({
             {draft.overlapResults.length === 0 ? (
               <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
                 <p className="text-green-900">
-                  ✓ Tidak ada tumpang tindih dengan kawasan non-SPPTG
+                  ✓ Tidak ada tumpang tindih dengan kawasan Non-SPPTG maupun
+                  SPPTG eksisting
                 </p>
               </div>
             ) : (
@@ -1481,7 +1768,10 @@ export function Step2FieldValidation({
                     <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5" />
                     <div>
                       <p className="text-orange-900">
-                        <strong>Ditemukan {draft.overlapResults.length} overlap dengan kawasan Non‑SPPTG</strong>
+                        <strong>
+                          Ditemukan {draft.overlapResults.length} tumpang tindih:{' '}
+                          {describeOverlapSources(draft.overlapResults)}
+                        </strong>
                       </p>
                     </div>
                   </div>
@@ -1508,7 +1798,7 @@ export function Step2FieldValidation({
                           </TableCell>
                           <TableCell>
                             <Badge variant="secondary">
-                              {overlap.sumber === 'Submission' ? 'SPPTG Eksisting' : 'Kawasan Non-SPPTG'}
+                              {overlapSourceLabel(overlap)}
                             </Badge>
                           </TableCell>
                           <TableCell>{overlap.luasOverlap} m²</TableCell>

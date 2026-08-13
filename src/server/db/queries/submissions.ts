@@ -619,6 +619,141 @@ export async function getStatsByVillage(
         .orderBy(sql`count(*) DESC`, villages.namaDesa);
 }
 
+/**
+ * Per-desa recap of **approved** SPPTG (`SPPTG terdaftar`) for the public
+ * landing page.
+ *
+ * Deliberately its own query rather than a call into `getStatsByVillage` with a
+ * status filter: this one runs for anonymous visitors, so the safe thing is a
+ * select list that *cannot* return an applicant column — no nama, no NIK, no
+ * alamat, no geometry, only counts and summed area per desa.
+ *
+ * `is_valid` is required for the same reason the dashboard requires it: a
+ * pengajuan that is being re-edited is known to be superseded, and publishing it
+ * would advertise a boundary the office itself no longer stands behind.
+ *
+ * `luas` (the area computed from the polygon) is summed rather than
+ * `luas_manual`, because it is NOT NULL for every row and is what the map and
+ * the overlap check are based on.
+ */
+export async function getRegisteredStatsByVillage(tx?: DBTransaction) {
+    const queryDb = tx || db;
+
+    return queryDb
+        .select({
+            desa: villages.namaDesa,
+            kecamatan: villages.kecamatan,
+            // Grouped per year as well, so the landing page's "Pilih Tahun
+            // Laporan" filter can be applied in the browser without another
+            // round trip: a year is a sum of these rows, "semua tahun" is all of
+            // them. The register is a few thousand rows across a handful of
+            // years, so the extra rows cost nothing.
+            tahun: sql<number>`EXTRACT(YEAR FROM ${submissions.tanggalPengajuan})::int`,
+            total: sql<number>`count(*)::int`,
+            luasM2: sql<number>`COALESCE(SUM(${submissions.luas}), 0)::float8`,
+        })
+        .from(submissions)
+        .innerJoin(villages, eq(villages.id, submissions.villageId))
+        .where(
+            and(
+                sql`${submissions.status}::text = ${'SPPTG terdaftar' satisfies StatusSPPTG}`,
+                eq(submissions.isValid, true)
+            )
+        )
+        .groupBy(
+            villages.id,
+            villages.namaDesa,
+            villages.kecamatan,
+            sql`EXTRACT(YEAR FROM ${submissions.tanggalPengajuan})`
+        )
+        .orderBy(sql`count(*) DESC`, villages.namaDesa);
+}
+
+/**
+ * Boundaries of approved SPPTG for the landing page's public map, with the four
+ * fields its info window is allowed to show.
+ *
+ * The select list is the whole security boundary here, so it is written out
+ * explicitly and deliberately short: **desa, kecamatan, luas, penggunaan lahan
+ * and the year** — the parcel, not the person. `nama_pemilik`, `nik`, `alamat`,
+ * `nomor_hp`, `email` and the submission id must never be added; there is no
+ * caller-side filter behind this one, whatever it returns is public.
+ *
+ * `ST_Simplify` at ~1e-5° (roughly a metre at this latitude) keeps the payload
+ * small enough to ship inside the prerendered HTML without visibly moving a
+ * boundary; the map is a kabupaten-wide overview, not a survey document. The
+ * limit is a backstop so the page cannot grow unbounded as the register does.
+ */
+export async function getRegisteredPolygons(batas = 3000, tx?: DBTransaction) {
+    const queryDb = tx || db;
+
+    const rows = await queryDb
+        .select({
+            geojson: sql<string>`ST_AsGeoJSON(ST_Simplify(${submissions.geom}, 0.00001), 6)`,
+            desa: villages.namaDesa,
+            kecamatan: villages.kecamatan,
+            luas: submissions.luas,
+            penggunaanLahan: submissions.penggunaanLahan,
+            tahun: sql<number>`EXTRACT(YEAR FROM ${submissions.tanggalPengajuan})::int`,
+        })
+        .from(submissions)
+        .leftJoin(villages, eq(villages.id, submissions.villageId))
+        .where(
+            and(
+                sql`${submissions.status}::text = ${'SPPTG terdaftar' satisfies StatusSPPTG}`,
+                eq(submissions.isValid, true),
+                sql`${submissions.geom} IS NOT NULL`
+            )
+        )
+        .limit(batas);
+
+    // Parsed here rather than in the browser so a malformed row is dropped on
+    // the server instead of throwing inside the map component.
+    const polygons: {
+        ring: number[][];
+        desa: string | null;
+        kecamatan: string | null;
+        luasM2: number;
+        penggunaanLahan: string | null;
+        tahun: number | null;
+    }[] = [];
+
+    for (const row of rows) {
+        if (!row.geojson) continue;
+        try {
+            const parsed = JSON.parse(row.geojson) as {
+                type: string;
+                coordinates: number[][][][] | number[][][];
+            };
+            const parts =
+                parsed.type === 'MultiPolygon'
+                    ? (parsed.coordinates as number[][][][])
+                    : [parsed.coordinates as number[][][]];
+            for (const part of parts) {
+                // Outer ring only — holes are not meaningful at this zoom and
+                // doubling the payload to draw them would be.
+                const ring = part[0];
+                if (!Array.isArray(ring) || ring.length < 3) continue;
+                polygons.push({
+                    ring,
+                    desa: row.desa,
+                    kecamatan: row.kecamatan,
+                    // `luas` is the whole pengajuan's area; a multi-bidang row
+                    // repeats it on each part rather than pretending to know how
+                    // it splits, which the column does not record.
+                    luasM2: row.luas,
+                    penggunaanLahan: row.penggunaanLahan,
+                    tahun: row.tahun,
+                });
+            }
+        } catch {
+            continue;
+        }
+    }
+
+    return polygons;
+}
+
 export async function getMonthlyStats(
     filters: SubmissionDashboardFilters = {},
     tx?: DBTransaction

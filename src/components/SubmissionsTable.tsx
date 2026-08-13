@@ -10,12 +10,15 @@ import {
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog';
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
 import {
   Eye,
   Edit,
@@ -24,8 +27,6 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
-  Pencil,
-  FilePlus2,
 } from 'lucide-react';
 import { Submission } from '../types';
 import { StatusBadge } from './StatusBadge';
@@ -34,12 +35,10 @@ import { useAuthRole } from './AuthRoleProvider';
 import { TablePager, type ServerPagination } from './table-pagination';
 import type { SubmissionSortKey } from '@/lib/validation';
 
-export type EditMode = 'existing' | 'duplicate';
-
 interface SubmissionsTableProps {
   submissions: Submission[];
   onViewDetail: (submission: Submission) => void;
-  onEdit: (submission: Submission, mode: EditMode) => void;
+  onEdit: (submission: Submission) => void;
   onToggleValidity: (submission: Submission) => void;
   isTogglingValidity: boolean;
   /** When set, the table pages to and highlights this submission's row */
@@ -90,7 +89,30 @@ export function SubmissionsTable({
       currentUser.peran !== 'Kecamatan'
   );
   const [highlightId, setHighlightId] = useState<number | null>(null);
-  const [editTarget, setEditTarget] = useState<Submission | null>(null);
+  /**
+   * The one confirmation this table asks for, whichever action raised it.
+   *
+   * A single dialog rather than one per action: two Radix roots mean the
+   * outgoing one is still animating out while the incoming one mounts, which
+   * shows as a second modal flashing past. Only the valid → invalid direction is
+   * confirmed — putting a berkas back on the map takes nothing away.
+   *
+   * Open-ness is tracked separately from the payload on purpose. Clearing the
+   * payload on close would re-render the dialog *while it animates out* with
+   * whatever the empty state renders as — the other action's title, wording and
+   * button colour — which is the same flash, just from one root instead of two.
+   * The payload lingers until the next request replaces it.
+   */
+  const [confirm, setConfirm] = useState<{
+    kind: 'edit' | 'invalidate';
+    submission: Submission;
+  } | null>(null);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+
+  const askConfirm = (kind: 'edit' | 'invalidate', submission: Submission) => {
+    setConfirm({ kind, submission });
+    setIsConfirmOpen(true);
+  };
   const rowRefs = useRef<Record<number, HTMLTableRowElement | null>>({});
 
   // `submissions` is already one page, ordered by Postgres: it arrives sorted
@@ -235,7 +257,13 @@ export function SubmissionsTable({
                       variant={submission.isValid ? 'outline' : 'default'}
                       size="sm"
                       disabled={isTogglingValidity}
-                      onClick={() => onToggleValidity(submission)}
+                      onClick={() => {
+                        if (submission.isValid) {
+                          askConfirm('invalidate', submission);
+                          return;
+                        }
+                        onToggleValidity(submission);
+                      }}
                       className={
                         submission.isValid
                           ? 'text-gray-700'
@@ -272,7 +300,7 @@ export function SubmissionsTable({
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => setEditTarget(submission)}
+                      onClick={() => askConfirm('edit', submission)}
                       title="Edit pengajuan"
                     >
                       <Edit className="w-4 h-4" />
@@ -298,53 +326,54 @@ export function SubmissionsTable({
         />
       </div>
 
-      {/* Edit choice dialog */}
-      <Dialog open={editTarget !== null} onOpenChange={(open) => !open && setEditTarget(null)}>
-        <DialogContent className="sm:max-w-[480px]">
-          <DialogHeader>
-            <DialogTitle>Edit Pengajuan</DialogTitle>
-            <DialogDescription>
-              Pilih cara mengedit pengajuan{' '}
+      {/* One dialog for both confirmations — see `confirm` above for why. */}
+      <AlertDialog
+        open={isConfirmOpen}
+        onOpenChange={(open) => !open && setIsConfirmOpen(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirm?.kind === 'invalidate'
+                ? 'Tandai pengajuan ini invalid?'
+                : 'Edit pengajuan ini?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Pengajuan{' '}
               <span className="font-medium text-gray-900">
-                {editTarget?.namaPemilik}
-              </span>
-              .
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <button
-              type="button"
+                {confirm?.submission.namaPemilik}
+              </span>{' '}
+              {confirm?.kind === 'invalidate'
+                ? // Marking a berkas invalid takes it off the map, out of the KPI
+                  // counts and out of every overlap check — none of which is
+                  // visible from the row itself.
+                  'akan disembunyikan dari peta, tidak dihitung pada KPI dan grafik, dan tidak ikut dalam cek tumpang tindih. Anda dapat menandainya valid kembali kapan saja. Apakah Anda yakin?'
+                : 'akan dibuka untuk diedit dan ditandai tidak valid sampai perubahannya disimpan kembali. Lanjutkan?'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
               onClick={() => {
-                if (editTarget) onEdit(editTarget, 'existing');
-                setEditTarget(null);
+                if (!confirm) return;
+                if (confirm.kind === 'invalidate') {
+                  onToggleValidity(confirm.submission);
+                } else {
+                  onEdit(confirm.submission);
+                }
+                setIsConfirmOpen(false);
               }}
-              className="flex flex-col items-start gap-2 rounded-lg border border-gray-200 p-4 text-left transition-colors hover:border-blue-400 hover:bg-blue-50"
+              className={
+                confirm?.kind === 'invalidate'
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }
             >
-              <Pencil className="h-5 w-5 text-blue-600" />
-              <span className="font-medium text-gray-900">Edit yang ada</span>
-              <span className="text-xs text-gray-500">
-                Ubah pengajuan ini di tempat — data ter-update pada pengajuan yang sama.
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                if (editTarget) onEdit(editTarget, 'duplicate');
-                setEditTarget(null);
-              }}
-              className="flex flex-col items-start gap-2 rounded-lg border border-gray-200 p-4 text-left transition-colors hover:border-green-400 hover:bg-green-50"
-            >
-              <FilePlus2 className="h-5 w-5 text-green-600" />
-              <span className="font-medium text-gray-900">Buat pengajuan baru</span>
-              <span className="text-xs text-gray-500">
-                Buat pengajuan baru dengan semua nilai input terisi dari pengajuan ini.
-              </span>
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
+              {confirm?.kind === 'invalidate' ? 'Ya, Tandai Invalid' : 'Ya, Edit'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

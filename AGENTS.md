@@ -165,9 +165,9 @@ type DocumentCategory =
 
 The system uses **PostGIS** for spatial operations:
 
-- `submissions.geom` - Polygon of land boundaries (SRID 4326)
-- `prohibited_areas.geom` - Protected zone polygons
-- `overlap_results.intersection_geom` - Calculated overlap geometry
+- `submissions.geom` - **MultiPolygon** of land boundaries (SRID 4326): one pengajuan can cover several separated bidang. Rows filed before that are single-part MultiPolygons; every predicate below behaves identically either way
+- `prohibited_areas.geom` - **MultiPolygon** of a protected zone: an SK usually covers several detached blocks. A multi-polygon KML can be loaded either as the blocks of one kawasan (kawasan form) or as one kawasan row per polygon (`prohibitedAreas.createBulk`)
+- `overlap_results.intersection_geom` - Calculated overlap geometry, untyped `geometry` since an intersection may be a Polygon, MultiPolygon or GeometryCollection
 
 Key spatial queries in `src/server/postgis.ts`:
 - `ST_Intersects()` - Check if polygons overlap

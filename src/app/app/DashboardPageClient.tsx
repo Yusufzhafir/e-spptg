@@ -3,7 +3,7 @@
 import { Dashboard } from '@/components/Dashboard';
 import { buildDashboardSearchParams, type DashboardFilterPatch, parseDashboardFilters } from '@/lib/dashboard-filters';
 import { trpc } from '@/trpc/client';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { DEFAULT_PAGE_SIZE } from '@/components/table-pagination';
 import type { SubmissionSortKey } from '@/lib/validation';
@@ -57,19 +57,6 @@ export default function DashboardPageClient() {
   const filters = useMemo(() => parseDashboardFilters(searchParams), [searchParams]);
   const focusParam = searchParams.get('focus');
   const urlFocusId = focusParam ? Number(focusParam) : null;
-
-  // "SPPTG berhasil diterbitkan" belongs here, not on the wizard the user is
-  // leaving: it should land with them, once the dashboard is on screen. The
-  // flag is then stripped so a refresh or a shared link cannot replay it.
-  const announcedIssuedSPPTG = useRef(false);
-  const hasIssuedSPPTG = searchParams.get('terbit') === '1';
-
-  useEffect(() => {
-    if (!hasIssuedSPPTG || announcedIssuedSPPTG.current) return;
-    announcedIssuedSPPTG.current = true;
-    toast.success('SPPTG berhasil diterbitkan.');
-    router.replace(pathname, { scroll: false });
-  }, [hasIssuedSPPTG, pathname, router]);
 
   const updateFilterParams = useCallback(
     (patch: DashboardFilterPatch) => {
@@ -299,9 +286,20 @@ export default function DashboardPageClient() {
     offset: 0,
   });
 
-  // Transform submissions data
-  const submissionItems = (submissionsData?.items || []) as SubmissionListItem[];
-  const submissions = submissionItems.map((s) => ({
+  // Transform submissions data.
+  //
+  // Memoised because this array is a *dependency* downstream: `SubmissionsTable`
+  // watches it to know when the row it was asked to scroll to has arrived. Built
+  // inline, it was a new array on every render — including every render caused by
+  // a mutation's pending flag — so that effect re-ran continuously, re-scrolling
+  // and re-notifying the parent on each pass.
+  const submissionItems = useMemo(
+    () => (submissionsData?.items || []) as SubmissionListItem[],
+    [submissionsData]
+  );
+  const submissions = useMemo(
+    () =>
+      submissionItems.map((s) => ({
     id: s.id, // Keep as number, not string
     namaPemilik: s.namaPemilik,
     nik: s.nik,
@@ -325,9 +323,11 @@ export default function DashboardPageClient() {
     verifikatorName: s.verifikatorName ?? null,
     riwayat: s.riwayat || [],
     feedback: s.feedback,
-    createdAt: new Date(s.createdAt),
-    updatedAt: new Date(s.updatedAt),
-  }));
+        createdAt: new Date(s.createdAt),
+        updatedAt: new Date(s.updatedAt),
+      })),
+    [submissionItems]
+  );
 
   /**
    * Map polygons, padded out to the `Submission` shape the map component
@@ -479,12 +479,8 @@ export default function DashboardPageClient() {
     router.push(`/app/pengajuan/${submission.id}`);
   };
 
-  const handleEditSubmission = (
-    submission: Submission,
-    mode: 'existing' | 'duplicate'
-  ) => {
-    const suffix = mode === 'duplicate' ? '?mode=duplicate' : '';
-    router.push(`/app/pengajuan/${submission.id}/edit${suffix}`);
+  const handleEditSubmission = (submission: Submission) => {
+    router.push(`/app/pengajuan/${submission.id}/edit`);
   };
 
   const isInitialLoading =

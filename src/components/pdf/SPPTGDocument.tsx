@@ -21,8 +21,10 @@ import { SPPTGPage1 } from './SPPTGPage1';
 import { SPPTGPage2 } from './SPPTGPage2';
 import { SPPTGPage3 } from './SPPTGPage3';
 import { SPPTGPage4 } from './SPPTGPage4';
+import { SPPTGCoordinatePage } from './SPPTGCoordinatePage';
+import { SPPTGWitnessPage } from './SPPTGWitnessPage';
 import { SPPTGPageTerdataNotice } from './TerdataNotice';
-import { isTerdataCertificate } from './pagination';
+import { coordinateSheets, isTerdataCertificate, witnessSheets } from './pagination';
 import { SPPTGPDFData, PDFGenerationConfig } from './types';
 import { registerFonts } from './fonts';
 
@@ -55,12 +57,36 @@ export const SPPTGDocument: React.FC<SPPTGDocumentProps> = ({
       <SPPTGPage1 data={data} config={config} />
       <SPPTGPage2 data={data} config={config} />
       <SPPTGPage3 data={data} config={config} />
+      {/* Saksi beyond what the signature page holds continue here, before
+          anything else — they belong with the signatures they carry on from.
+          Not gated on `includeWitnesses`: page numbers are computed from the
+          data alone, so dropping these sheets by config would leave gaps in the
+          numbering the footer cannot express. */}
+      {witnessSheets(data).map((sheet) => (
+        <SPPTGWitnessPage
+          key={`saksi-${sheet.page}`}
+          data={data}
+          config={config}
+          sheet={sheet}
+        />
+      ))}
       {/* Terdata only: the disclosure notice sits between the signatures and
           the map, which is why the map page number is variant-dependent. */}
       {isTerdataCertificate(data) && (
         <SPPTGPageTerdataNotice data={data} config={config} />
       )}
       <SPPTGPage4 data={data} config={config} />
+      {/* Lampiran 2+: the boundary as lat/lon and UTM, one sheet per bidang
+          (split further when a bidang has more points than a sheet holds). */}
+      {coordinateSheets(data).map((sheet) => (
+        <SPPTGCoordinatePage
+          key={`koordinat-${sheet.page}`}
+          data={data}
+          config={config}
+          sheet={sheet}
+          attachmentNumber={2}
+        />
+      ))}
     </Document>
   );
 };
