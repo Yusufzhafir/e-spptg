@@ -15,7 +15,7 @@ import React from 'react';
 import { Page, Text, View } from '@react-pdf/renderer';
 import { styles } from './styles';
 import { DocumentFooter } from './DocumentFooter';
-import { PAGE_TERDATA_NOTICE, totalCertificatePages } from './pagination';
+import { terdataNoticePage, totalCertificatePages } from './pagination';
 import type { PageProps } from './types';
 import { TERDATA_OVERLAP_STATUSES } from '@/lib/spptg-terdata';
 
@@ -66,6 +66,15 @@ export const TerdataNoticeBlock: React.FC<{
         ))}
       </View>
 
+      {/* The consequence of the ticks above, stated on the certificate itself:
+          a terdata berkas cannot be registered and no desa signs it off. It sits
+          immediately before the surveyor's signature so what is being attested
+          is unmistakable. */}
+      <Text style={[styles.noticeText, { marginTop: 8 }]}>
+        Sehingga SPPTG yang diajukan tidak bisa dilakukan REGISTER / PENDAFTARAN dan
+        tidak bisa ditandatangani dan disahkan kepala desa.
+      </Text>
+
       <View style={styles.noticeSignature}>
         <View style={styles.noticeSignatureBlock}>
           <Text style={styles.signatureCentered}>Tim Peneliti (Juru Ukur),</Text>
@@ -99,7 +108,7 @@ export const SPPTGPageTerdataNotice: React.FC<PageProps> = ({ data }) => (
       jabatanJuruUkur={data.jabatanJuruUkur}
     />
 
-    <DocumentFooter page={PAGE_TERDATA_NOTICE} totalPages={totalCertificatePages(data)} />
+    <DocumentFooter page={terdataNoticePage(data)} totalPages={totalCertificatePages(data)} />
   </Page>
 );
 

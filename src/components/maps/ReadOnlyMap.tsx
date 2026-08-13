@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
 import { Submission, StatusSPPTG } from '@/types';
-import { geoJSONToLatLng } from '@/lib/map-utils';;
+import { geoJSONToPaths } from '@/lib/map-utils';
 import type { ReferencePolygon } from './DrawingMap';
 import { MapPin } from 'lucide-react';
 
@@ -114,48 +114,51 @@ function ReadOnlyMapInternal({
     polygonsRef.current = [];
     infoWindowsRef.current = [];
 
-    // Create polygons for each submission
+    // Create polygons for each submission. One pengajuan may cover several
+    // bidang (a MultiPolygon), so every part gets its own drawn polygon — all
+    // of them carry the same click and hover behaviour.
     submissions.forEach((submission) => {
       if (!submission.geoJSON) return;
-
-      const latLngs = geoJSONToLatLng(submission.geoJSON);
-      if (latLngs.length < 3) return;
 
       const color = getPolygonColor(submission.status);
       const isSelected = selectedSubmission?.id === submission.id;
 
-      const polygon = new google.maps.Polygon({
-        paths: latLngs,
-        fillColor: color,
-        fillOpacity: isSelected ? 0.5 : 0.3,
-        strokeColor: color,
-        strokeWeight: isSelected ? 3 : 2,
-        strokeOpacity: 1,
-      });
+      geoJSONToPaths(submission.geoJSON).forEach((path) => {
+        if (path.length < 3) return;
 
-      polygon.setMap(map);
-      polygonsRef.current.push(polygon);
-
-      // Click just notifies the parent — the popup is rendered as a React
-      // overlay by MapView (fixed corner), so it can't cover the map controls.
-      google.maps.event.addListener(polygon, 'click', () => {
-        if (onPolygonClick) {
-          onPolygonClick(submission);
-        }
-      });
-
-      // Add hover effects
-      google.maps.event.addListener(polygon, 'mouseover', () => {
-        polygon.setOptions({
-          fillOpacity: 0.5,
-          strokeWeight: 3,
-        });
-      });
-
-      google.maps.event.addListener(polygon, 'mouseout', () => {
-        polygon.setOptions({
+        const polygon = new google.maps.Polygon({
+          paths: path,
+          fillColor: color,
           fillOpacity: isSelected ? 0.5 : 0.3,
+          strokeColor: color,
           strokeWeight: isSelected ? 3 : 2,
+          strokeOpacity: 1,
+        });
+
+        polygon.setMap(map);
+        polygonsRef.current.push(polygon);
+
+        // Click just notifies the parent — the popup is rendered as a React
+        // overlay by MapView (fixed corner), so it can't cover the map controls.
+        google.maps.event.addListener(polygon, 'click', () => {
+          if (onPolygonClick) {
+            onPolygonClick(submission);
+          }
+        });
+
+        // Add hover effects
+        google.maps.event.addListener(polygon, 'mouseover', () => {
+          polygon.setOptions({
+            fillOpacity: 0.5,
+            strokeWeight: 3,
+          });
+        });
+
+        google.maps.event.addListener(polygon, 'mouseout', () => {
+          polygon.setOptions({
+            fillOpacity: isSelected ? 0.5 : 0.3,
+            strokeWeight: isSelected ? 3 : 2,
+          });
         });
       });
     });

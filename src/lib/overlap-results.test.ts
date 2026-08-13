@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeOverlapRows } from './overlap-results';
+import {
+  describeOverlapSources,
+  normalizeOverlapRows,
+  summariseOverlaps,
+} from './overlap-results';
 
 describe('normalizeOverlapRows', () => {
   it('normalizes database rows and preserves source labels', () => {
@@ -40,5 +44,35 @@ describe('normalizeOverlapRows', () => {
         sumber: 'Submission',
       },
     ]);
+  });
+});
+
+describe('describeOverlapSources', () => {
+  it('names both sources rather than calling everything a kawasan', () => {
+    expect(
+      describeOverlapSources([
+        { jenisKawasan: 'Kawasan Hutan', sumber: 'ProhibitedArea' },
+        { jenisKawasan: 'Sempadan Sungai', sumber: 'ProhibitedArea' },
+        { jenisKawasan: 'SPPTG terdaftar', sumber: 'Submission' },
+      ])
+    ).toBe('2 kawasan Non-SPPTG dan 1 SPPTG eksisting');
+  });
+
+  it('mentions only the source that is actually present', () => {
+    expect(
+      describeOverlapSources([{ jenisKawasan: 'SPPTG terdata', sumber: 'Submission' }])
+    ).toBe('1 SPPTG eksisting');
+    expect(
+      describeOverlapSources([{ jenisKawasan: 'Kawasan Hutan', sumber: 'ProhibitedArea' }])
+    ).toBe('1 kawasan Non-SPPTG');
+  });
+
+  it('treats a legacy row with no sumber as a submission when its jenis says so', () => {
+    // Rows written before `sumber` existed carried the status as the jenis.
+    expect(summariseOverlaps([{ jenisKawasan: 'SPPTG terdaftar' }])).toEqual({
+      total: 1,
+      kawasan: 0,
+      spptg: 1,
+    });
   });
 });

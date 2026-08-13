@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSPPTGPDFData, buildWitnessSlots, MAX_WITNESSES } from './spptg-pdf-data';
+import { buildSPPTGPDFData, buildWitnessSlots } from './spptg-pdf-data';
 import type { SubmissionDraft } from '@/types';
 
 function createDraftFixture(): SubmissionDraft {
@@ -79,17 +79,17 @@ describe('buildWitnessSlots', () => {
     expect(buildWitnessSlots([saksi('Tetangga 1')])).toEqual([saksi('Tetangga 1')]);
   });
 
-  it.each([2, 3, 4])('prints one block per saksi for %i of them', (count) => {
+  it.each([2, 3, 4, 9])('prints one block per saksi for %i of them', (count) => {
     const list = Array.from({ length: count }, (_, i) => saksi(`Tetangga ${i + 1}`));
 
     expect(buildWitnessSlots(list)).toHaveLength(count);
     expect(buildWitnessSlots(list)).toEqual(list);
   });
 
-  it(`never prints more than the ${MAX_WITNESSES}-saksi cap`, () => {
-    const list = Array.from({ length: 6 }, (_, i) => saksi(`Tetangga ${i + 1}`));
+  it('never truncates — there is no cap on saksi', () => {
+    const list = Array.from({ length: 12 }, (_, i) => saksi(`Tetangga ${i + 1}`));
 
-    expect(buildWitnessSlots(list)).toHaveLength(MAX_WITNESSES);
+    expect(buildWitnessSlots(list)).toEqual(list);
   });
 
   it('falls back to one blank slot rather than an empty heading', () => {
@@ -150,5 +150,66 @@ describe('buildSPPTGPDFData — certificate variant', () => {
     } as unknown as SubmissionDraft;
 
     expect(buildSPPTGPDFData(draft, null).overlapStatuses).toEqual([]);
+  });
+});
+
+describe('buildSPPTGPDFData — pengajuan covering several bidang', () => {
+  const secondBidang = [
+    { id: 'D-1', latitude: -6.4, longitude: 107.4 },
+    { id: 'D-2', latitude: -6.41, longitude: 107.41 },
+    { id: 'D-3', latitude: -6.42, longitude: 107.42 },
+  ];
+
+  it('carries every bidang onto the certificate, named where the KML named it', () => {
+    const draft: SubmissionDraft = {
+      ...createDraftFixture(),
+      polygons: [
+        { id: 'P-1', nama: 'Bidang Utara', coordinates: createDraftFixture().coordinatesGeografis },
+        { id: 'P-2', coordinates: secondBidang },
+      ],
+    };
+
+    const data = buildSPPTGPDFData(draft, null, { mapUrlGenerator: () => 'https://map' });
+
+    expect(data.polygons).toHaveLength(2);
+    expect(data.polygons?.[0].nama).toBe('Bidang Utara');
+    expect(data.polygons?.[1].coordinates).toHaveLength(3);
+  });
+
+  it('mirrors the first bidang into coordinatesGeografis for older readers', () => {
+    const draft: SubmissionDraft = {
+      ...createDraftFixture(),
+      polygons: [
+        { id: 'P-1', coordinates: secondBidang },
+        { id: 'P-2', coordinates: createDraftFixture().coordinatesGeografis },
+      ],
+    };
+
+    const data = buildSPPTGPDFData(draft, null, { mapUrlGenerator: () => 'https://map' });
+
+    expect(data.coordinatesGeografis).toEqual(secondBidang);
+  });
+
+  it('drops a bidang that is not yet a polygon', () => {
+    const draft: SubmissionDraft = {
+      ...createDraftFixture(),
+      polygons: [
+        { id: 'P-1', coordinates: createDraftFixture().coordinatesGeografis },
+        { id: 'P-2', coordinates: secondBidang.slice(0, 2) },
+      ],
+    };
+
+    const data = buildSPPTGPDFData(draft, null, { mapUrlGenerator: () => 'https://map' });
+
+    expect(data.polygons).toHaveLength(1);
+  });
+
+  it('falls back to the legacy single boundary when there is no polygon list', () => {
+    const draft = createDraftFixture();
+
+    const data = buildSPPTGPDFData(draft, null, { mapUrlGenerator: () => 'https://map' });
+
+    expect(data.polygons).toHaveLength(1);
+    expect(data.polygons?.[0].coordinates).toEqual(draft.coordinatesGeografis);
   });
 });

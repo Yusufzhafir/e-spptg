@@ -49,9 +49,18 @@ import { trpc } from '@/trpc/client';
 import { useRouter } from 'next/navigation';
 import { buildDraftSavePayload } from '@/lib/draft-save-payload';
 import { normalizeCoordinateIds } from '@/lib/coordinate-ids';
-import { overlapJenisBadgeClassName } from '@/lib/overlap-results';
+import {
+  describeOverlapSources,
+  overlapJenisBadgeClassName,
+  overlapSourceLabel,
+} from '@/lib/overlap-results';
 import { certificateLabel } from '@/lib/nomor-spptg';
 import { blockingSubmissionOverlaps } from '@/lib/spptg-terdata';
+import {
+  draftPolygons,
+  isUsablePolygon,
+  polygonsPatch,
+} from '@/lib/land-polygons';
 import { buildVillageDefaultsPatch } from '@/lib/village-defaults';
 import { viewerMaxVisibleStep } from '@/lib/viewer-step-access';
 import {
@@ -66,7 +75,8 @@ import { useAuthRole } from './AuthRoleProvider';
 interface SubmissionFlowProps {
   draftId: number;
   onCancel: () => void;
-  onComplete: (draft: SubmissionDraft) => void;
+  /** Called once the berkas is filed; the page owns where to go next. */
+  onComplete: (draft: SubmissionDraft, submissionId: number) => void;
 }
 
 /** Stage 4 is renamed per decision — see `issuanceStepLabel`. */
@@ -184,13 +194,16 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
 
   // Submit draft mutation
   const submitDraftMutation = trpc.submissions.submitDraft.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
+      // The berkas has just changed on the server; the list, map and dashboard
+      // caches still hold the pre-submit version.
+      void utils.submissions.invalidate();
       // Step 3 (handleSubmitFromStep3) and Step 4 (Terbitkan SPPTG) each own
       // their own outcome message and destination, so this generic pair would
       // only stack a second toast and a competing redirect on top of theirs.
       if (isSubmittingFromStep3.current || isIssuingSPPTG.current) return;
       toast.success('Pengajuan berhasil disimpan');
-      router.push(`/app/pengajuan`);
+      router.push(`/app/pengajuan/${result.submissionId}`);
     },
     onError: (error) => {
       toast.error(`Gagal menyimpan pengajuan: ${error.message}`);
@@ -266,7 +279,10 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
       if (hydratedDraftIdRef.current === draftData.id) return;
       hydratedDraftIdRef.current = draftData.id;
       const payload = (draftData.payload ?? {}) as Partial<SubmissionDraft>;
-      const coordinatesGeografis = normalizeCoordinateIds(payload.coordinatesGeografis ?? []);
+      // Read the bidang list, lifting a pre-multi-polygon payload into one
+      // bidang. Both fields are written from the same source so the mirror can
+      // never be hydrated out of step with what it mirrors.
+      const geometry = polygonsPatch(draftPolygons(payload));
       const allowedStep = isViewer ? 1 : draftData.currentStep;
 
       // A Viewer files on their own behalf, so their account *is* the applicant:
@@ -314,12 +330,15 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
         namaKepalaDesa: payload.namaKepalaDesa,
         saksiList: payload.saksiList || [],
         coordinateSystem: payload.coordinateSystem || 'geografis',
-        coordinatesGeografis,
+        coordinatesGeografis: geometry.coordinatesGeografis,
+        polygons: geometry.polygons,
         fotoLahan: payload.fotoLahan || [],
         overlapResults: payload.overlapResults || [],
         luasLahan: payload.luasLahan,
         luasManual: payload.luasManual,
         kelilingLahan: payload.kelilingLahan,
+        panjangLahan: payload.panjangLahan,
+        lebarLahan: payload.lebarLahan,
         // Documents
         dokumenKTP: payload.dokumenKTP,
         dokumenKK: payload.dokumenKK,
@@ -566,10 +585,12 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
   // On Step 2, run the overlap check and require an explicit confirmation
   // before continuing (Berikutnya) or saving (Simpan Draf).
   const runStep2OverlapGate = async (action: 'next' | 'save') => {
-    const coords = draft.coordinatesGeografis;
+    // Every bidang of the pengajuan is checked, not just the first: a claim
+    // overlaps a kawasan if any of its parcels does.
+    const polygons = draftPolygons(draft).filter(isUsablePolygon);
 
-    // Fewer than 3 points → no polygon to check; proceed without gating.
-    if (coords.length < 3) {
+    // No usable polygon → nothing to check; proceed without gating.
+    if (polygons.length === 0) {
       if (action === 'next') {
         await advanceToNextStep();
       } else {
@@ -580,10 +601,15 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
 
     try {
       const overlaps = await checkOverlapsMutation.mutateAsync({
-        coordinates: coords.map((c) => ({
-          latitude: c.latitude,
-          longitude: c.longitude,
-        })),
+        // See the note in Step 2: this excludes the pengajuan being edited from
+        // the comparison, server-side.
+        draftId: draft.id,
+        polygons: polygons.map((polygon) =>
+          polygon.coordinates.map((c) => ({
+            latitude: c.latitude,
+            longitude: c.longitude,
+          }))
+        ),
       });
 
       setDraft((prev) => ({
@@ -818,16 +844,18 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
 
     isSubmittingFromStep3.current = true;
     try {
-      await submitDraftMutation.mutateAsync({ draftId: draft.id });
+      const result = await submitDraftMutation.mutateAsync({ draftId: draft.id });
       const statusMessages: Record<string, string> = {
         'SPPTG terdata': 'Pengajuan berhasil disimpan dengan status terdata.',
+        'SPPTG terdaftar': 'Pengajuan berhasil disimpan dengan status terdaftar.',
         'SPPTG ditolak': 'Keputusan penolakan berhasil disimpan dan akan dikirim ke pemohon.',
         'SPPTG ditinjau ulang': 'Keputusan tinjau ulang berhasil disimpan dan akan dikirim ke pemohon.',
       };
       const message = statusMessages[draft.status || ''] || 'Pengajuan berhasil disimpan';
       toast.success(message);
-      onComplete(draft);
-      router.push('/app/pengajuan');
+      // Land on the pengajuan that was just filed, not the list: whatever the
+      // decision was, the next thing anyone wants is the berkas it produced.
+      router.push(`/app/pengajuan/${result.submissionId}`);
     } catch (error) {
       // Error already handled in mutation
     } finally {
@@ -1219,10 +1247,12 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                   // Silent: issuing is one action to the user, and its outcome
                   // is announced once, on the dashboard it lands on.
                   await saveDraftToBackend(4, { silent: true });
-                  await submitDraftMutation.mutateAsync({ draftId: draft.id });
-                  // Navigates to the dashboard, which raises the single success
-                  // toast once it is actually on screen.
-                  onComplete(draft);
+                  const result = await submitDraftMutation.mutateAsync({
+                    draftId: draft.id,
+                  });
+                  // Navigates to the issued pengajuan, which raises the single
+                  // success toast once it is actually on screen.
+                  onComplete(draft, result.submissionId);
                 } catch {
                   // The mutation already reported why; let them try again.
                   isIssuingSPPTG.current = false;
@@ -1351,7 +1381,8 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                     <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5" />
                     <p className="text-orange-900">
                       <strong>
-                        Ditemukan {draft.overlapResults!.length} tumpang tindih
+                        Ditemukan {draft.overlapResults!.length} tumpang tindih:{' '}
+                        {describeOverlapSources(draft.overlapResults)}
                       </strong>
                     </p>
                   </div>
@@ -1378,9 +1409,7 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                           </TableCell>
                           <TableCell>
                             <Badge variant="secondary">
-                              {overlap.sumber === 'Submission'
-                                ? 'SPPTG Eksisting'
-                                : 'Kawasan Non-SPPTG'}
+                              {overlapSourceLabel(overlap)}
                             </Badge>
                           </TableCell>
                           <TableCell>
@@ -1452,7 +1481,8 @@ export function SubmissionFlow({ draftId, onCancel, onComplete }: SubmissionFlow
                 ) : (
                   <>
                     Lahan pengajuan ini masih tumpang tindih dengan{' '}
-                    <strong>{overlapCount} kawasan</strong>. Menerbitkan SPPTG di atas
+                    <strong>{describeOverlapSources(draft.overlapResults)}</strong>.
+                    Menerbitkan SPPTG di atas
                     lahan yang masih bersengketa berarti mengesahkan klaim yang sudah
                     ditandai bermasalah oleh hasil cek tumpang tindih.
                   </>

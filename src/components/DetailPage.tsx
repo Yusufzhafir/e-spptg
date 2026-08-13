@@ -21,8 +21,8 @@ import { Badge } from './ui/badge';
 import { FeedbackData, Submission, UploadedDocument } from '@/types';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { geomGeoJSONPolygonSchema } from '@/lib/validation';
 import { findCenter } from '@/lib/utils';
+import { geoJSONToPaths } from '@/lib/map-utils';
 import { trpc } from '@/trpc/client';
 import { formatDate } from '@/lib/format-date';
 import { keepLatestPerCategory } from '@/lib/document-list';
@@ -50,6 +50,12 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
   // Applicant details live only in the draft payload snapshot — the submissions
   // table has no column for tempat/tanggal lahir, pekerjaan, or alamat KTP.
   const pemilik = submission.payload ?? {};
+  // Panjang/lebar live only in the payload snapshot — the submissions table has
+  // no column for them, same as the applicant's identity fields above.
+  const ukuranLahan = {
+    panjang: typeof pemilik.panjangLahan === 'number' ? pemilik.panjangLahan : null,
+    lebar: typeof pemilik.lebarLahan === 'number' ? pemilik.lebarLahan : null,
+  };
   const tempatTanggalLahir =
     [pemilik.tempatLahir?.trim(), pemilik.tanggalLahir ? formatDate(pemilik.tanggalLahir) : '']
       .filter(Boolean)
@@ -361,11 +367,11 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
               submissions={[submission]}
               selectedSubmission={submission}
               height="500px"
+              // Every ring of the geometry, so a pengajuan covering several
+              // bidang centres on all of them. Parsing this as a bare Polygon
+              // used to throw outright once MultiPolygon geometry existed.
               center={findCenter(
-                geomGeoJSONPolygonSchema
-                  .parse(submission.geoJSON)
-                  .coordinates[0]
-                  .map(([lng, lat]) => ({ lng, lat }))
+                geoJSONToPaths(submission.geoJSON).flat()
               )}
               zoom={15}
             />
@@ -611,6 +617,23 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
                         </p>
                       )}
                     </div>
+                    {/* Tape measurements from Step 2. Only rendered when the
+                        surveyor actually recorded them — they are optional, and
+                        an empty row would read as "measured as nothing". */}
+                    {(ukuranLahan.panjang != null || ukuranLahan.lebar != null) && (
+                      <div>
+                        <p className="text-sm text-gray-600">Panjang × Lebar</p>
+                        <p>
+                          {ukuranLahan.panjang != null
+                            ? `${ukuranLahan.panjang.toLocaleString('id-ID')} m`
+                            : '-'}{' '}
+                          ×{' '}
+                          {ukuranLahan.lebar != null
+                            ? `${ukuranLahan.lebar.toLocaleString('id-ID')} m`
+                            : '-'}
+                        </p>
+                      </div>
+                    )}
                     <div>
                       <p className="text-sm text-gray-600">Penggunaan Lahan</p>
                       <p>{submission.penggunaanLahan || '-'}</p>

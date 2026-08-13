@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { STEP1_FIELD_LABELS, step1FieldLabels, validateStep1Fields } from './step-field-errors';
+import {
+  STEP1_FIELD_LABELS,
+  step1FieldLabels,
+  validateStep1Fields,
+  validateStep2Fields,
+} from './step-field-errors';
 import type { SubmissionDraft } from '@/types';
 
 const doc = { name: 'berkas.pdf', size: 1024 };
@@ -136,5 +141,73 @@ describe('step1FieldLabels', () => {
 
   it('returns nothing when Step 1 is complete', () => {
     expect(step1FieldLabels(validateStep1Fields(completeStep1()))).toEqual([]);
+  });
+});
+
+/** A Step 2 form with every mandatory field filled in. */
+function completeStep2(): SubmissionDraft {
+  return {
+    ...completeStep1(),
+    currentStep: 2,
+    saksiList: [
+      {
+        id: 'W-1',
+        nama: 'Slamet',
+        sisi: 'Utara',
+        penggunaanLahanBatas: 'Sawah',
+      },
+    ],
+    coordinatesGeografis: [
+      { id: 'C-1', latitude: 0.6, longitude: 117.3 },
+      { id: 'C-2', latitude: 0.601, longitude: 117.3 },
+      { id: 'C-3', latitude: 0.601, longitude: 117.301 },
+    ],
+    dokumenBeritaAcara: doc,
+  } as unknown as SubmissionDraft;
+}
+
+describe('validateStep2Fields', () => {
+  it('passes with a saksi who has no umur, pekerjaan or alamat', () => {
+    // Those three are optional on the form and in boundaryWitnessSchema; the
+    // step validator must not be stricter than the schema it fronts.
+    expect(validateStep2Fields(completeStep2())).toEqual({});
+  });
+
+  it('still demands the saksi fields that are mandatory', () => {
+    const draft = completeStep2();
+    draft.saksiList = [
+      { id: 'W-1', nama: '  ', sisi: 'Utara', penggunaanLahanBatas: 'Sawah' },
+    ] as SubmissionDraft['saksiList'];
+
+    expect(validateStep2Fields(draft).saksiList).toContain('nama saksi');
+  });
+
+  it('accepts a boundary drawn on a later bidang when the first is still empty', () => {
+    const draft = completeStep2();
+    // `coordinatesGeografis` mirrors the *first* bidang, so a validator reading
+    // only the mirror would reject a pengajuan whose second bidang is complete.
+    draft.polygons = [
+      { id: 'P-1', coordinates: [] },
+      { id: 'P-2', coordinates: completeStep2().coordinatesGeografis },
+    ];
+    draft.coordinatesGeografis = [];
+
+    expect(validateStep2Fields(draft).coordinatesGeografis).toBeUndefined();
+  });
+
+  it('rejects a pengajuan with no usable bidang at all', () => {
+    const draft = completeStep2();
+    draft.polygons = [{ id: 'P-1', coordinates: [] }];
+    draft.coordinatesGeografis = [];
+
+    expect(validateStep2Fields(draft).coordinatesGeografis).toContain('Minimal 3 titik');
+  });
+
+  it('still validates a legacy draft that has no polygon list', () => {
+    const draft = completeStep2();
+    delete draft.polygons;
+    draft.coordinatesGeografis = draft.coordinatesGeografis.slice(0, 2);
+
+    expect(validateStep2Fields(draft).coordinatesGeografis).toContain('Minimal 3 titik');
   });
 });

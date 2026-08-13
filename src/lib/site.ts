@@ -51,16 +51,21 @@ export const SITE_TITLE = 'SPPTG Kutai Timur — SIAPTAH Administrasi Pertanahan
  * into a local-search signal.
  */
 export const SITE_CONTACT = {
-  /** e.g. 'Jl. ... No. ...' */
-  streetAddress: '',
-  addressLocality: 'Sangatta',
+  /**
+   * Kantor Dinas Pertanahan dan Penataan Ruang Kabupaten Kutai Timur — the same
+   * address the landing page footer prints beside its map embed. Keep the two in
+   * agreement: a structured address that contradicts the visible one is worse
+   * than no structured address at all.
+   */
+  streetAddress: 'Jl. Prof. Dr. Baharuddin Lopa, S.H., Tlk. Lingga',
+  addressLocality: 'Sangatta Utara',
   addressRegion: 'Kalimantan Timur',
   postalCode: '',
   /** E.164, e.g. '+62549XXXXXXX' */
   telephone: '',
   email: '',
   /** Parent/related official sites, e.g. ['https://kutaitimurkab.go.id'] */
-  sameAs: ['https://kutaitimurkab.go.id'],
+  sameAs: ['https://www.kutaitimurkab.go.id', 'https://kaltimprov.go.id'],
 } as const;
 
 /** Absolute URL for a site-relative path, e.g. `url('/panduan')`. */

@@ -7,9 +7,9 @@
  * - Two columns: witness signature lines on the left, the declarant signature
  *   with meterai and the Kepala Desa/Lurah endorsement on the right
  *
- * Every field of a witness is captured by the wizard (nama, umur, pekerjaan and
- * alamat are all mandatory on the saksi form), so each block prints complete —
- * the dotted lines are only ever blank when the data really is missing.
+ * Nama and sisi are mandatory on the saksi form; umur, pekerjaan and alamat are
+ * not, because a surveyor often records a witness in the field without them. A
+ * missing one prints as the blank dotted line the paper form always had.
  */
 
 import React from 'react';
@@ -17,7 +17,12 @@ import { Page, Text, View } from '@react-pdf/renderer';
 import { styles, formatIndonesianDate } from './styles';
 import { DocumentFooter } from './DocumentFooter';
 import { buildWitnessSlots } from '@/lib/spptg-pdf-data';
-import { isTerdataCertificate, PAGE_SIGNATURES, totalCertificatePages } from './pagination';
+import {
+  isTerdataCertificate,
+  PAGE_SIGNATURES,
+  totalCertificatePages,
+  witnessesOnSignaturePage,
+} from './pagination';
 import { PageProps, SPPTGPDFData } from './types';
 
 /**
@@ -98,8 +103,11 @@ export const SPPTGPage3: React.FC<PageProps> = ({ data, config }) => {
   const showAdministrative =
     config?.includeAdministrative !== false && !isTerdataCertificate(data);
 
-  // One block per recorded saksi — one saksi prints one block, four print four.
-  const witnessSlots = buildWitnessSlots(data.saksiList);
+  // One block per recorded saksi, up to what this page's layout holds. Any
+  // beyond that continue on their own sheets (see `SPPTGWitnessPage`) — a
+  // pengajuan may name as many saksi as it has boundary sides, and this page
+  // cannot grow without breaking the fixed page numbering.
+  const witnessSlots = buildWitnessSlots(witnessesOnSignaturePage(data));
 
   return (
     <Page size="A4" style={styles.page}>

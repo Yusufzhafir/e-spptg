@@ -19,7 +19,13 @@ import { normalizeOverlapRows } from '@/lib/overlap-results';
 import { TTL, cached, invalidateDashboard, scopedKey } from '@/server/redis/cache';
 import { deriveSubmissionStatus } from '@/lib/submission-status';
 import { normalizePhoneNumber } from '@/lib/phone-number';
-import type { FeedbackData } from '@/types';
+import type { FeedbackData, GeoJSONMultiPolygon } from '@/types';
+import {
+    draftPolygons,
+    geometryToMultiPolygonWKT,
+    isUsablePolygon,
+    polygonsToMultiPolygon,
+} from '@/lib/land-polygons';
 import {
     assertCanAccessDraft,
     assertCanAccessSubmission,
@@ -101,7 +107,10 @@ export const submissionsRouter = router({
                         });
                     }
 
-                    if (!payload.coordinatesGeografis || payload.coordinatesGeografis.length < 3) {
+                    // Checked against the polygon list rather than the mirrored
+                    // ring, so a draft whose bidang were re-ordered or imported
+                    // still validates on what will actually be stored.
+                    if (!draftPolygons(payload as never).some(isUsablePolygon)) {
                         throw new TRPCError({
                             code: 'BAD_REQUEST',
                             message: 'Minimal 3 titik koordinat diperlukan',
@@ -192,8 +201,9 @@ export const submissionsRouter = router({
                         '@/server/db/schema'
                     );
 
-                    const coordinates = geoJson.coordinates[0].map((c) => `${c[0]} ${c[1]}`).join(',')
-                    const geomSql = sql.raw(`ST_PolygonFromText('POLYGON((${coordinates}))',4326)`);
+                    const geomSql = sql.raw(
+                        `ST_MPolyFromText('${geometryToMultiPolygonWKT(geoJson)}',4326)`
+                    );
 
                     // When the draft was opened to edit an existing submission,
                     // update that submission in place instead of creating a new one.
@@ -238,6 +248,13 @@ export const submissionsRouter = router({
                                 geoJSON: submissionData.geoJSON,
                                 payload: submissionData.payload,
                                 geom: geomSql,
+                                // Opening a pengajuan for editing flags it
+                                // invalid (see `drafts.createFromSubmission`) so
+                                // the superseded boundary stops counting while it
+                                // is being reworked. Filing the corrected berkas
+                                // is what makes it current again — this row now
+                                // holds the new data.
+                                isValid: true,
                                 riwayat: [
                                     ...existingRiwayat,
                                     {
@@ -479,23 +496,90 @@ export const submissionsRouter = router({
     // so an arbitrary polygon would otherwise let a Viewer or a Kecamatan
     // account enumerate applicants far outside its own scope.
     checkOverlapsFromCoordinates: verifikatorProcedure
-        .input(z.object({
-            coordinates: z.array(z.object({
-                latitude: z.number(),
-                longitude: z.number(),
-            })).min(3),
-        }))
+        .input(
+            z
+                .object({
+                    /**
+                     * Every bidang of the pengajuan. A claim can cover several
+                     * separated parcels and it overlaps a kawasan if *any* of
+                     * them does, so they are checked as one MultiPolygon.
+                     */
+                    polygons: z
+                        .array(
+                            z
+                                .array(
+                                    z.object({
+                                        latitude: z.number(),
+                                        longitude: z.number(),
+                                    })
+                                )
+                                .min(3)
+                        )
+                        .min(1)
+                        .max(20)
+                        .optional(),
+                    /** Single-boundary form, kept for older clients. */
+                    coordinates: z
+                        .array(
+                            z.object({
+                                latitude: z.number(),
+                                longitude: z.number(),
+                            })
+                        )
+                        .min(3)
+                        .optional(),
+                    /**
+                     * The draft being checked. Used only to find which filed
+                     * pengajuan it is editing, so that berkas is left out of the
+                     * comparison — a boundary cannot overlap itself.
+                     *
+                     * The submission id is resolved from the draft server-side
+                     * rather than accepted from the client: taking an id
+                     * directly would let a caller hide any pengajuan they liked
+                     * from their own overlap check.
+                     */
+                    draftId: z.number().int().optional(),
+                })
+                .refine(
+                    (value) => Boolean(value.polygons?.length || value.coordinates?.length),
+                    { message: 'Koordinat pengajuan diperlukan' }
+                )
+        )
         .mutation(async ({ ctx, input }) => {
             if (isPrivilegedProcessor(ctx.appUser!)) {
                 requireAssignedVillageId(ctx.appUser!);
             }
 
-            // Build GeoJSON polygon from coordinates
-            const coords = input.coordinates.map((c) => [c.longitude, c.latitude]);
-            const closedCoords = [...coords, coords[0]];
+            /**
+             * The pengajuan this draft is re-drawing, if any.
+             *
+             * Editing a filed berkas means comparing a new boundary against a
+             * world that still contains the old one, so the check reported the
+             * berkas as tumpang tindih with itself — an overlap no verifikator
+             * could ever resolve, on land that has only one claimant.
+             */
+            let editingSubmissionId: number | null = null;
+            if (input.draftId !== undefined) {
+                const draft = await draftQueries.getDraftById(input.draftId);
+                if (draft) {
+                    assertCanAccessDraft(ctx.appUser!, {
+                        userId: draft.userId,
+                        villageId: draft.villageId,
+                    });
+                    editingSubmissionId = draft.editingSubmissionId ?? null;
+                }
+            }
+
+            // Build one GeoJSON MultiPolygon from every bidang supplied. The
+            // percentage below is then a share of the *whole* claim, which is
+            // what the wizard reports.
+            const rings = (input.polygons ?? [input.coordinates!]).map((polygon) => {
+                const coords = polygon.map((c) => [c.longitude, c.latitude]);
+                return [[...coords, coords[0]]];
+            });
             const geoJson = {
-                type: 'Polygon' as const,
-                coordinates: [closedCoords],
+                type: 'MultiPolygon' as const,
+                coordinates: rings,
             };
 
             // Query prohibited areas and existing submissions
@@ -524,6 +608,7 @@ export const submissionsRouter = router({
                     WHERE s.status IN ('SPPTG terdaftar', 'SPPTG terdata')
                     AND s.is_valid = true
                     AND s.geom IS NOT NULL
+                    AND (${editingSubmissionId}::bigint IS NULL OR s.id <> ${editingSubmissionId}::bigint)
                 )
                 SELECT 
                     pg.id AS kawasan_id,
@@ -748,24 +833,16 @@ export const submissionsRouter = router({
         }),
 });
 
-function buildGeometryFromCoordinates(payload: object) {
-    if (!('coordinatesGeografis' in payload) || !Array.isArray(payload.coordinatesGeografis)) {
-        return null
-    }
-    const coordinates = payload.coordinatesGeografis || [];
-    if (coordinates.length < 3) {
-        return null;
-    }
-
-    const coords = coordinates.map((c) => [
-        c.longitude,
-        c.latitude,
-    ]);
-
-    const closedCoords = [...coords, coords[0]];
-
-    return {
-        type: 'Polygon',
-        coordinates: [closedCoords],
-    };
+/**
+ * The stored geometry of a pengajuan: a MultiPolygon covering every bidang.
+ *
+ * Reads `polygons` when the draft has it and falls back to the legacy single
+ * `coordinatesGeografis` ring, so drafts created before multi-bidang support
+ * still file correctly. Always a MultiPolygon, even for one parcel —
+ * `submissions.geom` is typed that way.
+ */
+function buildGeometryFromCoordinates(payload: object): GeoJSONMultiPolygon | null {
+    return polygonsToMultiPolygon(draftPolygons(payload as never));
 }
+
+

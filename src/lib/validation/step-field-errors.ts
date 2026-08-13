@@ -2,6 +2,7 @@ import { SubmissionDraft } from '@/types';
 import { isValidPhoneNumber, PHONE_NUMBER_ERROR } from '@/lib/phone-number';
 import { EMAIL_ERROR, isValidEmail } from '@/lib/email-address';
 import { hasNomorSPPTGBody, nomorSPPTGPrefix } from '@/lib/nomor-spptg';
+import { draftPolygons, isUsablePolygon } from '@/lib/land-polygons';
 
 export type StepFieldErrors = Record<string, string>;
 
@@ -131,22 +132,23 @@ export function validateStep2Fields(draft: SubmissionDraft): StepFieldErrors {
   if (draft.saksiList.length < 1) {
     errors.saksiList = 'Minimal 1 saksi batas lahan diperlukan';
   } else {
+    // Umur, pekerjaan and alamat are deliberately absent: they are optional on
+    // the saksi form (see `boundaryWitnessSchema`), because a surveyor often
+    // records a witness in the field without them. Checking them here would
+    // block the step over data the schema itself accepts.
     const invalidWitness = draft.saksiList.find(
-      (w) =>
-        !w.nama?.trim() ||
-        !w.sisi ||
-        !w.penggunaanLahanBatas?.trim() ||
-        !w.umur ||
-        !w.pekerjaan?.trim() ||
-        !w.alamat?.trim()
+      (w) => !w.nama?.trim() || !w.sisi || !w.penggunaanLahanBatas?.trim()
     );
     if (invalidWitness) {
       errors.saksiList =
-        'Lengkapi data saksi batas lahan: nama saksi, sisi batas, penggunaan batas lahan, umur, pekerjaan, dan alamat';
+        'Lengkapi data saksi batas lahan: nama saksi, sisi batas, dan penggunaan batas lahan';
     }
   }
 
-  if (draft.coordinatesGeografis.length < 3) {
+  // Checked across every bidang, not just the mirrored first ring: a pengajuan
+  // whose first bidang is still empty but whose second is fully drawn does have
+  // a usable boundary.
+  if (!draftPolygons(draft).some(isUsablePolygon)) {
     errors.coordinatesGeografis =
       'Minimal 3 titik koordinat diperlukan untuk membentuk polygon';
   }

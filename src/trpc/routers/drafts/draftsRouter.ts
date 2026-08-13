@@ -4,6 +4,12 @@ import { TRPCError } from '@trpc/server';
 import * as queries from '@/server/db/queries/drafts';
 import * as submissionQueries from '@/server/db/queries/submissions';
 import * as documentQueries from '@/server/db/queries/documents';
+import {
+  draftPolygons,
+  isUsablePolygon,
+  polygonsPatch,
+} from '@/lib/land-polygons';
+import type { LandPolygon } from '@/types';
 
 /** Map a submission's document categories to the draft payload keys. */
 const DOC_CATEGORY_TO_KEY: Record<string, string> = {
@@ -20,20 +26,50 @@ const DOC_CATEGORY_TO_KEY: Record<string, string> = {
   'SPPTG Induk': 'dokumenSPPTGInduk',
 };
 
-function geoJsonToCoordinates(
-  geoJSON: unknown
-): Array<{ id: string; latitude: number; longitude: number }> {
-  const g = geoJSON as { type?: string; coordinates?: number[][][] };
-  if (!g || g.type !== 'Polygon' || !Array.isArray(g.coordinates?.[0])) return [];
-  let ring = g.coordinates[0].filter(
-    (pt) => Array.isArray(pt) && pt.length >= 2 && Number.isFinite(pt[0]) && Number.isFinite(pt[1])
-  );
-  if (ring.length >= 2) {
-    const first = ring[0];
-    const last = ring[ring.length - 1];
-    if (first[0] === last[0] && first[1] === last[1]) ring = ring.slice(0, -1);
-  }
-  return ring.map((pt, i) => ({ id: `C-edit-${i}`, latitude: pt[1], longitude: pt[0] }));
+/**
+ * Rebuild the bidang list from a submission's stored geometry.
+ *
+ * Handles MultiPolygon as well as Polygon: a pengajuan may cover several
+ * separated parcels, and reading only the first ring would silently drop the
+ * rest when a berkas is reopened for editing.
+ */
+function geoJsonToPolygons(geoJSON: unknown): LandPolygon[] {
+  const g = geoJSON as { type?: string; coordinates?: unknown };
+  if (!g || !Array.isArray(g.coordinates)) return [];
+
+  const rings: unknown[] =
+    g.type === 'MultiPolygon'
+      ? (g.coordinates as unknown[]).map((polygon) => (polygon as unknown[])?.[0])
+      : g.type === 'Polygon'
+        ? [(g.coordinates as unknown[])[0]]
+        : [];
+
+  const polygons: LandPolygon[] = [];
+  rings.forEach((rawRing, polygonIndex) => {
+    if (!Array.isArray(rawRing)) return;
+    let ring = (rawRing as number[][]).filter(
+      (pt) =>
+        Array.isArray(pt) && pt.length >= 2 && Number.isFinite(pt[0]) && Number.isFinite(pt[1])
+    );
+    // GeoJSON rings repeat their first vertex; the wizard's tables do not.
+    if (ring.length >= 2) {
+      const first = ring[0];
+      const last = ring[ring.length - 1];
+      if (first[0] === last[0] && first[1] === last[1]) ring = ring.slice(0, -1);
+    }
+    if (ring.length < 3) return;
+
+    polygons.push({
+      id: `P-edit-${polygonIndex}`,
+      coordinates: ring.map((pt, i) => ({
+        id: `C-edit-${polygonIndex}-${i}`,
+        latitude: pt[1],
+        longitude: pt[0],
+      })),
+    });
+  });
+
+  return polygons;
 }
 
 type SubmissionDocumentRow = {
@@ -74,6 +110,7 @@ import {
   validateStepCompletion,
 } from '@/lib/validation/submission-draft';
 import { stampFeedbackAttribution } from '@/lib/feedback-attribution';
+import { invalidateDashboard } from '@/server/redis/cache';
 import {
   assertCanAccessDraft,
   assertCanAccessSubmission,
@@ -130,9 +167,6 @@ export const draftsRouter = router({
     .input(
       z.object({
         submissionId: z.number().int(),
-        // true = duplicate into a brand-new submission (prefilled) instead of
-        // editing the original in place.
-        asNewSubmission: z.boolean().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -193,24 +227,54 @@ export const draftsRouter = router({
         luasManual: submission.luasManual,
         status: submission.status,
         coordinateSystem: 'geografis',
-        coordinatesGeografis: geoJsonToCoordinates(submission.geoJSON),
+        ...polygonsPatch(geoJsonToPolygons(submission.geoJSON)),
         ...documentsToPayloadFields(documents),
       };
 
       // Stored payload (if any) is authoritative; reconstructed fills anything missing.
       const payload: Record<string, unknown> = { ...reconstructed, ...storedPayload };
-      const storedCoords = storedPayload.coordinatesGeografis;
-      if (!Array.isArray(storedCoords) || storedCoords.length < 3) {
-        payload.coordinatesGeografis = reconstructed.coordinatesGeografis;
+      // The geometry column is the fallback for the whole bidang list, not just
+      // the first ring: a payload snapshot with no usable polygon would
+      // otherwise reopen the berkas with an empty map.
+      const storedPolygons = draftPolygons(storedPayload as never);
+      if (!storedPolygons.some(isUsablePolygon)) {
+        Object.assign(payload, polygonsPatch(geoJsonToPolygons(submission.geoJSON)));
+      } else {
+        Object.assign(payload, polygonsPatch(storedPolygons));
       }
 
       const draft = await queries.createDraftFromSubmission({
         userId: ctx.appUser!.id,
         villageId: submission.villageId,
         payload,
-        // When duplicating, leave this null so re-submitting creates a new record.
-        editingSubmissionId: input.asNewSubmission ? null : submission.id,
+        // Editing is always in place: re-submitting updates this same record.
+        editingSubmissionId: submission.id,
         currentStep: 1,
+      });
+
+      /**
+       * The pengajuan is flagged invalid the moment editing starts: the version
+       * on the map, in the KPIs and in the overlap report is now known to be
+       * superseded, and it should not keep counting while it is being reworked.
+       *
+       * `submissions.submitDraft` restores the flag when the corrected berkas is
+       * filed — that same row then holds the new data. A draft that is abandoned
+       * leaves the pengajuan invalid until someone flips it back from the detail
+       * page, which is deliberate: nobody has confirmed the old boundary since.
+       */
+      if (submission.isValid) {
+        await submissionQueries.updateSubmissionValidity(submission.id, false);
+        // KPI cards and the trend chart count only valid submissions.
+        await invalidateDashboard();
+      }
+
+      ctx.audit.set({
+        entitasId: submission.id,
+        ringkasan:
+          `Membuka pengajuan #${submission.id} (${submission.namaPemilik}) untuk diedit — ` +
+          'pengajuan ditandai tidak valid sampai perubahannya disimpan',
+        sebelum: { isValid: submission.isValid },
+        sesudah: { isValid: false, draftId: draft.id },
       });
 
       return { id: draft.id };

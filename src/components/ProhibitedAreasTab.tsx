@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProhibitedArea, ProhibitedAreaType } from '../types';
-import { generateStaticMapUrl } from '@/lib/map-static-api';
+import { generateStaticMapUrlForPolygons } from '@/lib/map-static-api';
+import { geoJSONToPaths } from '@/lib/map-utils';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Switch } from './ui/switch';
@@ -52,9 +53,11 @@ import {
   Trash2,
   AlertTriangle,
   Shield,
+  Upload,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CreateProhibitedAreaInput, UpdateProhibitedAreaInput } from '@/types/prohibitedAreas';
+import { KawasanBulkImportDialog } from './KawasanBulkImportDialog';
 
 /** Filters this table keeps in the URL, beside the search box. */
 const AREA_FILTER_KEYS = ['jenis', 'status'] as const;
@@ -158,6 +161,7 @@ export function ProhibitedAreasTab({
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false);
   const [isOverlapCheckDialogOpen, setIsOverlapCheckDialogOpen] = useState(false);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [selectedArea, setSelectedArea] = useState<ProhibitedArea | null>(null);
 
   // Overlap report is computed on demand (PostGIS), only while the dialog is open
@@ -197,17 +201,19 @@ export function ProhibitedAreasTab({
   const previewMapUrl = useMemo(() => {
     if (!selectedArea?.geomGeoJSON) return null;
     try {
-      const geoJson =
-        typeof selectedArea.geomGeoJSON === 'string'
-          ? JSON.parse(selectedArea.geomGeoJSON)
-          : selectedArea.geomGeoJSON;
-      if (!geoJson?.coordinates?.[0]) return null;
-      const coordinates = geoJson.coordinates[0].map((coord: number[]) => ({
-        latitude: coord[1],
-        longitude: coord[0],
-      }));
+      // Every block of the kawasan, not just the first ring: a MultiPolygon
+      // kawasan used to preview as one of its blocks with the rest missing.
+      const polygons = geoJSONToPaths(selectedArea.geomGeoJSON).map((path, index) =>
+        path.map((point, pointIndex) => ({
+          id: `prev-${index}-${pointIndex}`,
+          latitude: point.lat,
+          longitude: point.lng,
+        }))
+      );
+      if (polygons.length === 0) return null;
+
       const hexColor = KAWASAN_NON_SPPTG_COLOR.replace('#', '');
-      return generateStaticMapUrl(coordinates, {
+      return generateStaticMapUrlForPolygons(polygons, {
         mapType: 'terrain',
         fillColor: hexColor,
         strokeColor: hexColor,
@@ -369,13 +375,25 @@ export function ProhibitedAreasTab({
             Cek Tumpang Tindih
           </Button>
           {canManageKawasan && (
-            <Button
-              onClick={handleAddArea}
-              className="bg-blue-600 hover:bg-blue-700 flex-1 lg:flex-initial"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Tambah Kawasan Non‑SPPTG
-            </Button>
+            <>
+              {/* One file, many kawasan — the usual shape of a boundary
+                  handover, which the single-area form made painful. */}
+              <Button
+                variant="outline"
+                onClick={() => setIsBulkImportOpen(true)}
+                className="flex-1 lg:flex-initial"
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Impor KML
+              </Button>
+              <Button
+                onClick={handleAddArea}
+                className="bg-blue-600 hover:bg-blue-700 flex-1 lg:flex-initial"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Tambah Kawasan Non‑SPPTG
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -693,6 +711,13 @@ export function ProhibitedAreasTab({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {canManageKawasan && (
+        <KawasanBulkImportDialog
+          open={isBulkImportOpen}
+          onOpenChange={setIsBulkImportOpen}
+        />
+      )}
     </div>
   );
 }

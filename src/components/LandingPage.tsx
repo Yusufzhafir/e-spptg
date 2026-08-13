@@ -1,12 +1,8 @@
 "use client";
 
+import { Fragment } from "react";
 import {
-  Map,
   FileText,
-  ShieldAlert,
-  BarChart3,
-  Layers,
-  History,
   ArrowRight,
   MapPin,
   ClipboardCheck,
@@ -18,162 +14,146 @@ import Link from "next/link";
 import Image from "next/image";
 import { Reveal } from "./Reveal";
 import { Parallax } from "./Parallax";
+import { LandingHeader } from "./landing/LandingHeader";
+import { LandingFooter } from "./landing/LandingFooter";
+import { TentangKamiSection } from "./landing/TentangKamiSection";
+import { StatistikSection } from "./landing/StatistikSection";
+import { PetaSebaranSection } from "./landing/PetaSebaranSection";
+import { StatistikKunjunganSection } from "./landing/StatistikKunjunganSection";
+import { VisitTracker } from "./landing/VisitTracker";
+import type { LandingStats } from "@/lib/landing-stats";
 
-/** The four wizard stages a pengajuan moves through. */
+/**
+ * The four wizard stages a pengajuan moves through.
+ *
+ * `rel` is the step's segment of the rail, `angka` its ordinal and glyph
+ * colour. Both are written out as whole class names because Tailwind reads the
+ * source as text; an interpolated `text-${warna}-600` compiles to nothing.
+ */
 const steps = [
   {
     icon: FileText,
-    accent: 'from-sky-500 to-blue-600',
+    rel: 'bg-sky-500',
+    angka: 'text-sky-600',
     title: "Berkas",
     description:
       "Data pemohon dan dokumen wajib — KTP, KK, surat asal usul kwitansi jual beli/hibah/keterangan waris/bukti lain, dan surat permohonan.",
   },
   {
     icon: MapPin,
-    accent: 'from-violet-500 to-purple-600',
+    rel: 'bg-violet-500',
+    angka: 'text-violet-600',
     title: "Lapangan",
     description:
       "Batas bidang tanah digambar di peta, diimpor dari KML/KMZ, atau diketik dalam koordinat geografis maupun UTM.",
   },
   {
     icon: ClipboardCheck,
-    accent: 'from-amber-500 to-orange-600',
+    rel: 'bg-amber-500',
+    angka: 'text-amber-600',
     title: "Hasil",
     description:
       "Pengecekan tumpang tindih berbasis PostGIS terhadap kawasan Non-SPPTG, lalu verifikator menetapkan statusnya.",
   },
   {
     icon: Award,
-    accent: 'from-emerald-500 to-green-600',
+    rel: 'bg-emerald-500',
+    angka: 'text-emerald-600',
     title: "Terbitkan SPPTG",
     description:
       "Nomor sertifikat dibuat otomatis dan dokumen SPPTG dirender menjadi PDF resmi siap unduh.",
   },
 ];
 
-const features = [
+/** The three things people ask before starting, in the order they ask them. */
+const ketentuan = [
   {
-    icon: Map,
-    accent: 'bg-sky-50 text-sky-600 group-hover:bg-sky-600',
-    title: "Peta Sebaran Lahan",
-    description:
-      "Seluruh bidang tanah tervisualisasi di satu peta interaktif, lengkap dengan legenda status dan tautan ke detail pengajuan.",
+    judul: 'Siapa yang bisa mengajukan',
+    isi: (
+      <>
+        Warga Kabupaten Kutai Timur yang menggarap tanah dan membutuhkan bukti
+        tertulis atas penguasaannya. Anda dapat mendaftar sendiri lewat tombol
+        Daftar, atau memakai akun yang dibuatkan admin desa bila pengajuan
+        dibantu aparatur desa.
+      </>
+    ),
   },
   {
-    icon: ShieldAlert,
-    accent: 'bg-red-50 text-red-600 group-hover:bg-red-600',
-    title: "Deteksi Kawasan Terlarang",
-    description:
-      "Polygon pengajuan diuji otomatis terhadap Kawasan Hutan, Sempadan Sungai, Tanah Pemerintah, dan kawasan lain — luas tumpang tindih dihitung dalam m².",
+    judul: 'Dokumen yang disiapkan',
+    isi: (
+      <>
+        <span className="font-medium text-gray-900">KTP</span> dan{' '}
+        <span className="font-medium text-gray-900">Kartu Keluarga</span> wajib
+        diunggah. Siapkan pula surat asal usul kwitansi jual
+        beli/hibah/keterangan waris/bukti lain dan surat permohonan. Surat
+        pernyataan tidak sengketa bersifat opsional, templatnya bisa diunduh
+        langsung dari dalam aplikasi.
+      </>
+    ),
   },
   {
-    icon: Layers,
-    accent: 'bg-violet-50 text-violet-600 group-hover:bg-violet-600',
-    title: "Data Desa Terpusat",
-    description:
-      "Referensi desa, kecamatan, tim juru ukur, hingga kawasan Non-SPPTG dikelola dalam satu tempat dan dipakai ulang di setiap pengajuan.",
-  },
-  {
-    icon: BarChart3,
-    accent: 'bg-amber-50 text-amber-600 group-hover:bg-amber-600',
-    title: "Dashboard & Statistik",
-    description:
-      "KPI per status, tren pengajuan bulanan, serta filter desa, status, dan rentang tanggal yang konsisten di seluruh tampilan.",
-  },
-  {
-    icon: History,
-    accent: 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600',
-    title: "Jejak Audit",
-    description:
-      "Setiap perubahan status tercatat lengkap dengan petugas, waktu, dan alasan — wajib diisi untuk penolakan maupun peninjauan ulang.",
-  },
-  {
-    icon: FileText,
-    accent: 'bg-blue-50 text-blue-600 group-hover:bg-blue-600',
-    title: "Dokumen Resmi",
-    description:
-      "Template surat tersedia untuk diunduh, dan sertifikat SPPTG dihasilkan sebagai PDF berformat resmi.",
+    judul: 'Cara batas lahan dicatat',
+    isi: (
+      <>
+        Batas bidang digambar langsung di peta, diimpor dari berkas KML/KMZ hasil
+        pengukuran, atau diketik sebagai koordinat geografis maupun UTM. Sistem
+        lalu memeriksa tumpang tindih dengan Kawasan Hutan, Sempadan Sungai,
+        Tanah Pemerintah, dan kawasan Non-SPPTG lain, serta menghitung luasnya
+        dalam m².
+      </>
+    ),
   },
 ];
 
-const statuses = [
+/**
+ * The status lifecycle, drawn the way it actually branches instead of as four
+ * equal boxes: two states are the road a berkas travels, two are the exits it
+ * can be sent down. Colours match `StatusBadge` inside the app, so a status
+ * looks the same here as it does on the officer's screen.
+ */
+const jalurUtama = [
   {
     label: "SPPTG terdata",
-    className: "bg-blue-100 text-blue-800 border-blue-200",
-    hint: "Sudah tercatat, menunggu keputusan verifikator.",
+    badge: "bg-blue-100 text-blue-800 border-blue-200",
+    titik: "bg-blue-500",
+    hint: "Berkas sudah tercatat di sistem dan menunggu keputusan verifikator.",
   },
   {
     label: "SPPTG terdaftar",
-    className: "bg-green-100 text-green-800 border-green-200",
-    hint: "Lolos verifikasi dan siap diterbitkan sertifikatnya.",
-  },
-  {
-    label: "SPPTG ditinjau ulang",
-    className: "bg-yellow-100 text-yellow-800 border-yellow-200",
-    hint: "Dikembalikan ke pemohon dengan catatan perbaikan.",
-  },
-  {
-    label: "SPPTG ditolak",
-    className: "bg-red-100 text-red-800 border-red-200",
-    hint: "Tidak memenuhi syarat, disertai alasan penolakan.",
+    badge: "bg-green-100 text-green-800 border-green-200",
+    titik: "bg-emerald-500",
+    hint: "Lolos verifikasi, resmi terdaftar, dan siap diterbitkan sertifikatnya.",
   },
 ];
 
-export function LandingPage() {
+const jalurLain = [
+  {
+    label: "SPPTG ditinjau ulang",
+    badge: "bg-yellow-100 text-yellow-800 border-yellow-200",
+    titik: "bg-amber-500",
+    hint: "Dikembalikan ke pemohon dengan catatan perbaikan, lalu bisa diajukan lagi.",
+  },
+  {
+    label: "SPPTG ditolak",
+    badge: "bg-red-100 text-red-800 border-red-200",
+    titik: "bg-red-500",
+    hint: "Tidak memenuhi syarat. Alasan penolakan wajib dicantumkan.",
+  },
+];
+
+/**
+ * `stats` is read on the server by `src/app/page.tsx` and passed in, so the
+ * numbers are already in the prerendered HTML — a client-side fetch would leave
+ * search engines (and anyone on a slow connection) looking at empty cards.
+ * `null` means the read failed; the section renders its own empty state.
+ */
+export function LandingPage({ stats }: { stats: LandingStats | null }) {
   return (
     <div className="min-h-screen bg-white">
-      {/* ---------------------------------------------------------------- Header */}
-      <header className="sticky top-0 z-50 border-b border-gray-200/70 bg-white/70 shadow-[0_1px_3px_rgb(0_0_0/0.04)] backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:h-[4.5rem] sm:px-6 lg:px-8">
-          {/* The lockup already carries the name and the tagline, so the link
-              needs no text of its own — the aria-label speaks for it. */}
-          <Link
-            href="/"
-            aria-label="SIAPTAH — kembali ke beranda"
-            className="flex min-w-0 items-center rounded-lg outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-          >
-            <Image
-              src="/SIPETA_LOGO_NAVBAR.png"
-              alt=""
-              width={1492}
-              height={559}
-              // Without this Next assumes the image may fill the viewport and
-              // serves the 1920px variant for a ~150px slot — 80 KB instead of
-              // 14 KB, preloaded, competing with the LCP image for bandwidth.
-              sizes="(min-width: 640px) 150px, 120px"
-              className="h-11 w-auto sm:h-14"
-              priority
-            />
-          </Link>
-
-          {/* No navigation links by design — the only actions are sign in / sign up. */}
-          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-            <SignedOut>
-              <Button
-                asChild
-                variant="ghost"
-                className="px-3 font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 sm:px-4"
-              >
-                <Link href="/sign-in">Masuk</Link>
-              </Button>
-              <Button
-                asChild
-                className="bg-blue-600 px-4 font-medium shadow-sm shadow-blue-600/20 transition-all hover:bg-blue-700 hover:shadow-md hover:shadow-blue-600/25 sm:px-5"
-              >
-                <Link href="/sign-up">Daftar</Link>
-              </Button>
-            </SignedOut>
-            <SignedIn>
-              <Button
-                asChild
-                className="bg-blue-600 px-4 font-medium shadow-sm shadow-blue-600/20 transition-all hover:bg-blue-700 hover:shadow-md sm:px-5"
-              >
-                <Link href="/app">Buka Dashboard</Link>
-              </Button>
-            </SignedIn>
-          </div>
-        </div>
-      </header>
+      {/* Renders nothing; reports this page view to /api/kunjungan, which is
+          what feeds the "Statistik Kunjungan" card below. */}
+      <VisitTracker />
+      <LandingHeader />
 
       {/* ------------------------------------------------------------------ Hero */}
       <section className="relative overflow-hidden">
@@ -268,17 +248,12 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* ------------------------------------------------------- Angka ringkas */}
-      <section className="relative overflow-hidden bg-gray-900">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-[0.12] [background-image:radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] [background-size:20px_20px]"
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -left-24 top-1/2 h-64 w-64 -translate-y-1/2 rounded-full bg-blue-500/20 blur-3xl"
-        />
-      </section>
+      {/* --------------------------------------------------------- Tentang kami */}
+      {/* Replaces an "Angka ringkas" section that held nothing but two absolutely
+          positioned decorations — it collapsed to zero height and rendered as
+          nothing at all. */}
+      <TentangKamiSection />
+
 
       {/* ------------------------------------------------------- Tentang SPPTG */}
       {/* Answers the questions people (and answer engines) actually ask before
@@ -362,103 +337,60 @@ export function LandingPage() {
             </p>
           </Reveal>
 
-          <dl className="mx-auto mt-12 grid max-w-5xl gap-6 md:grid-cols-3">
-            <Reveal className="rounded-2xl border border-gray-200 bg-white/90 p-6 backdrop-blur-sm">
-              <dt className="font-semibold text-gray-900">Siapa yang bisa mengajukan</dt>
-              <dd className="mt-2 text-sm leading-relaxed text-gray-600">
-                Warga Kabupaten Kutai Timur yang menggarap tanah dan membutuhkan
-                bukti tertulis atas penguasaannya. Anda dapat mendaftar sendiri
-                lewat tombol Daftar, atau memakai akun yang dibuatkan admin desa
-                bila pengajuan dibantu aparatur desa.
-              </dd>
-            </Reveal>
-
-            <Reveal delay={80} className="rounded-2xl border border-gray-200 bg-white/90 p-6 backdrop-blur-sm">
-              <dt className="font-semibold text-gray-900">Dokumen yang disiapkan</dt>
-              <dd className="mt-2 text-sm leading-relaxed text-gray-600">
-                <span className="font-medium text-gray-900">KTP</span> dan{' '}
-                <span className="font-medium text-gray-900">Kartu Keluarga</span>{' '}
-                wajib diunggah. Siapkan pula surat asal usul kwitansi jual
-                beli/hibah/keterangan waris/bukti lain dan surat permohonan;
-                surat pernyataan tidak sengketa bersifat opsional — templatnya
-                bisa diunduh langsung dari dalam aplikasi.
-              </dd>
-            </Reveal>
-
-            <Reveal delay={160} className="rounded-2xl border border-gray-200 bg-white/90 p-6 backdrop-blur-sm">
-              <dt className="font-semibold text-gray-900">Cara batas lahan dicatat</dt>
-              <dd className="mt-2 text-sm leading-relaxed text-gray-600">
-                Batas bidang digambar langsung di peta, diimpor dari berkas
-                KML/KMZ hasil pengukuran, atau diketik sebagai koordinat
-                geografis maupun UTM. Sistem lalu memeriksa tumpang tindih
-                dengan Kawasan Hutan, Sempadan Sungai, Tanah Pemerintah, dan
-                kawasan Non-SPPTG lain, serta menghitung luasnya dalam m².
-              </dd>
-            </Reveal>
-          </dl>
-        </div>
-      </section>
-
-      {/* ------------------------------------------------------------- Alur kerja */}
-      <section>
-        <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
-          <Reveal className="mx-auto max-w-2xl text-center">
-            <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">
-              Alur Pengajuan
-            </p>
-            <h2 className="mt-2 text-2xl font-bold text-gray-900 sm:text-3xl">
-              Empat tahap, satu berkas digital
-            </h2>
-            <p className="mt-3 text-gray-600">
-              Data tersimpan otomatis di setiap tahap, sehingga pengajuan bisa
-              dilanjutkan kapan saja tanpa kehilangan progres.
-            </p>
+          {/* One panel divided into three, not three cards floating on the
+              artwork: the three answers belong to one question ("apa yang perlu
+              saya tahu sebelum mengajukan"), and three identical bordered boxes
+              said the opposite. The hairline dividers carry the separation, the
+              numerals carry the rhythm, and the first column is wider because
+              its answer is the one everybody reads first. */}
+          <Reveal className="mx-auto mt-12 max-w-5xl overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm">
+            <dl className="grid divide-y divide-gray-200/80 lg:grid-cols-[1.15fr_1fr_1fr] lg:divide-x lg:divide-y-0">
+              {ketentuan.map((item, index) => (
+                <div
+                  key={item.judul}
+                  className="group px-5 py-6 transition-colors duration-300 ease-out hover:bg-blue-50/50 sm:px-8 sm:py-7"
+                >
+                  <span className="text-xs font-semibold tabular-nums tracking-widest text-blue-600/70">
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+                  <dt className="mt-2 text-lg font-semibold leading-snug text-gray-900">
+                    {item.judul}
+                  </dt>
+                  {/* Grows on hover instead of a border appearing: the rule is
+                      part of the layout at rest, so nothing shifts. */}
+                  <span
+                    aria-hidden
+                    className="mt-3 block h-px w-10 bg-blue-600/30 transition-all duration-300 ease-out group-hover:w-16 group-hover:bg-blue-600/70"
+                  />
+                  <dd className="mt-3 text-sm leading-relaxed text-gray-600">
+                    {item.isi}
+                  </dd>
+                </div>
+              ))}
+            </dl>
           </Reveal>
-
-          <div className="relative mt-12">
-            {/* Connector line running behind the step markers (desktop only) */}
-            <div
-              aria-hidden
-              className="absolute left-0 right-0 top-6 hidden h-0.5 bg-gradient-to-r from-sky-500 via-violet-500 to-emerald-500 opacity-30 lg:block"
-            />
-            <ol className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4 lg:gap-6">
-              {steps.map((step, index) => {
-                const Icon = step.icon;
-                return (
-                  <Reveal
-                    key={step.title}
-                    delay={index * 120}
-                    className="relative"
-                  >
-                    <li>
-                    {/* Numbered marker sits on the connector */}
-                    <div
-                      className={`relative z-10 mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${step.accent} text-white shadow-lg lg:mx-0`}
-                    >
-                      <Icon className="h-5 w-5" />
-                      <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-white text-[11px] font-bold text-gray-700 shadow ring-1 ring-gray-200">
-                        {index + 1}
-                      </span>
-                    </div>
-                    <h3 className="mt-4 text-center font-semibold text-gray-900 lg:text-left">
-                      {step.title}
-                    </h3>
-                    <p className="mt-1.5 text-center text-sm leading-relaxed text-gray-600 lg:text-left">
-                      {step.description}
-                    </p>
-                    </li>
-                  </Reveal>
-                );
-              })}
-            </ol>
-          </div>
         </div>
       </section>
 
-      {/* ---------------------------------------------------------------- Fitur */}
+      {/* ------------------------------------------------------------ Statistik */}
+      {/* Three cards under one anchor: the recap, the map of where those parcels
+          are, and how many people opened this page. `#statistik` stays on the
+          first of them — that is what the header links to. */}
+      <StatistikSection stats={stats} />
+      <PetaSebaranSection
+        polygons={stats?.polygons ?? []}
+        jumlahBidang={stats?.polygons.length ?? 0}
+      />
+      <StatistikKunjunganSection />
+
+      {/* --------------------------------------- Alur kerja & status pengajuan */}
+      {/* One section, not two: the four stages and the four statuses describe the
+          same journey — what happens, then how it ends — and the shared backdrop
+          (kept from the section that used to sit between them) is what ties the
+          halves together. */}
       <section className="relative overflow-hidden">
         {/* Illustration backdrop. Its subjects sit at the far left/right and the
-            middle is transparent, so the heading stays on clean white; the scrim
+            middle is transparent, so the headings stay on clean white; the scrim
             below keeps the cards readable where they overlap the artwork. */}
         <Image
           src="/imgs/illustrator-2.png"
@@ -469,56 +401,17 @@ export function LandingPage() {
           sizes="100vw"
           className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover opacity-60"
         />
+        {/* Heavier than the 55% this artwork carried when it sat behind six
+            short feature cards: the merged section puts four columns of body
+            copy over the surveyor figures, and body text needs more separation
+            from a busy illustration than a heading does. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 bg-white/55"
+          className="pointer-events-none absolute inset-0 bg-white/70"
         />
 
         <div className="relative mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
-          <div className="mx-auto max-w-2xl text-center">
-            <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">
-              Kemampuan
-            </p>
-            <h2 className="mt-2 text-2xl font-bold text-gray-900 sm:text-3xl">
-              Dibangun untuk pekerjaan pertanahan yang sebenarnya
-            </h2>
-            <p className="mt-3 text-gray-600">
-              Bukan sekadar formulir digital — setiap fitur menjawab kebutuhan
-              verifikasi di lapangan.
-            </p>
-          </div>
-
-          {/* Bento layout: the differentiator gets a wide dark tile, the rest follow */}
-          <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {features.map((feature, index) => {
-              const Icon = feature.icon;
-              return (
-                <Reveal
-                  key={feature.title}
-                  delay={index * 80}
-                  className="group rounded-2xl border border-gray-200 bg-white/90 p-6 backdrop-blur-sm transition-all hover:-translate-y-1 hover:bg-white hover:shadow-xl"
-                >
-                  <div
-                    className={`mb-4 inline-flex h-11 w-11 items-center justify-center rounded-lg transition-colors group-hover:text-white ${feature.accent}`}
-                  >
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <h3 className="font-semibold text-gray-900">
-                    {feature.title}
-                  </h3>
-                  <p className="mt-2 text-sm leading-relaxed text-gray-600">
-                    {feature.description}
-                  </p>
-                </Reveal>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ------------------------------------------------------- Status pengajuan */}
-      <section>
-        <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
+          {/* ----------------------------------------- Status pengajuan */}
           <Reveal className="mx-auto max-w-2xl text-center">
             <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">
               Status Pengajuan
@@ -532,24 +425,123 @@ export function LandingPage() {
             </p>
           </Reveal>
 
-          <div className="mx-auto mt-10 grid max-w-4xl gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {statuses.map((status, index) => (
-              <Reveal
-                key={status.label}
-                delay={index * 90}
-                className={`rounded-xl border-2 bg-white p-4 text-center transition-transform hover:-translate-y-1 ${status.className.replace(/bg-\S+/, '')}`}
-              >
-                <span
-                  className={`inline-block rounded-full border px-3 py-1 text-xs font-semibold ${status.className}`}
+          {/* Jalur utama: two states, joined, weighted heavier than the exits
+              below because this is what happens to most berkas. */}
+          <div className="mx-auto mt-10 flex max-w-4xl flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+            {jalurUtama.map((status, index) => (
+              <Fragment key={status.label}>
+                {/* The connector is what makes these two a path rather than two
+                    cards: terdata is where a berkas waits, terdaftar is where it
+                    arrives. It turns to point downward once the row stacks. */}
+                {index > 0 && (
+                  <span
+                    aria-hidden
+                    className="mx-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-blue-500 shadow-sm sm:mx-0"
+                  >
+                    <ArrowRight className="h-4 w-4 rotate-90 sm:rotate-0" />
+                  </span>
+                )}
+                <Reveal
+                  delay={index * 120}
+                  className="group flex-1 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg motion-reduce:transform-none"
                 >
-                  {status.label}
-                </span>
-                <p className="mt-3 text-xs leading-relaxed text-gray-600">
-                  {status.hint}
-                </p>
-              </Reveal>
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      aria-hidden
+                      className={`h-2.5 w-2.5 shrink-0 rounded-full ${status.titik}`}
+                    />
+                    <span
+                      className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${status.badge}`}
+                    >
+                      {status.label}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-sm leading-relaxed text-gray-600">
+                    {status.hint}
+                  </p>
+                </Reveal>
+              </Fragment>
             ))}
           </div>
+
+          {/* Jalur lain: quieter on purpose. These are exits, not milestones,
+              and a berkas that lands here is waiting on a person, not on the
+              system. One panel with a divider rather than two more cards. */}
+          <Reveal
+            delay={220}
+            className="mx-auto mt-4 max-w-4xl overflow-hidden rounded-2xl border border-dashed border-gray-300 bg-gray-50/80"
+          >
+            <p className="px-5 pt-4 text-xs font-medium text-gray-500">
+              Bila berkas belum memenuhi syarat
+            </p>
+            <div className="grid divide-y divide-gray-200 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+              {jalurLain.map((status) => (
+                <div key={status.label} className="px-5 pb-4 pt-3">
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      aria-hidden
+                      className={`h-2 w-2 shrink-0 rounded-full ${status.titik}`}
+                    />
+                    <span
+                      className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${status.badge}`}
+                    >
+                      {status.label}
+                    </span>
+                  </div>
+                  <p className="mt-2.5 text-sm leading-relaxed text-gray-600">
+                    {status.hint}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </Reveal>
+
+          {/* -------------------------------------------- Alur pengajuan */}
+          <Reveal className="mx-auto mt-20 max-w-2xl text-center">
+            <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">
+              Alur Pengajuan
+            </p>
+            <h2 className="mt-2 text-2xl font-bold text-gray-900 sm:text-3xl">
+              Empat tahap, satu berkas digital
+            </h2>
+            <p className="mt-3 text-gray-600">
+              Data tersimpan otomatis di setiap tahap, sehingga pengajuan bisa
+              dilanjutkan kapan saja tanpa kehilangan progres.
+            </p>
+          </Reveal>
+
+          {/* The ordinal carries the step, not an icon tile. Each column owns a
+              segment of the rail above it, so the rail reads as four stages of
+              one journey rather than a decorative line drawn behind badges. */}
+          <ol className="mt-12 grid gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
+            {steps.map((step, index) => {
+              const Icon = step.icon;
+              return (
+                <Reveal key={step.title} delay={index * 120}>
+                  <li className="group">
+                    <span
+                      aria-hidden
+                      className={`block h-1 w-full rounded-full ${step.rel} opacity-70 transition-opacity duration-300 ease-out group-hover:opacity-100`}
+                    />
+                    <div className="mt-5 flex items-baseline gap-3">
+                      <span
+                        className={`text-4xl font-bold leading-none tabular-nums ${step.angka}`}
+                      >
+                        {String(index + 1).padStart(2, '0')}
+                      </span>
+                      <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+                        <Icon className={`h-4 w-4 shrink-0 ${step.angka}`} />
+                        {step.title}
+                      </h3>
+                    </div>
+                    <p className="mt-3 text-sm leading-relaxed text-gray-600">
+                      {step.description}
+                    </p>
+                  </li>
+                </Reveal>
+              );
+            })}
+          </ol>
         </div>
       </section>
 
@@ -611,37 +603,7 @@ export function LandingPage() {
       </section>
 
       {/* --------------------------------------------------------------- Footer */}
-      <footer className="bg-gray-900 py-10 text-gray-400">
-        <div className="mx-auto flex max-w-7xl flex-col items-center gap-4 px-4 text-center sm:px-6 md:flex-row md:justify-between md:text-left lg:px-8">
-          {/* The lockup's wordmark and tagline are dark navy, which all but
-              disappears on gray-900. The light plate is what keeps it legible
-              without a separate inverted artwork. */}
-          <span className="inline-flex rounded-xl bg-white px-3 py-2">
-            <Image
-              src="/SIPETA_LOGO_NAVBAR.png"
-              alt="SIAPTAH — Sistem Informasi Administrasi Pertanahan"
-              width={1492}
-              height={559}
-              sizes="160px"
-              className="h-8 w-auto sm:h-9"
-            />
-          </span>
-          <div className="text-sm">
-            {/* The only outbound link on the page. A service run by a pemda that
-                cites no authority at all is a weak trust signal. */}
-            <a
-              href="https://kutaitimurkab.go.id"
-              className="underline decoration-gray-600 underline-offset-4 transition-colors hover:text-white"
-            >
-              Situs resmi Pemerintah Kabupaten Kutai Timur
-            </a>
-            <p className="mt-2">
-              &copy; {new Date().getFullYear()} Pemerintah Kabupaten Kutai Timur.
-              Hak Cipta Dilindungi.
-            </p>
-          </div>
-        </div>
-      </footer>
+      <LandingFooter />
     </div>
   );
 }

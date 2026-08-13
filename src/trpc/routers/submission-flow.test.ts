@@ -87,7 +87,7 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Edit an existing submission / create a new one from it
+// Edit an existing submission (always in place)
 // ---------------------------------------------------------------------------
 describe('Edit pengajuan — drafts.createFromSubmission', () => {
   it.each([
@@ -101,25 +101,21 @@ describe('Edit pengajuan — drafts.createFromSubmission', () => {
     expect(result.id).toBe(900);
   });
 
-  it.each([
-    ['Superadmin', SUPERADMIN],
-    ['Admin', ADMIN],
-    ['Verifikator', VERIFIKATOR],
-  ])('%s can duplicate it as a new submission', async (_label, makeCtx) => {
-    const result = await draftsRouter
-      .createCaller(makeCtx())
-      .createFromSubmission({ submissionId: SUBMISSION_ID, asNewSubmission: true });
-    expect(result.id).toBe(900);
+  it('edits in place — the draft points back at the submission it came from', async () => {
+    await draftsRouter
+      .createCaller(SUPERADMIN())
+      .createFromSubmission({ submissionId: SUBMISSION_ID });
+
+    expect(createDraftMock).toHaveBeenCalledWith(
+      expect.objectContaining({ editingSubmissionId: SUBMISSION_ID })
+    );
   });
 
-  it('Viewer cannot edit or duplicate a submission', async () => {
+  it('Viewer cannot edit a submission', async () => {
     const caller = draftsRouter.createCaller(VIEWER());
 
     await expect(
       caller.createFromSubmission({ submissionId: SUBMISSION_ID })
-    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
-    await expect(
-      caller.createFromSubmission({ submissionId: SUBMISSION_ID, asNewSubmission: true })
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
 
     expect(createDraftMock).not.toHaveBeenCalled();

@@ -64,6 +64,20 @@
       "when": 1786522428231,
       "tag": "0008_round_xavin",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786600000000,
+      "tag": "0009_submission_multipolygon",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786619217243,
+      "tag": "0010_silly_vector",
+      "breakpoints": true
     }
   ]
 }

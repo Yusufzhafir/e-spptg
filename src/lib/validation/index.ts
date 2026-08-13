@@ -12,7 +12,25 @@ export * from './submission-draft';
 export const geomGeoJSONPolygonSchema = z.object({
   type: z.literal('Polygon'),
   coordinates: z.array(z.array(z.array(z.number()))),
-})
+});
+
+export const geomGeoJSONMultiPolygonSchema = z.object({
+  type: z.literal('MultiPolygon'),
+  coordinates: z.array(z.array(z.array(z.array(z.number())))),
+});
+
+/**
+ * The geometry a kawasan may carry. A kawasan is often a set of detached blocks
+ * under one SK — and the boundary files that define them arrive as multi-polygon
+ * KML — so MultiPolygon is accepted alongside the single-polygon form older
+ * clients still send.
+ */
+export const geomGeoJSONAreaSchema = z.union([
+  geomGeoJSONPolygonSchema,
+  geomGeoJSONMultiPolygonSchema,
+]);
+
+export type GeomGeoJSONArea = z.infer<typeof geomGeoJSONAreaSchema>;
 // ============================================================================
 // User Schemas
 // ============================================================================
@@ -101,10 +119,32 @@ export const createProhibitedAreaSchema = z.object({
     .string()
     .regex(/^#[0-9A-F]{6}$/i, 'Warna harus format hex (contoh: #FF5733)'),
   catatan: z.string().nullable(),
-  geomGeoJSON: geomGeoJSONPolygonSchema
+  geomGeoJSON: geomGeoJSONAreaSchema,
 });
 
 export const updateProhibitedAreaSchema = createProhibitedAreaSchema.partial();
+
+/**
+ * A whole KML worth of kawasan in one go.
+ *
+ * The attributes (jenis, sumber, dasar hukum, tanggal efektif) are shared by the
+ * batch — a boundary file comes from one SK — while each polygon keeps its own
+ * name, taken from its placemark. Capped so a stray file cannot insert
+ * thousands of rows in a single transaction.
+ */
+export const createProhibitedAreasBulkSchema = createProhibitedAreaSchema
+  .omit({ namaKawasan: true, geomGeoJSON: true })
+  .extend({
+    areas: z
+      .array(
+        z.object({
+          namaKawasan: z.string().min(2, 'Nama kawasan minimal 2 karakter'),
+          geomGeoJSON: geomGeoJSONPolygonSchema,
+        })
+      )
+      .min(1, 'Minimal 1 polygon diperlukan')
+      .max(200, 'Maksimal 200 polygon per impor'),
+  });
 
 // ============================================================================
 // Submission Schemas

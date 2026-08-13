@@ -1,7 +1,7 @@
 import { Check, Database, X, RefreshCw, FileText } from 'lucide-react';
 import { KPICard } from './KPICard';
 import { MapView } from './MapView';
-import { SubmissionsTable, type EditMode } from './SubmissionsTable';
+import { SubmissionsTable } from './SubmissionsTable';
 import { FilterPanel } from './FilterPanel';
 import { Submission, KPIData } from '../types';
 import type { ServerPagination } from './table-pagination';
@@ -27,7 +27,7 @@ interface DashboardProps {
   desaOptions: Array<{ id: number; namaDesa: string }>;
   isRefreshing: boolean;
   onViewDetail: (submission: Submission) => void;
-  onEdit: (submission: Submission, mode: EditMode) => void;
+  onEdit: (submission: Submission) => void;
   onToggleValidity: (submission: Submission) => void;
   isTogglingValidity: boolean;
   onExportCsv: () => void;

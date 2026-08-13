@@ -39,15 +39,19 @@ export const boundaryWitnessSchema = z.object({
     .string()
     .trim()
     .min(2, 'Penggunaan batas lahan minimal 2 karakter'),
-  // Identity data printed on the SPPTG witness block — the certificate names
-  // each saksi with their age, occupation and address, so all three are required.
+  // Identity data printed on the SPPTG witness block. Optional: the surveyor
+  // often records a saksi in the field without their age, job or address, and
+  // blocking the whole berkas over it was stopping real submissions — the
+  // certificate prints a blank dotted line for whatever is missing, which is
+  // what the paper form did anyway.
   umur: z
-    .number({ error: 'Umur saksi wajib diisi' })
+    .number()
     .int('Umur saksi harus angka bulat')
     .min(1, 'Umur saksi minimal 1')
-    .max(150, 'Umur saksi maksimal 150'),
-  pekerjaan: z.string().trim().min(1, 'Pekerjaan saksi wajib diisi'),
-  alamat: z.string().trim().min(1, 'Alamat saksi wajib diisi'),
+    .max(150, 'Umur saksi maksimal 150')
+    .optional(),
+  pekerjaan: z.string().trim().optional(),
+  alamat: z.string().trim().optional(),
 });
 
 export type BoundaryWitness = z.infer<typeof boundaryWitnessSchema>;
@@ -65,6 +69,32 @@ export const geographicCoordinateSchema = z.object({
 });
 
 export type GeographicCoordinate = z.infer<typeof geographicCoordinateSchema>;
+
+/**
+ * One bidang of the pengajuan. A claim can cover several separated parcels, so
+ * Step 2 keeps a list of these; see `src/lib/land-polygons.ts` for how the list
+ * relates to the legacy `coordinatesGeografis` field.
+ */
+export const landPolygonSchema = z.object({
+  id: z.string().min(1),
+  /** Free-text label, usually the KML placemark name. */
+  nama: z.string().trim().optional(),
+  coordinates: z
+    .array(geographicCoordinateSchema)
+    .min(3, 'Minimal 3 koordinat untuk membentuk polygon')
+    .max(100, 'Maksimal 100 koordinat per polygon'),
+  /**
+   * Imported from a geospatial file and therefore not editable at all: the file
+   * is the survey record, and a vertex nudged afterwards would put the stored
+   * boundary somewhere the file does not. There is no unlock — a wrong import is
+   * deleted and re-imported, which keeps the boundary traceable to a file.
+   *
+   * Only an import ever sets this; a hand-drawn bidang stays editable.
+   */
+  locked: z.boolean().optional(),
+});
+
+export type LandPolygon = z.infer<typeof landPolygonSchema>;
 
 // ============================================================================
 // STEP 1: BERKAS (Documents)
@@ -133,16 +163,23 @@ export const step2LapanganSchema = z.object({
   rtSetempat: researchTeamMemberSchema.omit({ instansi: true, jabatan: true }).optional(),
 
   // Witnesses
-  saksiList: z
-    .array(boundaryWitnessSchema)
-    .min(1, 'Minimal 1 saksi diperlukan')
-    .max(4, 'Maksimal 4 saksi'),
+  // No upper bound: a plot can have a saksi per boundary side — and the eight
+  // sides in `BoundaryDirection` are not the limit either. The certificate
+  // paginates the overflow onto continuation sheets rather than refusing them
+  // (see `src/components/pdf/pagination.ts`).
+  saksiList: z.array(boundaryWitnessSchema).min(1, 'Minimal 1 saksi diperlukan'),
 
-  // Coordinates (Geographic only)
+  // Coordinates (Geographic only). `coordinatesGeografis` mirrors the first
+  // polygon — see `src/lib/land-polygons.ts`.
   coordinatesGeografis: z
     .array(geographicCoordinateSchema)
     .min(3, 'Minimal 3 koordinat untuk membentuk polygon')
     .max(100, 'Maksimal 100 koordinat'),
+
+  polygons: z
+    .array(landPolygonSchema)
+    .max(20, 'Maksimal 20 polygon per pengajuan')
+    .optional(),
 
   // Calculated fields
   luasLahan: z
@@ -158,6 +195,19 @@ export const step2LapanganSchema = z.object({
   kelilingLahan: z
     .number()
     .positive('Keliling lahan harus positif')
+    .optional(),
+
+  // Field measurements taken with a tape at the patok, recorded alongside the
+  // polygon. Optional — a plot that is not roughly rectangular has no single
+  // panjang/lebar, and the area still comes from the drawn boundary.
+  panjangLahan: z
+    .number()
+    .positive('Panjang lahan harus positif')
+    .optional(),
+
+  lebarLahan: z
+    .number()
+    .positive('Lebar lahan harus positif')
     .optional(),
 
   // Documents
@@ -277,9 +327,12 @@ export const submissionDraftPayloadSchema = z.object({
   rtSetempat: researchTeamMemberSchema.optional(),
   saksiList: z.array(boundaryWitnessSchema).default([]),
   coordinatesGeografis: z.array(geographicCoordinateSchema).default([]),
+  polygons: z.array(landPolygonSchema).default([]),
   luasLahan: z.number().optional(),
   luasManual: z.number().optional(),
   kelilingLahan: z.number().optional(),
+  panjangLahan: z.number().optional(),
+  lebarLahan: z.number().optional(),
   dokumenBeritaAcara: uploadedDocumentSchema.optional(),
   dokumenAsalUsul: uploadedDocumentSchema.optional(),
   dokumenPernyataanJualBeli: uploadedDocumentSchema.optional(),
