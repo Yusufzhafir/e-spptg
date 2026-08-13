@@ -315,10 +315,16 @@ export function StatistikKunjunganSection() {
                             ))}
                           </ul>
                         </div>
+                        {/* Tidak ada kredit sumber data di halaman ini atas
+                            keputusan pengelola (2026-08-14). Basis data yang
+                            dipakai, DB-IP City Lite, berlisensi CC BY 4.0 yang
+                            mensyaratkan atribusi — lihat catatan di CLAUDE.md
+                            sebelum menganggap ini kelalaian dan menambahkannya
+                            kembali. */}
                       </div>
                     ) : (
-                      // Honest about *why* it is empty: the data only exists if
-                      // the proxy in front of the app sends the geo headers.
+                      // Honest about *why* it is empty: no geo headers from a
+                      // proxy and no local MMDB (`GEOIP_MMDB_PATH`) either.
                       <p className="mt-5 text-sm leading-relaxed text-gray-500">
                         Data lokasi belum tersedia.
                       </p>

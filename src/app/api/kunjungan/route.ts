@@ -9,6 +9,7 @@ import {
   sistemOperasiDari,
 } from '@/lib/user-agent';
 import { PRIVATE_PATH_PREFIXES } from '@/lib/site';
+import { lokasiDariIp } from '@/server/geoip';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -74,13 +75,28 @@ export async function POST(req: Request) {
 
   const rujukan = klasifikasiRujukan(req.headers.get('referer'), req.headers.get('host'));
 
-  // Geolocation comes from the proxy in front of the app (Cloudflare sends
-  // `CF-IPCountry`; an nginx/Traefik setup can be configured to send the
-  // `X-Geo-*` pair). Nothing is looked up: with no proxy these stay null and the
-  // "Lokasi" tab simply has nothing to show.
-  const negara =
+  // Geolocation comes from the proxy in front of the app when there is one
+  // (Cloudflare sends `CF-IPCountry`; nginx/Traefik can be configured to send
+  // the `X-Geo-*` pair), and otherwise from a local MMDB file — see
+  // `src/server/geoip.ts`. Still no outbound call either way.
+  //
+  // The proxy wins on purpose: it sits closer to the visitor and sees the
+  // connection itself, while our copy of the database is a monthly snapshot.
+  //
+  // These headers must be stripped at the proxy (`proxy_set_header CF-IPCountry
+  // ""` and friends in /etc/nginx/conf.d/e-spptg.conf). Without that a visitor
+  // can send them by hand and file themselves under any city they like.
+  const negaraHeader =
     req.headers.get('cf-ipcountry') ?? req.headers.get('x-geo-country') ?? null;
-  const kota = req.headers.get('cf-ipcity') ?? req.headers.get('x-geo-city') ?? null;
+  const kotaHeader = req.headers.get('cf-ipcity') ?? req.headers.get('x-geo-city') ?? null;
+
+  const lokasi =
+    negaraHeader && kotaHeader
+      ? { negara: negaraHeader, kota: kotaHeader }
+      : await lokasiDariIp(ip);
+
+  const negara = negaraHeader ?? lokasi.negara;
+  const kota = kotaHeader ?? lokasi.kota;
 
   try {
     await catatKunjungan({

@@ -73,6 +73,13 @@ services:
     ports:
       # Hanya loopback host. nginx yang meneruskan dari 443.
       - "127.0.0.1:3000:3000"
+    volumes:
+      # Basis data lokasi pengunjung (DB-IP City Lite, CC BY 4.0), read-only.
+      # Sengaja di-mount, bukan di-bake ke image: 130 MB tidak perlu ikut setiap
+      # build, dan memperbaruinya cukup mengganti berkas di host lalu restart.
+      # Kalau berkas ini tidak ada, app tetap jalan — tab "Lokasi" saja yang
+      # kembali kosong (lihat src/server/geoip.ts).
+      - /srv/geoip/dbip-city-lite.mmdb:/data/geoip/dbip-city-lite.mmdb:ro
     extra_hosts:
       # PostgreSQL & MinIO jalan di host, bukan di container.
       - "host.docker.internal:host-gateway"

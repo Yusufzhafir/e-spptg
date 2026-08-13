@@ -11,6 +11,11 @@ export default defineConfig({
       // otherwise importing any router that reaches `src/server/auth/*` fails
       // before a single assertion runs.
       'server-only': new URL('./test/server-only-stub.ts', import.meta.url).pathname,
+      // Tes tidak boleh bisa menyentuh database sungguhan. Root `.env` di host
+      // deploy membuat `DATABASE_URL` produksi ikut terbaca `dotenv/config` di
+      // dalam `db.ts`, dan jalur yang tidak di-mock (middleware audit, push)
+      // lalu menulis ke sana tanpa suara — lihat test/db-stub.ts.
+      '@/server/db/db': new URL('./test/db-stub.ts', import.meta.url).pathname,
     },
   },
   test: {
