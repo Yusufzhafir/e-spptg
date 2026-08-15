@@ -8,16 +8,18 @@
  * next to a map, follows into a pengajuan, and comes back to — none of which a
  * modal survives, and it could not hold a map at all.
  *
- * What the map shows is deliberately asymmetric. **Every** kawasan is drawn,
- * because the question being asked is "where are the restricted areas, and who
- * is in them" — a kawasan with nothing in it is part of that answer. Only the
- * pengajuan that actually overlap one are drawn, because every other valid
- * SPPTG on the map would bury the handful that matter.
+ * What the map shows is deliberately asymmetric. **Every** kawasan is drawn —
+ * all of them, every block, no cap and no page — because the question being
+ * asked is "where are the restricted areas, and who is in them", and a kawasan
+ * with nothing in it is part of that answer. Only the pengajuan that actually
+ * overlap one are drawn, because every other valid SPPTG on the map would bury
+ * the handful that matter.
  */
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, AlertTriangle, MapPin, Shield } from 'lucide-react';
+import { ChevronLeft, AlertTriangle, Crosshair, MapPin, Shield } from 'lucide-react';
+import { toast } from 'sonner';
 import { trpc } from '@/trpc/client';
 import { geoJSONToPaths } from '@/lib/map-utils';
 import { findCenter } from '@/lib/utils';
@@ -36,13 +38,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { StatusSPPTG, Submission } from '@/types';
-
-/**
- * Kawasan fetched for the map. The list query pages, and drawing thousands of
- * polygons would stall the browser long before it helped anyone — so the map
- * takes a page of them and says so when there are more.
- */
-const KAWASAN_MAP_LIMIT = 500;
 
 /** Enough of a Submission for `ReadOnlyMap` to draw and label one. */
 function toMapSubmission(source: {
@@ -92,15 +87,26 @@ export function KawasanOverlapReport() {
   const router = useRouter();
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<number | null>(null);
 
+  /**
+   * "Fokus di peta" for one row. The signal is bumped per click because
+   * focusing is an action — clicking the same row again after panning away has
+   * to bring the map back.
+   */
+  const [focusTarget, setFocusTarget] = useState<unknown>(null);
+  const [focusSignal, setFocusSignal] = useState(0);
+  const mapCardRef = useRef<HTMLDivElement | null>(null);
+
   const {
     data: overlapData,
     isLoading: isLoadingOverlaps,
     isError: overlapError,
   } = trpc.prohibitedAreas.checkOverlaps.useQuery();
 
-  // Every kawasan, overlapping or not — see the note at the top of this file.
+  // Every kawasan, overlapping or not, and *all* of them — see the note at the
+  // top of this file. `geometriSemua` is unpaged on purpose: `list` returns a
+  // page, and a page is not an answer to "where are the restricted areas".
   const { data: kawasanData, isLoading: isLoadingKawasan } =
-    trpc.prohibitedAreas.list.useQuery({ limit: KAWASAN_MAP_LIMIT, offset: 0 });
+    trpc.prohibitedAreas.geometriSemua.useQuery();
 
   // Geometry of the pengajuan; already filtered server-side to the valid
   // terdaftar/terdata ones, which is exactly the set this report concerns.
@@ -140,6 +146,15 @@ export function KawasanOverlapReport() {
       .filter((submission): submission is Submission => submission !== null);
   }, [mapPolygons, ownerBySubmission]);
 
+  /**
+   * Every ring of every kawasan — no cap, and none is wanted here.
+   *
+   * The check behind this page runs in PostGIS over every kawasan, so a map
+   * drawing a subset would show part of an answer already computed in full, and
+   * an officer could not tell a kawasan that was absent from one that does not
+   * exist. On a page that answers "where are the restricted areas, and who is
+   * standing in them", that is worse than a slow map.
+   */
   const kawasanReferences = useMemo<ReferencePolygon[]>(() => {
     const areas = (kawasanData ?? []) as Array<{
       id: number;
@@ -171,6 +186,23 @@ export function KawasanOverlapReport() {
     return kawasanPoints.length > 0 ? findCenter(kawasanPoints) : undefined;
   }, [overlappingSubmissions, kawasanReferences]);
 
+  const focusOnMap = useCallback(
+    (submissionId: number) => {
+      const submission = overlappingSubmissions.find((row) => row.id === submissionId);
+      if (!submission?.geoJSON) {
+        toast.error('Pengajuan ini tidak memiliki geometri untuk ditampilkan di peta.');
+        return;
+      }
+      setSelectedSubmissionId(submissionId);
+      setFocusTarget(submission.geoJSON);
+      setFocusSignal((signal) => signal + 1);
+      // The table sits below the map, so framing a polygon the officer cannot
+      // see would look like nothing happened.
+      mapCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+    [overlappingSubmissions]
+  );
+
   const selectedSubmission = useMemo(
     () =>
       overlappingSubmissions.find(
@@ -179,7 +211,6 @@ export function KawasanOverlapReport() {
     [overlappingSubmissions, selectedSubmissionId]
   );
 
-  const isKawasanTruncated = (kawasanData?.length ?? 0) >= KAWASAN_MAP_LIMIT;
   const isLoadingMap = isLoadingKawasan || isLoadingPolygons;
 
   return (
@@ -246,7 +277,7 @@ export function KawasanOverlapReport() {
       </Card>
 
       {/* Map — every kawasan, plus only the pengajuan that clash with one */}
-      <Card>
+      <Card ref={mapCardRef}>
         <CardHeader>
           <CardTitle>Peta Kawasan Non-SPPTG dan Pengajuan Tumpang Tindih</CardTitle>
           <p className="text-sm text-gray-600">
@@ -271,20 +302,26 @@ export function KawasanOverlapReport() {
               selectedSubmission={selectedSubmission}
               referencePolygons={kawasanReferences}
               showNonSpptgLegend
+              // Only what this report can ever draw. It counts `terdaftar` and
+              // `terdata` and nothing else, so listing "ditolak" beside them
+              // invited the reading that a rejected berkas inside a kawasan had
+              // merely not turned up yet — when in fact it is excluded on
+              // purpose: a rejected claim inside a restricted area is the
+              // system working, not a conflict.
+              legendStatuses={['SPPTG terdaftar', 'SPPTG terdata']}
               height="32rem"
               zoom={12}
               center={mapCenter}
               onPolygonClick={(submission) => setSelectedSubmissionId(submission.id)}
+              focusGeoJSON={focusTarget}
+              focusSignal={focusSignal}
             />
           )}
 
-          {isKawasanTruncated && (
-            <p className="text-xs text-gray-500">
-              Menampilkan {KAWASAN_MAP_LIMIT} kawasan pertama. Kawasan selebihnya
-              tidak digambar di peta, tetapi tetap ikut dihitung pada tabel di
-              bawah.
-            </p>
-          )}
+          <p className="text-xs text-gray-500">
+            Peta menggambar seluruh {kawasanReferences.length.toLocaleString('id-ID')}{' '}
+            blok dari semua kawasan Non-SPPTG, tanpa batas.
+          </p>
         </CardContent>
       </Card>
 
@@ -309,6 +346,7 @@ export function KawasanOverlapReport() {
                     <TableHead>Luas Overlap</TableHead>
                     <TableHead>Kawasan</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead className="text-center">Peta</TableHead>
                     <TableHead className="text-right">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -339,6 +377,20 @@ export function KawasanOverlapReport() {
                       <TableCell className="text-gray-600">{row.namaKawasan}</TableCell>
                       <TableCell>
                         <StatusBadge status={row.status as StatusSPPTG} />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Fokuskan peta ke polygon ini"
+                          aria-label={`Fokuskan peta ke pengajuan #${row.submissionId}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            focusOnMap(row.submissionId);
+                          }}
+                        >
+                          <Crosshair className="h-4 w-4 text-blue-600" />
+                        </Button>
                       </TableCell>
                       <TableCell className="text-right">
                         <Button

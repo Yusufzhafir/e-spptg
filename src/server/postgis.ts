@@ -1,6 +1,9 @@
 import { db, DBTransaction } from './db/db';
 import { sql } from 'drizzle-orm';
 import { overlapResults } from './db/schema';
+import type { KawasanGeometryConflict } from '@/lib/kawasan-conflicts';
+
+export type { KawasanGeometryConflict };
 
 /**
  * Interface for overlap calculation result
@@ -100,6 +103,95 @@ export async function findOverlappingSubmissions(
       status: String(r.status ?? ''),
       namaKawasan: String(r.nama_kawasan ?? ''),
       jenisKawasan: String(r.jenis_kawasan ?? ''),
+      luasOverlap: Number(r.luas_overlap ?? 0),
+      percentageOverlap: Number(r.percentage_overlap ?? 0),
+    };
+  });
+}
+
+/**
+ * "Cek Tumpang Tindih" for a boundary that has not been saved yet — what the
+ * Tambah/Edit Kawasan form runs before it will let a kawasan be written.
+ *
+ * Two different questions in one pass. Against `prohibited_areas` it asks
+ * whether this land is already recorded as restricted, so **every** kawasan
+ * counts, active in validation or not: a duplicate of a kawasan somebody
+ * switched off is still a duplicate, and the row carries `aktifDiValidasi` so
+ * the report can say which it is. Against `submissions` it asks who is already
+ * standing on the land, which is why it counts the same set the system-wide
+ * report does — `SPPTG terdaftar` and `SPPTG terdata` that are still valid.
+ *
+ * `excludeAreaId` is the kawasan being edited: a boundary cannot overlap
+ * itself, and without it every edit would report a 100% clash with its own row.
+ *
+ * The WKT is passed as a bound parameter rather than interpolated, so a
+ * geometry string can never become SQL.
+ */
+export async function findKawasanGeometryConflicts(
+  wkt: string,
+  options: { excludeAreaId?: number } = {},
+  tx?: DBTransaction
+): Promise<KawasanGeometryConflict[]> {
+  const queryDb = tx || db;
+
+  const kawasanConditions = [sql`ST_Intersects(k.geom, pa.geom)`];
+  if (options.excludeAreaId !== undefined) {
+    kawasanConditions.push(sql`pa.id <> ${options.excludeAreaId}`);
+  }
+
+  const result = await queryDb.execute(sql`
+    WITH kandidat AS (
+      SELECT ST_GeomFromText(${wkt}, 4326) AS geom
+    )
+    SELECT
+      'kawasan' AS jenis,
+      pa.id AS id,
+      pa.nama_kawasan AS nama,
+      pa.jenis_kawasan::text AS keterangan,
+      ''::text AS status,
+      pa.aktif_di_validasi AS aktif,
+      ST_Area(ST_Intersection(k.geom, pa.geom)::geography)::double precision AS luas_overlap,
+      (
+        ST_Area(ST_Intersection(k.geom, pa.geom)::geography)
+        / NULLIF(ST_Area(k.geom::geography), 0) * 100
+      )::double precision AS percentage_overlap
+    FROM prohibited_areas pa
+    CROSS JOIN kandidat k
+    WHERE ${sql.join(kawasanConditions, sql` AND `)}
+
+    UNION ALL
+
+    SELECT
+      'pengajuan' AS jenis,
+      s.id AS id,
+      s.nama_pemilik AS nama,
+      COALESCE(v.nama_desa, '')::text AS keterangan,
+      s.status::text AS status,
+      true AS aktif,
+      ST_Area(ST_Intersection(k.geom, s.geom)::geography)::double precision AS luas_overlap,
+      (
+        ST_Area(ST_Intersection(k.geom, s.geom)::geography)
+        / NULLIF(ST_Area(k.geom::geography), 0) * 100
+      )::double precision AS percentage_overlap
+    FROM submissions s
+    LEFT JOIN villages v ON v.id = s."villageId"
+    CROSS JOIN kandidat k
+    WHERE ST_Intersects(k.geom, s.geom)
+      AND s.is_valid = true
+      AND s.status IN ('SPPTG terdaftar', 'SPPTG terdata')
+
+    ORDER BY luas_overlap DESC
+  `);
+
+  return (result.rows || []).map((row: unknown) => {
+    const r = row as Record<string, unknown>;
+    return {
+      jenis: r.jenis === 'pengajuan' ? ('pengajuan' as const) : ('kawasan' as const),
+      id: Number(r.id),
+      nama: String(r.nama ?? ''),
+      keterangan: String(r.keterangan ?? ''),
+      status: String(r.status ?? ''),
+      aktifDiValidasi: r.aktif === true,
       luasOverlap: Number(r.luas_overlap ?? 0),
       percentageOverlap: Number(r.percentage_overlap ?? 0),
     };

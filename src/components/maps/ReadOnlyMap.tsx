@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
 import { Submission, StatusSPPTG } from '@/types';
 import { geoJSONToPaths } from '@/lib/map-utils';
+import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
 import type { ReferencePolygon } from './DrawingMap';
 import { MapPin } from 'lucide-react';
 
@@ -21,7 +22,42 @@ interface ReadOnlyMapProps {
   referencePolygons?: ReferencePolygon[];
   /** Add a "Kawasan Non-SPPTG" entry to the legend (e.g. overlap detail map) */
   showNonSpptgLegend?: boolean;
+  /**
+   * Statuses the legend lists, in order.
+   *
+   * Not derived from `submissions`: a legend that appeared and disappeared as
+   * the reader filtered would be a moving target. Named explicitly instead, so
+   * a map that can only ever draw two statuses says exactly that — the Cek
+   * Tumpang Tindih report counts nothing but `terdaftar` and `terdata`, and
+   * listing "ditolak" beside them invited the reading that a rejected berkas
+   * inside a kawasan simply had not turned up yet.
+   */
+  legendStatuses?: StatusSPPTG[];
+  /**
+   * Geometry to frame the map on — a Polygon or MultiPolygon, in any of the
+   * shapes `geoJSONToPaths` accepts.
+   *
+   * The map is created with `defaultCenter`/`defaultZoom`, which apply once and
+   * never again; without this a table row had no way to move it.
+   */
+  focusGeoJSON?: unknown;
+  /**
+   * Bumped by the caller on every focus request.
+   *
+   * Focusing is an *action*, not a state: clicking the same row twice after
+   * panning away must move the map back, and comparing the geometry alone
+   * cannot tell those two clicks apart.
+   */
+  focusSignal?: number;
 }
+
+/** Every status a submission map can draw, in the order the legend lists them. */
+const DEFAULT_LEGEND_STATUSES: StatusSPPTG[] = [
+  'SPPTG terdaftar',
+  'SPPTG terdata',
+  'SPPTG ditolak',
+  'SPPTG ditinjau ulang',
+];
 
 function getPolygonColor(status: StatusSPPTG): string {
   switch (status) {
@@ -44,6 +80,8 @@ function ReadOnlyMapInternal({
   selectedSubmission,
   onPolygonClick,
   referencePolygons,
+  focusGeoJSON,
+  focusSignal,
 }: Omit<ReadOnlyMapProps, 'height' | 'center' | 'zoom'>) {
   const map = useMap();
   const polygonsRef = useRef<google.maps.Polygon[]>([]);
@@ -169,6 +207,33 @@ function ReadOnlyMapInternal({
     };
   }, [submissions, selectedSubmission, map, onPolygonClick]);
 
+  /**
+   * Frame the requested geometry.
+   *
+   * Keyed on `focusSignal` alone — deliberately. `focusGeoJSON` is not in the
+   * dependency list because the parent rebuilds that object on every render,
+   * which would re-frame the map continuously and make it impossible to pan
+   * away from a selected row.
+   */
+  useEffect(() => {
+    if (!map || focusSignal === undefined || !focusGeoJSON) return;
+    const google = window.google;
+    if (!google) return;
+
+    const bounds = new google.maps.LatLngBounds();
+    let points = 0;
+    for (const path of geoJSONToPaths(focusGeoJSON)) {
+      for (const point of path) {
+        bounds.extend(point);
+        points += 1;
+      }
+    }
+    if (points === 0) return;
+
+    map.fitBounds(bounds, 48);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see the note above
+  }, [map, focusSignal]);
+
   return null;
 }
 
@@ -185,6 +250,9 @@ export function ReadOnlyMap({
   onPolygonClick,
   referencePolygons,
   showNonSpptgLegend = false,
+  legendStatuses = DEFAULT_LEGEND_STATUSES,
+  focusGeoJSON,
+  focusSignal,
 }: ReadOnlyMapProps) {
   const isLoaded = true
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -244,6 +312,8 @@ export function ReadOnlyMap({
             selectedSubmission={selectedSubmission}
             onPolygonClick={onPolygonClick}
             referencePolygons={referencePolygons}
+            focusGeoJSON={focusGeoJSON}
+            focusSignal={focusSignal}
           />
         </Map>
       </APIProvider>
@@ -253,27 +323,20 @@ export function ReadOnlyMap({
       <div className="absolute bottom-9 left-2 bg-white/95 p-2.5 rounded-lg shadow-lg border border-gray-200 z-10">
         <p className="text-xs mb-2 font-semibold">Legenda</p>
         <div className="space-y-1">
-          <div className="flex items-center gap-2 text-xs">
-            <div className="w-4 h-4 rounded" style={{ backgroundColor: '#22c55e' }} />
-            <span>SPPTG terdaftar</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <div className="w-4 h-4 rounded" style={{ backgroundColor: '#3b82f6' }} />
-            <span>SPPTG terdata</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <div className="w-4 h-4 rounded" style={{ backgroundColor: '#ef4444' }} />
-            <span>SPPTG ditolak</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <div className="w-4 h-4 rounded" style={{ backgroundColor: '#eab308' }} />
-            <span>SPPTG ditinjau ulang</span>
-          </div>
+          {legendStatuses.map((status) => (
+            <div key={status} className="flex items-center gap-2 text-xs">
+              <div
+                className="w-4 h-4 rounded"
+                style={{ backgroundColor: getPolygonColor(status) }}
+              />
+              <span>{status}</span>
+            </div>
+          ))}
           {showNonSpptgLegend && (
             <div className="flex items-center gap-2 text-xs">
               <div
                 className="w-4 h-4 rounded border border-red-700"
-                style={{ backgroundColor: '#ef4444' }}
+                style={{ backgroundColor: KAWASAN_NON_SPPTG_COLOR }}
               />
               <span>Kawasan Non-SPPTG</span>
             </div>

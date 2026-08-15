@@ -3,6 +3,8 @@
  * Converts to GeoJSON Polygon format for backend submission
  */
 
+import type { KawasanAttributeSuggestion } from './shapefile-attributes';
+
 export interface ParsedCoordinate {
   id: string;
   latitude: number;
@@ -17,6 +19,17 @@ export interface ParsedCoordinate {
 export interface ParsedPolygon {
   /** `<name>` of the owning Placemark, when it had one. */
   name?: string;
+  /**
+   * Name of the **feature** this ring came from, before any per-ring numbering.
+   *
+   * `name` is a label for one ring, and a multi-part feature has its parts
+   * numbered into it (`TN Kutai (1)`, `TN Kutai (2)`, …) so a list of polygons
+   * does not show the same text repeatedly. That numbering is exactly wrong for
+   * deciding which rings belong to the same kawasan — it turned one 16-block
+   * kawasan into 16 — so the unnumbered name is kept alongside it and that is
+   * what `kawasan-bulk-import` groups on.
+   */
+  featureName?: string;
   coordinates: ParsedCoordinate[];
 }
 
@@ -32,6 +45,13 @@ export interface ParseResult {
     type: 'Polygon';
     coordinates: [[[number, number]]];
   };
+  /**
+   * Form fields the file's own attribute table can fill in — see
+   * `./shapefile-attributes`. Only the shapefile reader produces this; a KML
+   * carries a `<name>` and little else, and a caller that ignores it is
+   * unaffected.
+   */
+  atribut?: KawasanAttributeSuggestion;
   error?: string;
 }
 
@@ -77,7 +97,8 @@ export interface ParseOptions {
 export function buildParseResult(
   polygons: ParsedPolygon[],
   emptyError: string,
-  options: ParseOptions = {}
+  options: ParseOptions = {},
+  atribut?: KawasanAttributeSuggestion
 ): ParseResult {
   if (polygons.length === 0) {
     return parseFailure(emptyError);
@@ -96,6 +117,7 @@ export function buildParseResult(
     coordinates: polygons[0].coordinates,
     polygons,
     geoJSON: convertCoordinatesToGeoJSONPolygon(polygons[0].coordinates),
+    atribut,
   };
 }
 
@@ -475,10 +497,15 @@ export async function parseGeospatialFile(
       const { parseShapefileZip, zipContainsShapefile } = await import(
         './shapefile-parser'
       );
+      // Read once and hand the same bytes to both steps. A provincial
+      // shapefile is 16 MB compressed and 24 MB of geometry inside it; reading
+      // the File twice meant two copies plus two full archive loads before a
+      // single coordinate had been produced.
+      const bytes = await file.arrayBuffer();
       // No .shp inside almost always means a KMZ that was renamed or re-zipped;
       // reading it as one beats telling the operator their file is unsupported.
-      return (await zipContainsShapefile(file))
-        ? parseShapefileZip(file, options)
+      return (await zipContainsShapefile(bytes))
+        ? parseShapefileZip(bytes, options, file.name)
         : parseKMZFile(file, options);
     }
     default:

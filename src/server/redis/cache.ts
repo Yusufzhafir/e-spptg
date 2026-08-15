@@ -37,6 +37,9 @@ export const cacheKeys = {
   villagesAll: () => key('villages'),
   prohibitedAreasList: (limit: number, offset: number) =>
     key('kawasan', 'list', limit, offset),
+  /** Unpaged geometry for maps — under the same `kawasan:` prefix, so one
+   *  `invalidateProhibitedAreas()` still clears it along with the pages. */
+  prohibitedAreasGeometries: () => key('kawasan', 'geom'),
   prohibitedAreasAll: () => key('kawasan'),
   dashboardAll: () => key('dash'),
 };

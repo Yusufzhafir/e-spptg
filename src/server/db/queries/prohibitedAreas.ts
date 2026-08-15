@@ -100,6 +100,45 @@ export async function listProhibitedAreasPaged(
   return { items, total: counted?.count ?? 0 };
 }
 
+/**
+ * Every kawasan's geometry, for the maps that must draw all of them.
+ *
+ * Unpaged on purpose. The overlap check runs in PostGIS over every kawasan, so
+ * a map fed a page of 500 was showing part of the answer to a question that had
+ * been answered in full — an officer looking for "where are the restricted
+ * areas" cannot tell a kawasan that is absent from one that does not exist.
+ *
+ * Only the four columns a map actually needs, so the cost is the geometry and
+ * nothing else: no uploader join, no dasar hukum, no catatan.
+ */
+export async function listProhibitedAreaGeometries() {
+  return db
+    .select({
+      id: prohibitedAreas.id,
+      namaKawasan: prohibitedAreas.namaKawasan,
+      jenisKawasan: prohibitedAreas.jenisKawasan,
+      geom: sql`ST_AsGeoJSON(geom)`,
+    })
+    .from(prohibitedAreas);
+}
+
+/**
+ * Every kawasan name on record, and nothing else.
+ *
+ * For the bulk importer's duplicate check: re-running the same SK would
+ * otherwise quietly file a second copy of every kawasan in it, and the map
+ * would then draw each boundary twice with no way to tell which row is which.
+ * Deliberately not `listProhibitedAreas` — that returns each row's whole
+ * geometry as GeoJSON, which for this question is megabytes to answer with a
+ * string comparison.
+ */
+export async function listProhibitedAreaNames(): Promise<string[]> {
+  const rows = await db
+    .select({ namaKawasan: prohibitedAreas.namaKawasan })
+    .from(prohibitedAreas);
+  return rows.map((row) => row.namaKawasan);
+}
+
 export async function getProhibitedAreaById(id: number) {
   const {geom,...rest} = getTableColumns(prohibitedAreas)
   return await db.select({

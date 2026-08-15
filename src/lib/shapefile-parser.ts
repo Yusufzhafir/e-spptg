@@ -28,25 +28,27 @@ import {
   type ParseOptions,
   type ParseResult,
 } from './kmz-parser';
+import {
+  KAWASAN_NAME_FIELDS,
+  suggestKawasanAttributes,
+} from './shapefile-attributes';
 
 /** Every part of a shapefile set, so a caller can say what is missing. */
 export const SHAPEFILE_EXTENSIONS = ['shp', 'dbf', 'shx', 'prj', 'cpg'] as const;
 
 /**
- * Attribute columns a surveyor's shapefile tends to carry the parcel name in.
- * `NAMOBJ` is the one in the national RBI schema; the rest are what turns up in
- * kabupaten data in practice.
+ * Attribute columns a surveyor's shapefile tends to carry the feature name in.
+ *
+ * The kawasan half comes from `KAWASAN_NAME_FIELDS` rather than being repeated
+ * here: the bulk importer groups a file into kawasan **by this name**, so a
+ * column missing from this list silently becomes "every feature is unnamed",
+ * which is how the whole provincial SK once collapsed into a single group. The
+ * parcel columns below are this reader's own — a surveyor's bidang layer, which
+ * the kawasan attribute reader has no use for.
  */
-const NAME_FIELDS = [
-  'nama',
-  'name',
-  'namobj',
-  'nama_objek',
-  'label',
+const NAME_FIELDS: readonly string[] = [
+  ...KAWASAN_NAME_FIELDS,
   'keterangan',
-  'nm_kawasan',
-  'namakawasan',
-  'nama_kws',
   'persil',
   'no_persil',
   'nomor_persil',
@@ -141,6 +143,9 @@ export function shapefileGeoJSONToPolygons(
           // A MultiPolygon row shares one attribute name across its parts, so
           // number them — otherwise a batch import shows the same label twice.
           name: rings.length > 1 && name ? `${name} (${ringIndex + 1})` : name,
+          // The unnumbered name, which is what says these rings are blocks of
+          // one kawasan rather than that many kawasan. See `ParsedPolygon`.
+          featureName: name,
           coordinates,
         });
       });
@@ -168,14 +173,25 @@ function looksLikeDegrees(polygons: ParsedPolygon[]): boolean {
   );
 }
 
-/** True when the archive actually holds a `.shp`, rather than a KMZ or a stray zip. */
-export async function zipContainsShapefile(file: File): Promise<boolean> {
+/**
+ * True when the archive actually holds a `.shp`, rather than a KMZ or a stray
+ * zip.
+ *
+ * Takes the bytes, not the `File`: the caller has usually read them already,
+ * and a `.zip` used to be read twice on its way in — once here and once in
+ * `parseShapefileZip` — which on a 16 MB provincial shapefile meant two full
+ * copies plus two JSZip/shpjs loads, all on the browser's main thread.
+ */
+export async function zipContainsShapefile(
+  source: File | ArrayBuffer
+): Promise<boolean> {
   try {
     const JSZip = (await import('jszip')).default;
     // Read the bytes ourselves rather than handing JSZip the File: its Blob
     // support is a browser affordance, and this has to give the same answer
     // under Node (tests, and anything that ever runs this server-side).
-    const zip = await new JSZip().loadAsync(await file.arrayBuffer());
+    const bytes = source instanceof ArrayBuffer ? source : await source.arrayBuffer();
+    const zip = await new JSZip().loadAsync(bytes);
     return Object.keys(zip.files).some(
       (name) => !name.includes('__MACOSX') && name.toLowerCase().endsWith('.shp')
     );
@@ -191,11 +207,15 @@ export async function zipContainsShapefile(file: File): Promise<boolean> {
  * must not pay for that on a page where nobody uploads anything.
  */
 export async function parseShapefileZip(
-  file: File,
-  options: ParseOptions = {}
+  source: File | ArrayBuffer,
+  options: ParseOptions = {},
+  /** File name used as the layer label when the archive does not carry one. */
+  sourceName?: string
 ): Promise<ParseResult> {
   try {
-    const buffer = await file.arrayBuffer();
+    const buffer = source instanceof ArrayBuffer ? source : await source.arrayBuffer();
+    const fallbackName =
+      sourceName ?? (source instanceof ArrayBuffer ? undefined : source.name);
     const { default: shp } = await import('shpjs');
     const parsed = await shp(buffer);
     const collections = (
@@ -210,10 +230,20 @@ export async function parseShapefileZip(
       );
     }
 
+    // The `.dbf` beside the geometry usually already holds the SK number, its
+    // date and the kawasan's name — offered to the form rather than retyped.
+    const atribut = suggestKawasanAttributes(
+      collections.flatMap((collection) =>
+        (collection?.features ?? []).map((feature) => feature?.properties ?? null)
+      ),
+      collections.find((collection) => collection?.fileName)?.fileName ?? fallbackName
+    );
+
     return buildParseResult(
       polygons,
       'Tidak ada polygon yang ditemukan dalam shapefile. Pastikan layer berisi bidang (polygon), bukan titik atau garis.',
-      options
+      options,
+      atribut
     );
   } catch (error) {
     console.error('Error parsing shapefile:', error);

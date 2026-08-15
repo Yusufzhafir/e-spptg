@@ -18,7 +18,12 @@ import { SortableHead } from './table-sort';
 import { TablePager } from './table-pagination';
 import { useServerPagination, useTableUrlState } from './table-url-state';
 import { useAuthRole } from './AuthRoleProvider';
-import { formatDate } from '@/lib/format-date';
+import { formatDate, formatDateTime } from '@/lib/format-date';
+import {
+  deleteKawasanDraft,
+  listKawasanDrafts,
+  type KawasanDraftRecord,
+} from '@/lib/kawasan-draft-storage';
 import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
 import { PROHIBITED_AREA_TYPES } from '@/lib/prohibited-area-types';
 import { trpc } from '@/trpc/client';
@@ -51,6 +56,8 @@ import {
   Trash2,
   AlertTriangle,
   Shield,
+  FileClock,
+  FileUp,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CreateProhibitedAreaInput, UpdateProhibitedAreaInput } from '@/types/prohibitedAreas';
@@ -125,6 +132,27 @@ export function ProhibitedAreasTab({
   );
 
   const pagination = useServerPagination(table, areasPage?.total ?? 0);
+
+  // This officer's unfinished kawasan forms, held in this browser. Read after
+  // mount — localStorage does not exist while the page prerenders.
+  const [drafts, setDrafts] = useState<KawasanDraftRecord[]>([]);
+
+  useEffect(() => {
+    if (!canManageKawasan || !currentUser) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage is unreadable during render
+    setDrafts(listKawasanDrafts(currentUser.id));
+  }, [canManageKawasan, currentUser]);
+
+  const handleDeleteDraft = (id: string) => {
+    if (!currentUser) return;
+    try {
+      deleteKawasanDraft(currentUser.id, id);
+      setDrafts(listKawasanDrafts(currentUser.id));
+      toast.success('Draft kawasan dihapus.');
+    } catch {
+      toast.error('Gagal menghapus draft kawasan dari browser ini.');
+    }
+  };
 
   const prohibitedAreas: ProhibitedArea[] = useMemo(
     () =>
@@ -358,6 +386,17 @@ export function ProhibitedAreasTab({
           </Button>
           {canManageKawasan && (
             <Button
+              variant="outline"
+              onClick={() => router.push('/app/pengaturan/kawasan/impor')}
+              className="flex-1 lg:flex-initial"
+              title="Unggah satu file berisi banyak kawasan sekaligus"
+            >
+              <FileUp className="h-4 w-4 mr-2" />
+              Impor Massal
+            </Button>
+          )}
+          {canManageKawasan && (
+            <Button
               onClick={handleAddArea}
               className="bg-blue-600 hover:bg-blue-700 flex-1 lg:flex-initial"
             >
@@ -367,6 +406,73 @@ export function ProhibitedAreasTab({
           )}
         </div>
       </div>
+
+      {/* Unfinished kawasan forms, if this officer has any in this browser.
+          Tracing a Kawasan Hutan out of an SK rarely finishes in one sitting. */}
+      {canManageKawasan && drafts.length > 0 && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <p className="mb-1 flex items-center gap-2 text-sm font-semibold text-blue-900">
+            <FileClock className="h-4 w-4" />
+            Draft Kawasan Belum Selesai ({drafts.length})
+          </p>
+          {/* Said outright, because it is the one thing a browser-stored draft
+              does differently from everything else in this app. */}
+          <p className="mb-3 text-xs text-blue-800">
+            Draft tersimpan di browser ini saja — tidak tersedia di perangkat lain
+            dan hilang jika data situs dibersihkan.
+          </p>
+          <ul className="space-y-2">
+            {drafts.map((draft) => (
+              <li
+                key={draft.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-blue-200 bg-white p-3"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-gray-900">
+                    {draft.payload?.namaKawasan?.trim() || 'Kawasan tanpa nama'}
+                    {draft.editingAreaId !== null && (
+                      <span className="ml-2 text-xs font-normal text-gray-500">
+                        (perubahan kawasan #{draft.editingAreaId})
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    {draft.payload?.jenisKawasan || 'Jenis belum dipilih'} · Disimpan{' '}
+                    {formatDateTime(draft.lastSaved)}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      // A draft started from an existing kawasan resumes on that
+                      // kawasan's edit page — resuming it as a new kawasan would
+                      // file the same boundary twice.
+                      router.push(
+                        draft.editingAreaId !== null
+                          ? `/app/pengaturan/kawasan/${draft.editingAreaId}/edit?draft=${encodeURIComponent(draft.id)}`
+                          : `/app/pengaturan/kawasan/tambah?draft=${encodeURIComponent(draft.id)}`
+                      )
+                    }
+                  >
+                    Lanjutkan
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                    onClick={() => handleDeleteDraft(draft.id)}
+                    title="Hapus draft"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Table */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
