@@ -47,12 +47,22 @@ export interface SPPTGPDFData {
   alamatKTP?: string;
 
   // Land Information
-  /** Manual land area input in m² */
+  /**
+   * The area the certificate states, in m²: the surveyor's measurement where
+   * there is one, the drawn boundary otherwise — summed over every bidang.
+   */
   luasManual?: number;
   /** Land area in Indonesian words */
   luasTerbilang: string;
-  /** Calculated land area from polygon in m² */
+  /** Calculated land area from polygon in m² (total across bidang) */
   luasLahan?: number;
+  /**
+   * Tape measurements at the patok, in metres. Only set for a single-bidang
+   * certificate; with more than one, statement 1.b prints a labelled row per
+   * bidang straight from `polygons`.
+   */
+  panjangLahan?: number;
+  lebarLahan?: number;
   /** Land use type */
   penggunaanLahan?: string;
   /** Year cultivation started */
@@ -69,7 +79,11 @@ export interface SPPTGPDFData {
   namaJalan?: string;
   /** Alley/Gang name */
   namaGang?: string;
-  /** Plot number */
+  /**
+   * Plot number of the sole bidang. A pengajuan covering several parcels has one
+   * per parcel, and statement 1.a prints a labelled row for each — see
+   * `polygons`.
+   */
   nomorPersil?: string;
   /** RT/RW number */
   rtrw?: string;
@@ -164,11 +178,23 @@ export interface SPPTGPDFData {
    * attachment reads `polygons` when it is present.
    */
   coordinatesGeografis: GeographicCoordinate[];
-  /** Every bidang of the pengajuan, each with its own boundary. */
+  /**
+   * Every bidang of the pengajuan, each with its own boundary and its own
+   * record of what was measured on it.
+   */
   polygons?: Array<{
     /** Label printed above the bidang's coordinate tables. */
     nama?: string;
     coordinates: GeographicCoordinate[];
+    /** Plot number of this bidang. */
+    nomorPersil?: string;
+    /** m² measured at the patok, where it was. */
+    luasManual?: number;
+    /** m² computed from this bidang's boundary. */
+    luasHitung?: number;
+    /** Tape measurements of this bidang, in metres. */
+    panjang?: number;
+    lebar?: number;
   }>;
   /** URL to map image (Google Maps Static API) */
   mapImageUrl?: string;

@@ -70,6 +70,79 @@ describe('buildSPPTGPDFData', () => {
     expect(pdfData.asalPerolehan).toBe('jual beli dengan Bapak Ahmad');
     expect(pdfData.tahunPerolehan).toBe(2004);
   });
+
+  it('states a single bidang’s persil number and measurements directly', () => {
+    const draft: SubmissionDraft = {
+      ...createDraftFixture(),
+      nomorPersil: '12/A',
+      panjangLahan: 40,
+      lebarLahan: 25,
+    };
+
+    const pdfData = buildSPPTGPDFData(draft, null, { mapUrlGenerator: () => null });
+
+    expect(pdfData.nomorPersil).toBe('12/A');
+    expect(pdfData.panjangLahan).toBe(40);
+    expect(pdfData.lebarLahan).toBe(25);
+    expect(pdfData.polygons?.[0].nomorPersil).toBe('12/A');
+  });
+
+  it('keeps each bidang’s own record, and totals the stated area', () => {
+    const draft: SubmissionDraft = {
+      ...createDraftFixture(),
+      polygons: [
+        {
+          id: 'P-1',
+          coordinates: createDraftFixture().coordinatesGeografis,
+          nomorPersil: '12/A',
+          luasManual: 1500,
+          panjang: 50,
+          lebar: 30,
+        },
+        {
+          id: 'P-2',
+          nama: 'Bidang Selatan',
+          coordinates: [
+            { id: 'B-1', latitude: -6.3, longitude: 107.3 },
+            { id: 'B-2', latitude: -6.31, longitude: 107.3 },
+            { id: 'B-3', latitude: -6.31, longitude: 107.31 },
+          ],
+          nomorPersil: '13/B',
+          luasManual: 2000,
+        },
+      ],
+    };
+
+    const pdfData = buildSPPTGPDFData(draft, null, { mapUrlGenerator: () => null });
+
+    // Statement 1.a cannot name one of two persil numbers in the single-value
+    // field, so it names neither there and prints a row per bidang instead.
+    expect(pdfData.nomorPersil).toBeUndefined();
+    expect(pdfData.panjangLahan).toBeUndefined();
+    expect(pdfData.luasManual).toBe(3500);
+    expect(pdfData.polygons?.map((polygon) => polygon.nomorPersil)).toEqual([
+      '12/A',
+      '13/B',
+    ]);
+    expect(pdfData.polygons?.[0].panjang).toBe(50);
+    expect(pdfData.polygons?.[1].luasHitung).toBeGreaterThan(0);
+  });
+
+  it('states the drawn area for a bidang nobody measured by hand', () => {
+    const draft = createDraftFixture();
+    draft.luasManual = undefined;
+    // A real triangle: the fixture's own ring is collinear and encloses nothing.
+    draft.coordinatesGeografis = [
+      { id: 'C-1', latitude: -6.2, longitude: 107.2 },
+      { id: 'C-2', latitude: -6.21, longitude: 107.2 },
+      { id: 'C-3', latitude: -6.21, longitude: 107.21 },
+    ];
+
+    const pdfData = buildSPPTGPDFData(draft, null, { mapUrlGenerator: () => null });
+
+    expect(pdfData.luasManual).toBe(pdfData.polygons?.[0].luasHitung);
+    expect(pdfData.luasTerbilang).not.toBe('');
+  });
 });
 
 describe('buildWitnessSlots', () => {

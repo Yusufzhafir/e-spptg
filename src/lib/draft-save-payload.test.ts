@@ -114,10 +114,60 @@ describe('buildDraftSavePayload', () => {
     delete draft.polygons;
 
     const payload = buildDraftSavePayload(draft) as {
-      polygons: Array<{ coordinates: unknown[] }>;
+      polygons: Array<{ coordinates: unknown[]; nomorPersil?: string; luasManual?: number }>;
     };
 
     expect(payload.polygons).toHaveLength(1);
     expect(payload.polygons[0].coordinates).toEqual(draft.coordinatesGeografis);
+    // The pengajuan-level measurements move onto the bidang they described.
+    expect(payload.polygons[0].luasManual).toBe(1300);
+  });
+
+  it('derives the pengajuan-level measurements from the bidang', () => {
+    const draft = createDraftFixture();
+    draft.polygons = [
+      {
+        id: 'P-1',
+        coordinates: draft.coordinatesGeografis,
+        nomorPersil: '12/A',
+        luasManual: 900,
+        panjang: 30,
+        lebar: 30,
+      },
+      {
+        id: 'P-2',
+        nama: 'Bidang Kedua',
+        coordinates: [
+          { id: 'B-1', latitude: -2.1, longitude: 118.1 },
+          { id: 'B-2', latitude: -2.2, longitude: 118.2 },
+          { id: 'B-3', latitude: -2.3, longitude: 118.3 },
+        ],
+        nomorPersil: '13/B',
+        luasManual: 600,
+      },
+    ];
+
+    const payload = buildDraftSavePayload(draft) as Record<string, unknown>;
+
+    // Luas manual is the total of both bidang; the rest mirror the first, the
+    // way `coordinatesGeografis` mirrors its ring.
+    expect(payload.luasManual).toBe(1500);
+    expect(payload.nomorPersil).toBe('12/A');
+    expect(payload.panjangLahan).toBe(30);
+    expect(payload.lebarLahan).toBe(30);
+  });
+
+  it('lets a cleared per-bidang measurement stay cleared', () => {
+    const draft = createDraftFixture();
+    // The surveyor removed the figure in Step 2; the stale draft-level copy must
+    // not put it back on the next save.
+    draft.polygons = [{ id: 'P-1', coordinates: draft.coordinatesGeografis }];
+    draft.luasManual = undefined;
+    draft.panjangLahan = undefined;
+
+    const payload = buildDraftSavePayload(draft) as Record<string, unknown>;
+
+    expect(payload.luasManual).toBeNull();
+    expect(payload.panjangLahan).toBeNull();
   });
 });

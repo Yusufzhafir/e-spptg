@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { findCenter } from '@/lib/utils';
 import { geoJSONToPaths } from '@/lib/map-utils';
+import { bidangRincianList, draftPolygons } from '@/lib/land-polygons';
 import { trpc } from '@/trpc/client';
 import { formatDate } from '@/lib/format-date';
 import { keepLatestPerCategory } from '@/lib/document-list';
@@ -50,12 +51,22 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
   // Applicant details live only in the draft payload snapshot — the submissions
   // table has no column for tempat/tanggal lahir, pekerjaan, or alamat KTP.
   const pemilik = submission.payload ?? {};
-  // Panjang/lebar live only in the payload snapshot — the submissions table has
-  // no column for them, same as the applicant's identity fields above.
-  const ukuranLahan = {
-    panjang: typeof pemilik.panjangLahan === 'number' ? pemilik.panjangLahan : null,
-    lebar: typeof pemilik.lebarLahan === 'number' ? pemilik.lebarLahan : null,
-  };
+  /**
+   * Nomor persil, luas manual and the tape measurements are recorded per bidang
+   * and live only in the payload snapshot — the submissions table has a column
+   * for the manual area total and nothing else. `draftPolygons` lifts a
+   * pre-multi-bidang snapshot, which carried these at pengajuan level, into its
+   * single bidang, so both eras render through the same table.
+   */
+  const rincianBidang = useMemo(
+    () => bidangRincianList(draftPolygons(submission.payload ?? null)),
+    [submission.payload]
+  );
+  const hasRincianBidang = rincianBidang.some(
+    (bidang) =>
+      bidang.nomorPersil || bidang.luasManual != null || bidang.panjang != null ||
+      bidang.lebar != null
+  );
   const tempatTanggalLahir =
     [pemilik.tempatLahir?.trim(), pemilik.tanggalLahir ? formatDate(pemilik.tanggalLahir) : '']
       .filter(Boolean)
@@ -617,23 +628,6 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
                         </p>
                       )}
                     </div>
-                    {/* Tape measurements from Step 2. Only rendered when the
-                        surveyor actually recorded them — they are optional, and
-                        an empty row would read as "measured as nothing". */}
-                    {(ukuranLahan.panjang != null || ukuranLahan.lebar != null) && (
-                      <div>
-                        <p className="text-sm text-gray-600">Panjang × Lebar</p>
-                        <p>
-                          {ukuranLahan.panjang != null
-                            ? `${ukuranLahan.panjang.toLocaleString('id-ID')} m`
-                            : '-'}{' '}
-                          ×{' '}
-                          {ukuranLahan.lebar != null
-                            ? `${ukuranLahan.lebar.toLocaleString('id-ID')} m`
-                            : '-'}
-                        </p>
-                      </div>
-                    )}
                     <div>
                       <p className="text-sm text-gray-600">Penggunaan Lahan</p>
                       <p>{submission.penggunaanLahan || '-'}</p>
@@ -647,6 +641,57 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
                   </div>
                 </div>
               </div>
+
+              {/* One row per bidang: the persil number and the tape measurements
+                  describe a single parcel each, and a claim can cover several.
+                  Hidden entirely when the surveyor recorded none of them — an
+                  empty table would read as "measured as nothing". */}
+              {hasRincianBidang && (
+                <div className="pt-2">
+                  <h3 className="mb-4">
+                    Rincian Bidang
+                    {rincianBidang.length > 1 ? ` (${rincianBidang.length})` : ''}
+                  </h3>
+                  <div className="overflow-x-auto rounded-lg border border-gray-200">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50">
+                        <tr className="text-left text-xs text-gray-600">
+                          <th className="px-3 py-2 font-normal">Bidang</th>
+                          <th className="px-3 py-2 font-normal">Nomor Persil</th>
+                          <th className="px-3 py-2 text-right font-normal">Luas Peta</th>
+                          <th className="px-3 py-2 text-right font-normal">Luas Manual</th>
+                          <th className="px-3 py-2 text-right font-normal">Panjang × Lebar</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rincianBidang.map((bidang) => (
+                          <tr key={bidang.id} className="border-t border-gray-200">
+                            <td className="px-3 py-2 whitespace-nowrap">{bidang.label}</td>
+                            <td className="px-3 py-2">{bidang.nomorPersil || '-'}</td>
+                            <td className="px-3 py-2 text-right whitespace-nowrap">
+                              {bidang.luasHitung
+                                ? `${Math.round(bidang.luasHitung).toLocaleString('id-ID')} m²`
+                                : '-'}
+                            </td>
+                            <td className="px-3 py-2 text-right whitespace-nowrap">
+                              {bidang.luasManual != null
+                                ? `${bidang.luasManual.toLocaleString('id-ID')} m²`
+                                : '-'}
+                            </td>
+                            <td className="px-3 py-2 text-right whitespace-nowrap">
+                              {bidang.panjang != null || bidang.lebar != null
+                                ? `${bidang.panjang?.toLocaleString('id-ID') ?? '-'} × ${
+                                    bidang.lebar?.toLocaleString('id-ID') ?? '-'
+                                  } m`
+                                : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </TabsContent>
 
             <TabsContent value="dokumen" className="mt-4">

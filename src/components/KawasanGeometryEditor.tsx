@@ -10,9 +10,12 @@
  *
  * Only one polygon is editable at a time (Terra Draw owns a single feature); the
  * rest are drawn behind it as reference so adding a second block never looks
- * like it erased the first. Imported polygons are locked and stay locked: the
- * file is the authority for where the boundary runs, and a nudged vertex would
- * silently put the kawasan somewhere the SK does not.
+ * like it erased the first. Imported polygons arrive locked — the file is the
+ * authority for where the boundary runs, and a nudged vertex would silently put
+ * the kawasan somewhere the SK does not — but the lock is a working state, not a
+ * verdict: it can be lifted per block to correct a bad import and put back
+ * afterwards. It lives only in this editor's state; the saved kawasan is the
+ * geometry alone, so a reopened block always comes back unlocked.
  */
 
 import {
@@ -26,7 +29,10 @@ import {
 import { DrawingMap, type ReferencePolygon } from './maps/DrawingMap';
 import { trpc } from '@/trpc/client';
 import { geoJSONToPaths } from '@/lib/map-utils';
-import { parseGeospatialFile } from '@/lib/kmz-parser';
+import {
+  parseGeospatialFile,
+  UNLIMITED_POLYGON_POINTS,
+} from '@/lib/kmz-parser';
 import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
 import {
   createPolygonId,
@@ -60,7 +66,7 @@ import {
   SelectValue,
 } from './ui/select';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
-import { Lock, Plus, Shapes, Trash2 } from 'lucide-react';
+import { Lock, LockOpen, Plus, Shapes, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type {
   GeoJSONMultiPolygon,
@@ -264,6 +270,33 @@ export function KawasanGeometryEditor({
     }
   };
 
+  /**
+   * Flip the lock on one block, both ways — lifted to correct a bad import, put
+   * back once the boundary is right. See the note at the top of this file.
+   */
+  const handleToggleLock = (polygonId: string) => {
+    const target = polygons.find((polygon) => polygon.id === polygonId);
+    if (!target) return;
+    const nextLocked = !target.locked;
+    // Nothing to protect yet, and a locked empty block cannot be drawn at all.
+    if (nextLocked && target.coordinates.length === 0) {
+      toast.error('Blok masih kosong. Gambar polygon-nya dulu sebelum dikunci.');
+      return;
+    }
+
+    applyPolygons(
+      polygons.map((polygon) =>
+        polygon.id === polygonId ? { ...polygon, locked: nextLocked } : polygon
+      )
+    );
+    setActivePolygonId(polygonId);
+    toast.info(
+      nextLocked
+        ? 'Blok dikunci. Koordinatnya tidak dapat diubah sampai kunci dibuka lagi.'
+        : 'Kunci dibuka. Koordinat blok ini sekarang dapat diubah.'
+    );
+  };
+
   const handleAddPoint = () => {
     updateActiveCoordinates([
       ...coordinates,
@@ -321,7 +354,13 @@ export function KawasanGeometryEditor({
 
   /**
    * Import every polygon in the file as a block of this kawasan. Imported blocks
-   * are locked for good — see the note at the top of this file.
+   * arrive locked — see the note at the top of this file.
+   *
+   * No ceiling on either count: a kawasan may consist of any number of blocks,
+   * each of any number of vertices. The 100-vertex default belongs to the
+   * pengajuan wizard, whose bidang are stored as JSON in a draft payload; a
+   * kawasan goes straight into a PostGIS column, and a Kawasan Hutan traced from
+   * an SK is routinely thousands of points.
    */
   const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.target;
@@ -330,7 +369,9 @@ export function KawasanGeometryEditor({
 
     setIsParsing(true);
     try {
-      const result = await parseGeospatialFile(file);
+      const result = await parseGeospatialFile(file, {
+        maxPoints: UNLIMITED_POLYGON_POINTS,
+      });
       if (!result.success) {
         toast.error(result.error || 'Gagal memproses file geospasial');
         return;
@@ -376,7 +417,7 @@ export function KawasanGeometryEditor({
         0
       );
       toast.success(
-        `Berhasil mengimpor ${imported.length} polygon (${totalPoints} titik). Polygon terkunci mengikuti file.`
+        `Berhasil mengimpor ${imported.length} polygon (${totalPoints} titik). Polygon terkunci mengikuti file — buka kunci bila perlu diubah.`
       );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Gagal memproses file geospasial');
@@ -391,19 +432,25 @@ export function KawasanGeometryEditor({
   return (
     <div className="space-y-3">
       <div>
-        <Label htmlFor="kawasan-file">Impor KML/KMZ/GPX (opsional)</Label>
+        <Label htmlFor="kawasan-file">
+          Impor KML/KMZ/GPX/Shapefile (opsional)
+        </Label>
         <Input
           id="kawasan-file"
           type="file"
-          accept=".kml,.kmz,.gpx"
+          accept=".kml,.kmz,.gpx,.zip"
           onChange={handleFileUpload}
           disabled={isParsing}
           className="mt-1"
         />
         <p className="mt-1 text-xs text-gray-500">
           Semua polygon dalam file akan dimuat sebagai blok kawasan ini, dan
-          terkunci agar sama persis dengan file aslinya. Atau gambar manual di peta
-          di bawah.
+          terkunci agar sama persis dengan file aslinya. Kunci dapat dibuka dan
+          dipasang kembali per blok. Atau gambar manual di peta di bawah.
+        </p>
+        <p className="mt-1 text-xs text-gray-500">
+          Shapefile diunggah sebagai .zip berisi berkas lengkapnya (.shp, .dbf,
+          .shx, .prj, .cpg). Sertakan .prj agar koordinat UTM dikonversi ke WGS 84.
         </p>
         {isParsing && <p className="mt-1 text-xs text-blue-600">Memproses file...</p>}
       </div>
@@ -453,9 +500,27 @@ export function KawasanGeometryEditor({
                       ({polygon.coordinates.length} titik)
                     </span>
                   </button>
-                  {polygon.locked && (
-                    <Lock className="h-3 w-3 text-gray-500" aria-label="Terkunci" />
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleLock(polygon.id)}
+                    className={
+                      polygon.locked
+                        ? 'text-amber-600 hover:text-amber-700'
+                        : 'text-gray-400 hover:text-gray-700'
+                    }
+                    aria-label={`${polygon.locked ? 'Buka kunci' : 'Kunci'} ${polygonLabel(polygon, index)}`}
+                    title={
+                      polygon.locked
+                        ? 'Terkunci — klik untuk mengubah koordinat'
+                        : 'Klik untuk mengunci agar koordinat tidak berubah'
+                    }
+                  >
+                    {polygon.locked ? (
+                      <Lock className="h-3 w-3" />
+                    ) : (
+                      <LockOpen className="h-3 w-3" />
+                    )}
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleRemovePolygon(polygon.id)}
@@ -471,12 +536,40 @@ export function KawasanGeometryEditor({
           </div>
         )}
 
-        {isActiveLocked && (
-          <p className="flex items-center gap-1.5 text-xs text-amber-700">
-            <Lock className="h-3.5 w-3.5" />
-            Blok ini diimpor dari file dan tidak dapat diubah. Hapus blok lalu impor
-            ulang bila batasnya keliru.
-          </p>
+        {activePolygon && (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {isActiveLocked ? (
+              <p className="flex items-center gap-1.5 text-amber-700">
+                <Lock className="h-3.5 w-3.5" />
+                Blok ini terkunci — koordinat dan peta tidak dapat diubah. Buka kunci
+                bila batasnya perlu diperbaiki.
+              </p>
+            ) : (
+              <p className="flex items-center gap-1.5 text-gray-500">
+                <LockOpen className="h-3.5 w-3.5" />
+                Blok ini dapat diubah. Kunci bila batasnya sudah benar, agar tidak
+                tergeser saat menggambar blok lain.
+              </p>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleToggleLock(activePolygon.id)}
+            >
+              {isActiveLocked ? (
+                <>
+                  <LockOpen className="mr-1 h-3.5 w-3.5" />
+                  Buka Kunci
+                </>
+              ) : (
+                <>
+                  <Lock className="mr-1 h-3.5 w-3.5" />
+                  Kunci Blok
+                </>
+              )}
+            </Button>
+          </div>
         )}
       </div>
 

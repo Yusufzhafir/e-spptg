@@ -1,5 +1,5 @@
 import type { SubmissionDraft } from '@/types';
-import { draftPolygons, polygonsPatch } from './land-polygons';
+import { derivedBidangFields, draftPolygons, polygonsPatch } from './land-polygons';
 
 /**
  * Builds a complete, serializable payload for draft persistence.
@@ -14,6 +14,15 @@ export function buildDraftSavePayload(draft: SubmissionDraft): Record<string, un
   // Normalised together so the mirrored `coordinatesGeografis` can never be
   // saved out of step with the polygon it mirrors.
   const geometry = polygonsPatch(draftPolygons(draft));
+  /**
+   * Nomor persil, luas manual and the tape measurements belong to a bidang now.
+   * The pengajuan-level keys are still written, derived from the bidang list, so
+   * `submissions.luas_manual` and every reader that predates the move keep
+   * working. The draft's own value is only kept where the bidang say nothing —
+   * a berkas that already covered several bidang before the move carries its
+   * measurements at this level and nowhere else.
+   */
+  const bidang = derivedBidangFields(geometry.polygons);
 
   const payload: Record<string, unknown> = {
     // Step 1: Applicant Data
@@ -31,7 +40,7 @@ export function buildDraftSavePayload(draft: SubmissionDraft): Record<string, un
     villageId: draft.villageId,
     namaJalan: draft.namaJalan,
     namaGang: draft.namaGang,
-    nomorPersil: draft.nomorPersil,
+    nomorPersil: bidang.nomorPersil ?? draft.nomorPersil,
     rtrw: draft.rtrw,
     dusun: draft.dusun,
     kecamatan: draft.kecamatan,
@@ -49,10 +58,10 @@ export function buildDraftSavePayload(draft: SubmissionDraft): Record<string, un
     fotoLahan: draft.fotoLahan || [],
     overlapResults: draft.overlapResults || [],
     luasLahan: draft.luasLahan,
-    luasManual: draft.luasManual,
+    luasManual: bidang.luasManual ?? draft.luasManual,
     kelilingLahan: draft.kelilingLahan,
-    panjangLahan: draft.panjangLahan,
-    lebarLahan: draft.lebarLahan,
+    panjangLahan: bidang.panjangLahan ?? draft.panjangLahan,
+    lebarLahan: bidang.lebarLahan ?? draft.lebarLahan,
 
     // Documents
     dokumenKTP: draft.dokumenKTP,

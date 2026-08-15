@@ -23,6 +23,9 @@ type LayoutLike = Pick<SPPTGPDFData, 'variant'> & {
   coordinatesGeografis?: GeographicCoordinate[];
 };
 
+/** One bidang as the certificate carries it. */
+export type CertificatePolygon = NonNullable<SPPTGPDFData['polygons']>[number];
+
 export const PAGE_STATEMENTS_START = 1;
 export const PAGE_STATEMENTS_CONT = 2;
 export const PAGE_SIGNATURES = 3;
@@ -140,7 +143,7 @@ export function mapPageNumber(data: LayoutLike): number {
  */
 export function certificatePolygons(
   data: Pick<LayoutLike, 'polygons' | 'coordinatesGeografis'>
-): Array<{ nama?: string; coordinates: GeographicCoordinate[] }> {
+): CertificatePolygon[] {
   const polygons = (data.polygons ?? []).filter(
     (polygon) => (polygon.coordinates?.length ?? 0) > 0
   );

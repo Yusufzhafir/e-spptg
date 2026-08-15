@@ -181,6 +181,12 @@ describe('witness pagination', () => {
     const data = {
       variant: 'terdata' as const,
       coordinatesGeografis: points(COORDINATE_ROWS_PER_SHEET + 1),
+      // The worst case: overflowing saksi, a notice sheet, several bidang and a
+      // boundary that outgrows one coordinate sheet, all at once.
+      polygons: [
+        { nama: 'Bidang A', coordinates: points(COORDINATE_ROWS_PER_SHEET + 1) },
+        { nama: 'Bidang B', coordinates: points(3, 1) },
+      ],
       saksiList: saksi(11),
     };
     const total = totalCertificatePages(data);

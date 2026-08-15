@@ -21,6 +21,17 @@ import type {
 /** Minimum vertices a ring needs before it is a polygon at all. */
 export const MIN_POLYGON_POINTS = 3;
 
+/**
+ * Bidang a single pengajuan may cover.
+ *
+ * Two, by office rule rather than by anything technical: a claim over more
+ * separated parcels than that is filed as more than one pengajuan, so each
+ * certificate stays about land the applicant can be shown to hold as one claim.
+ * Enforced in the Step 2 editor and again by `landPolygonSchema`'s list bounds,
+ * so neither a hand-added bidang nor an imported file can exceed it.
+ */
+export const MAX_POLYGONS_PER_SUBMISSION = 2;
+
 export function createPolygonId(): string {
   return `P-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -50,7 +61,32 @@ export function validCoordinates(
 type PolygonSource = {
   polygons?: LandPolygon[] | null;
   coordinatesGeografis?: GeographicCoordinate[] | null;
+  /**
+   * The pengajuan-level measurements of an older draft, written before a bidang
+   * could carry its own — see {@link draftPolygons} for when they are adopted.
+   */
+  nomorPersil?: string | null;
+  luasManual?: number | null;
+  panjangLahan?: number | null;
+  lebarLahan?: number | null;
 };
+
+/** A positive, finite measurement, or undefined for "not recorded". */
+function measurement(value: unknown): number | undefined {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+/**
+ * A persil number, or undefined when the box is blank.
+ *
+ * Deliberately not trimmed: this runs on every keystroke through
+ * `polygonsPatch`, and trimming there would eat the space in "12 A" the moment
+ * it is typed. The editor trims on blur instead.
+ */
+function persilNumber(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
 
 /**
  * The polygons of a draft or a stored payload, whichever field it carries.
@@ -58,21 +94,45 @@ type PolygonSource = {
  * A pre-multi-polygon draft only has `coordinatesGeografis`; it becomes the
  * single polygon of the list, so nothing downstream has to know which era the
  * berkas comes from.
+ *
+ * The same applies to nomor persil, luas manual and the tape measurements: they
+ * used to be pengajuan-level fields and are now recorded per bidang, so a draft
+ * that only has the old ones has them adopted by its bidang — but **only when
+ * there is exactly one**. On a berkas that already covered several bidang the
+ * old value described all of them at once; pinning it to the first would state
+ * that bidang's persil number and area as something it never was, so those
+ * drafts keep the value at pengajuan level (where the summaries still read it)
+ * until someone fills the bidang in.
  */
 export function draftPolygons(source: PolygonSource | null | undefined): LandPolygon[] {
   const polygons = source?.polygons;
   if (Array.isArray(polygons) && polygons.length > 0) {
-    return polygons.map((polygon, index) => ({
+    const list = polygons.map((polygon, index) => ({
       ...polygon,
       id: polygon.id || `P-${index + 1}`,
       coordinates: polygon.coordinates ?? [],
     }));
+    return list.length === 1 ? [adoptLegacyFields(list[0], source)] : list;
   }
 
   const legacy = source?.coordinatesGeografis ?? [];
   if (legacy.length === 0) return [];
 
-  return [{ id: 'P-1', coordinates: legacy }];
+  return [adoptLegacyFields({ id: 'P-1', coordinates: legacy }, source)];
+}
+
+/** Fills a lone bidang's blanks from the draft-level fields it superseded. */
+function adoptLegacyFields(
+  polygon: LandPolygon,
+  source: PolygonSource | null | undefined
+): LandPolygon {
+  return {
+    ...polygon,
+    nomorPersil: persilNumber(polygon.nomorPersil) ?? persilNumber(source?.nomorPersil),
+    luasManual: measurement(polygon.luasManual) ?? measurement(source?.luasManual),
+    panjang: measurement(polygon.panjang) ?? measurement(source?.panjangLahan),
+    lebar: measurement(polygon.lebar) ?? measurement(source?.lebarLahan),
+  };
 }
 
 /**
@@ -89,6 +149,12 @@ export function polygonsPatch(polygons: LandPolygon[]): {
   const normalized = polygons.map((polygon) => ({
     ...polygon,
     coordinates: normalizeCoordinateIds(polygon.coordinates ?? []),
+    // A cleared input must store nothing, not `''` or 0: "not measured" and
+    // "measured as zero" print differently on the certificate.
+    nomorPersil: persilNumber(polygon.nomorPersil),
+    luasManual: measurement(polygon.luasManual),
+    panjang: measurement(polygon.panjang),
+    lebar: measurement(polygon.lebar),
   }));
 
   return {
@@ -106,11 +172,100 @@ export function allPolygonCoordinates(
 
 /** Sum of the polygons' areas in m² (Shoelace, same estimate as one polygon). */
 export function totalPolygonArea(polygons: LandPolygon[]): number {
-  return polygons.reduce((total, polygon) => {
-    const coordinates = validCoordinates(polygon.coordinates);
-    if (coordinates.length < MIN_POLYGON_POINTS) return total;
-    return total + calculatePolygonArea(coordinates);
-  }, 0);
+  return polygons.reduce((total, polygon) => total + polygonArea(polygon), 0);
+}
+
+/** Area of one bidang in m² (Shoelace), 0 when it is not a polygon yet. */
+export function polygonArea(polygon: LandPolygon): number {
+  const coordinates = validCoordinates(polygon.coordinates);
+  if (coordinates.length < MIN_POLYGON_POINTS) return 0;
+  return calculatePolygonArea(coordinates);
+}
+
+/**
+ * What one bidang measured, ready to be printed or tabulated: its own persil
+ * number and tape measurements beside the two areas — the one the map computes
+ * and the one the surveyor recorded.
+ */
+export interface BidangRincian {
+  id: string;
+  /** 0-based position in the list. */
+  index: number;
+  /** "Bidang 2" or the KML placemark name. */
+  label: string;
+  nomorPersil?: string;
+  /** m² measured at the patok, when it was. */
+  luasManual?: number;
+  panjang?: number;
+  lebar?: number;
+  /** m² from the drawn boundary. */
+  luasHitung: number;
+  /**
+   * The area this bidang counts as: what was measured, falling back to what the
+   * boundary computes. Never both, so the totals cannot double-count.
+   */
+  luasPengukuran: number;
+}
+
+export function bidangRincianList(polygons: LandPolygon[]): BidangRincian[] {
+  return polygons.map((polygon, index) => {
+    const luasHitung = polygonArea(polygon);
+    const luasManual = measurement(polygon.luasManual);
+    return {
+      id: polygon.id,
+      index,
+      label: polygonLabel(polygon, index),
+      nomorPersil: persilNumber(polygon.nomorPersil),
+      luasManual,
+      panjang: measurement(polygon.panjang),
+      lebar: measurement(polygon.lebar),
+      luasHitung,
+      luasPengukuran: luasManual ?? luasHitung,
+    };
+  });
+}
+
+/**
+ * Total manually measured area, or undefined when no bidang was measured by
+ * hand at all — the difference matters: 0 m² would read as a measurement.
+ */
+export function totalLuasManual(polygons: LandPolygon[]): number | undefined {
+  const measured = polygons
+    .map((polygon) => measurement(polygon.luasManual))
+    .filter((value): value is number => value !== undefined);
+  return measured.length > 0 ? measured.reduce((total, value) => total + value, 0) : undefined;
+}
+
+/** The area the certificate states: measured where it was, computed elsewhere. */
+export function totalLuasPengukuran(polygons: LandPolygon[]): number {
+  return bidangRincianList(polygons).reduce(
+    (total, bidang) => total + bidang.luasPengukuran,
+    0
+  );
+}
+
+/**
+ * The pengajuan-level mirrors of the per-bidang fields, for the payload snapshot
+ * and the `submissions.luas_manual` column.
+ *
+ * Luas manual is a **total** — it is summed across bidang, because that column
+ * and the "(Manual: …)" line beside it describe the whole claim. The other three
+ * cannot be summed, so they mirror the first bidang exactly as
+ * `coordinatesGeografis` mirrors its ring.
+ */
+export function derivedBidangFields(polygons: LandPolygon[]): {
+  nomorPersil?: string;
+  luasManual?: number;
+  panjangLahan?: number;
+  lebarLahan?: number;
+} {
+  const first = polygons[0];
+  return {
+    nomorPersil: persilNumber(first?.nomorPersil),
+    luasManual: totalLuasManual(polygons),
+    panjangLahan: measurement(first?.panjang),
+    lebarLahan: measurement(first?.lebar),
+  };
 }
 
 /** A closed GeoJSON ring ([lng, lat], first vertex repeated at the end). */

@@ -77,7 +77,10 @@ export const SPPTGDocument: React.FC<SPPTGDocumentProps> = ({
       )}
       <SPPTGPage4 data={data} config={config} />
       {/* Lampiran 2+: the boundary as lat/lon and UTM, one sheet per bidang
-          (split further when a bidang has more points than a sheet holds). */}
+          (split further when a bidang has more points than a sheet holds).
+          Nomor persil and the measurements of each bidang are stated on page 1
+          itself — a pengajuan covers at most two, which page 1 has room to name
+          outright. */}
       {coordinateSheets(data).map((sheet) => (
         <SPPTGCoordinatePage
           key={`koordinat-${sheet.page}`}

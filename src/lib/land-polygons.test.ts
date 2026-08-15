@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  bidangRincianList,
+  derivedBidangFields,
   draftPolygons,
   geometryToMultiPolygonWKT,
   isUsablePolygon,
   polygonsPatch,
   polygonsToMultiPolygon,
+  totalLuasManual,
+  totalLuasPengukuran,
   totalPolygonArea,
 } from './land-polygons';
 import type { GeographicCoordinate, LandPolygon } from '@/types';
@@ -51,6 +55,93 @@ describe('draftPolygons', () => {
 
     expect(polygons[0].id).toBe('P-1');
   });
+
+  it('adopts the pengajuan-level measurements of a lone bidang', () => {
+    const [bidang] = draftPolygons({
+      polygons: [{ id: 'P-1', coordinates: ring(0) }],
+      nomorPersil: '12/A',
+      luasManual: 1500,
+      panjangLahan: 50,
+      lebarLahan: 30,
+    });
+
+    expect(bidang.nomorPersil).toBe('12/A');
+    expect(bidang.luasManual).toBe(1500);
+    expect(bidang.panjang).toBe(50);
+    expect(bidang.lebar).toBe(30);
+  });
+
+  it("does not overwrite a bidang's own measurements with the old ones", () => {
+    const [bidang] = draftPolygons({
+      polygons: [{ id: 'P-1', coordinates: ring(0), nomorPersil: '99/Z', luasManual: 800 }],
+      nomorPersil: '12/A',
+      luasManual: 1500,
+    });
+
+    expect(bidang.nomorPersil).toBe('99/Z');
+    expect(bidang.luasManual).toBe(800);
+  });
+
+  it('leaves a legacy multi-bidang draft alone rather than pinning the total to one bidang', () => {
+    // The old fields described all the bidang at once; attributing 3.000 m² to
+    // the first would state an area it never had.
+    const polygons = draftPolygons({
+      polygons: [
+        { id: 'P-1', coordinates: ring(0) },
+        { id: 'P-2', coordinates: ring(1) },
+      ],
+      nomorPersil: '12/A',
+      luasManual: 3000,
+    });
+
+    expect(polygons.every((polygon) => polygon.luasManual === undefined)).toBe(true);
+    expect(polygons.every((polygon) => polygon.nomorPersil === undefined)).toBe(true);
+  });
+});
+
+describe('per-bidang measurements', () => {
+  const polygons = [
+    { id: 'P-1', coordinates: ring(0), nomorPersil: '12/A', luasManual: 1500, panjang: 50 },
+    { id: 'P-2', coordinates: ring(1), nomorPersil: '13/B' },
+  ];
+
+  it('reports what each bidang measured, falling back to its drawn area', () => {
+    const [first, second] = bidangRincianList(polygons);
+
+    expect(first.nomorPersil).toBe('12/A');
+    expect(first.luasPengukuran).toBe(1500);
+    expect(second.luasManual).toBeUndefined();
+    // Not measured by hand, so the bidang counts as what its boundary computes.
+    expect(second.luasPengukuran).toBe(second.luasHitung);
+    expect(second.luasHitung).toBeGreaterThan(0);
+  });
+
+  it('sums the manual areas, and says nothing when none was recorded', () => {
+    expect(totalLuasManual(polygons)).toBe(1500);
+    expect(totalLuasManual([{ id: 'P-1', coordinates: ring(0) }])).toBeUndefined();
+  });
+
+  it('never counts a bidang twice in the stated area', () => {
+    const [first, second] = bidangRincianList(polygons);
+
+    expect(totalLuasPengukuran(polygons)).toBeCloseTo(
+      first.luasPengukuran + second.luasPengukuran
+    );
+  });
+
+  it('mirrors the first bidang but totals the manual area', () => {
+    expect(
+      derivedBidangFields([
+        { id: 'P-1', coordinates: ring(0), nomorPersil: '12/A', luasManual: 1500, panjang: 50, lebar: 30 },
+        { id: 'P-2', coordinates: ring(1), nomorPersil: '13/B', luasManual: 900, panjang: 20 },
+      ])
+    ).toEqual({
+      nomorPersil: '12/A',
+      luasManual: 2400,
+      panjangLahan: 50,
+      lebarLahan: 30,
+    });
+  });
 });
 
 describe('polygonsPatch', () => {
@@ -85,6 +176,32 @@ describe('polygonsPatch', () => {
 
   it('clears the mirror when every polygon is removed', () => {
     expect(polygonsPatch([])).toEqual({ polygons: [], coordinatesGeografis: [] });
+  });
+
+  it('stores a cleared measurement as nothing, never as zero or an empty string', () => {
+    const [bidang] = polygonsPatch([
+      {
+        id: 'P-1',
+        coordinates: ring(0),
+        nomorPersil: '   ',
+        luasManual: 0,
+        panjang: Number.NaN,
+      },
+    ]).polygons;
+
+    expect(bidang.nomorPersil).toBeUndefined();
+    expect(bidang.luasManual).toBeUndefined();
+    expect(bidang.panjang).toBeUndefined();
+  });
+
+  it('leaves a persil number being typed alone', () => {
+    // Trimming here would eat the space in "12 A" mid-keystroke; the editor
+    // trims on blur instead.
+    const [bidang] = polygonsPatch([
+      { id: 'P-1', coordinates: ring(0), nomorPersil: '12 ' },
+    ]).polygons;
+
+    expect(bidang.nomorPersil).toBe('12 ');
   });
 });
 

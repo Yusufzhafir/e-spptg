@@ -40,9 +40,11 @@ import type { ReferencePolygon } from '@/components/maps/DrawingMap';
 import { geoJSONToPaths } from '@/lib/map-utils';
 import {
   allPolygonCoordinates,
+  bidangRincianList,
   draftPolygons,
   isUsablePolygon,
   polygonsToMultiPolygon,
+  totalLuasManual,
 } from '@/lib/land-polygons';
 import {
   describeOverlapSources,
@@ -419,6 +421,10 @@ export function Step3Results({
     () => polygons.filter(isUsablePolygon),
     [polygons]
   );
+  // What each bidang measured — the verifier decides on this screen, so the
+  // persil numbers and areas have to be visible per parcel, not folded into one.
+  const rincianBidang = useMemo(() => bidangRincianList(polygons), [polygons]);
+  const luasManualTotal = useMemo(() => totalLuasManual(polygons), [polygons]);
   const previewCenter = useMemo(() => {
     const first = allPolygonCoordinates(usablePolygons)[0];
     return {
@@ -639,7 +645,66 @@ export function Step3Results({
               tercatat
               {usablePolygons.length > 1 ? ` pada ${usablePolygons.length} bidang` : ''}
             </p>
+            {luasManualTotal != null && (
+              <p className="text-xs text-blue-700 mt-1">
+                Luas manual: {luasManualTotal.toLocaleString('id-ID')} m²
+              </p>
+            )}
           </div>
+
+          {/* Per-bidang record. Nomor persil and the tape measurements belong to
+              one parcel each, so they are listed rather than summarised — a
+              decision is taken on this screen. */}
+          {rincianBidang.length > 0 && (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+              <h3 className="text-gray-900 mb-3">
+                Rincian Bidang
+                {rincianBidang.length > 1 ? ` (${rincianBidang.length})` : ''}
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-gray-600">
+                      <th className="pb-2 pr-3 font-normal">Bidang</th>
+                      <th className="pb-2 pr-3 font-normal">Nomor Persil</th>
+                      <th className="pb-2 pr-3 text-right font-normal">Luas Peta</th>
+                      <th className="pb-2 pr-3 text-right font-normal">Luas Manual</th>
+                      <th className="pb-2 text-right font-normal">P × L</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rincianBidang.map((bidang) => (
+                      <tr key={bidang.id} className="border-t border-gray-200">
+                        <td className="py-2 pr-3 whitespace-nowrap text-gray-900">
+                          {bidang.label}
+                        </td>
+                        <td className="py-2 pr-3 text-gray-900">
+                          {bidang.nomorPersil || '-'}
+                        </td>
+                        <td className="py-2 pr-3 text-right text-gray-900 whitespace-nowrap">
+                          {bidang.luasHitung
+                            ? `${Math.round(bidang.luasHitung).toLocaleString('id-ID')} m²`
+                            : '-'}
+                        </td>
+                        <td className="py-2 pr-3 text-right text-gray-900 whitespace-nowrap">
+                          {bidang.luasManual != null
+                            ? `${bidang.luasManual.toLocaleString('id-ID')} m²`
+                            : '-'}
+                        </td>
+                        <td className="py-2 text-right text-gray-900 whitespace-nowrap">
+                          {bidang.panjang != null || bidang.lebar != null
+                            ? `${bidang.panjang?.toLocaleString('id-ID') ?? '-'} × ${
+                                bidang.lebar?.toLocaleString('id-ID') ?? '-'
+                              } m`
+                            : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Overlap Status */}
           <div

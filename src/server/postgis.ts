@@ -18,6 +18,8 @@ export interface OverlapCalculation {
 /** One submission × kawasan overlap pair, for the system-wide overlap report. */
 export interface SubmissionOverlapRow {
   submissionId: number;
+  /** The kawasan side of the pair, so the report can be drawn and grouped. */
+  kawasanId: number;
   namaPemilik: string;
   desaNama: string | null;
   kecamatan: string;
@@ -32,6 +34,11 @@ export interface SubmissionOverlapRow {
  * System-wide "Cek Tumpang Tindih": every submission whose polygon intersects an
  * *active* prohibited area, scoped to what the caller may see.
  *
+ * Only **recorded** pengajuan count — `SPPTG terdaftar` and `SPPTG terdata`,
+ * still `is_valid`. Those are the two the map draws and the two that assert a
+ * claim over the land; a rejected or under-review berkas sitting inside a
+ * kawasan is the system working, not a conflict to report.
+ *
  * NB: areas are measured by casting to `geography` so the result is real m² —
  * plain ST_Area on SRID 4326 geometry returns square degrees.
  */
@@ -44,7 +51,11 @@ export async function findOverlappingSubmissions(
   // Only submissions that are actually shown on the map count as a conflict:
   // `is_valid = false` means the entry was flagged invalid and its polygon is
   // hidden, so reporting it as an overlap contradicts what the user can see.
-  const conditions = [sql`pa.aktif_di_validasi = true`, sql`s.is_valid = true`];
+  const conditions = [
+    sql`pa.aktif_di_validasi = true`,
+    sql`s.is_valid = true`,
+    sql`s.status IN ('SPPTG terdaftar', 'SPPTG terdata')`,
+  ];
   if (scope.ownerUserId !== undefined) {
     conditions.push(sql`s.owner_user_id = ${scope.ownerUserId}`);
   }
@@ -59,6 +70,7 @@ export async function findOverlappingSubmissions(
   const result = await queryDb.execute(sql`
     SELECT
       s.id AS submission_id,
+      pa.id AS kawasan_id,
       s.nama_pemilik,
       s.kecamatan,
       s.status,
@@ -81,6 +93,7 @@ export async function findOverlappingSubmissions(
     const r = row as Record<string, unknown>;
     return {
       submissionId: Number(r.submission_id),
+      kawasanId: Number(r.kawasan_id),
       namaPemilik: String(r.nama_pemilik ?? ''),
       desaNama: r.nama_desa == null ? null : String(r.nama_desa),
       kecamatan: String(r.kecamatan ?? ''),

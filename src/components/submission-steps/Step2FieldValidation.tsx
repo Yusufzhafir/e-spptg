@@ -25,14 +25,18 @@ import {
   overlapSourceLabel,
 } from '@/lib/overlap-results';
 import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
-import { parseKMLFile } from '@/lib/kmz-parser';
+import { parseGeospatialFile } from '@/lib/kmz-parser';
 import {
+  bidangRincianList,
   createPolygonId,
+  derivedBidangFields,
   draftPolygons,
   isUsablePolygon,
+  MAX_POLYGONS_PER_SUBMISSION,
   MIN_POLYGON_POINTS,
   polygonLabel,
   polygonsPatch,
+  totalLuasManual,
   totalPolygonArea,
   validCoordinates,
 } from '@/lib/land-polygons';
@@ -78,6 +82,7 @@ import {
   X,
   Check,
   Lock,
+  LockOpen,
   Shapes,
   Users,
 } from 'lucide-react';
@@ -201,13 +206,18 @@ export function Step2FieldValidation({
   // Initialize coordinate system from draft or default to geografis
   const coordinateSystem = draft.coordinateSystem || 'geografis';
 
-  // Keyed on the geometry fields, not the whole draft: `draft` gets a new
+  // Keyed on the polygon fields, not the whole draft: `draft` gets a new
   // identity on every keystroke in this step, and a fresh `polygons` array
   // cascades into `referencePolygons`, which makes the map tear down and rebuild
   // every kawasan and SPPTG polygon it is drawing as reference.
+  //
+  // `draftPolygons` also reads the draft-level nomor persil / luas manual /
+  // panjang / lebar, to adopt them onto a lone pre-move bidang. Those are not
+  // deps: nothing writes them without writing `polygons` in the same patch
+  // (`applyPolygons`), so this cannot go stale.
   const polygons = useMemo(
     () => draftPolygons(draft),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the geometry matters here
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
     [draft.polygons, draft.coordinatesGeografis]
   );
 
@@ -227,15 +237,36 @@ export function Step2FieldValidation({
   );
   const isActiveLocked = Boolean(activePolygon?.locked);
   // The coordinate table and the map are frozen for a Viewer *and* for a bidang
-  // whose vertices came from a KML: the file is the survey record.
+  // whose vertices came from a KML: the file is the survey record until someone
+  // deliberately lifts that bidang's lock.
   const coordinatesReadOnly = readOnly || isActiveLocked;
 
-  /** Persist a new polygon list, keeping the mirrored fields in step. */
+  /**
+   * Persist a new polygon list, keeping the mirrored fields in step.
+   *
+   * The pengajuan-level nomor persil / luas manual / panjang / lebar are written
+   * here too, not just on save: they are derived from the bidang now, and
+   * leaving a stale copy behind would let a value the surveyor just cleared come
+   * back the next time the draft is loaded.
+   */
   const applyPolygons = useCallback(
     (next: LandPolygon[]) => {
-      onUpdateDraft(polygonsPatch(next));
+      const patch = polygonsPatch(next);
+      onUpdateDraft({ ...patch, ...derivedBidangFields(patch.polygons) });
     },
     [onUpdateDraft]
+  );
+
+  /** Edit one field of one bidang. */
+  const updatePolygonField = useCallback(
+    (polygonId: string, patch: Partial<LandPolygon>) => {
+      applyPolygons(
+        polygons.map((polygon) =>
+          polygon.id === polygonId ? { ...polygon, ...patch } : polygon
+        )
+      );
+    },
+    [applyPolygons, polygons]
   );
 
   /** Replace the coordinates of the bidang currently being edited. */
@@ -387,6 +418,12 @@ export function Step2FieldValidation({
 
   /** Start a new, empty bidang and point the editor at it. */
   const handleAddPolygon = () => {
+    if (polygons.length >= MAX_POLYGONS_PER_SUBMISSION) {
+      toast.error(
+        `Satu pengajuan maksimal ${MAX_POLYGONS_PER_SUBMISSION} bidang. Ajukan bidang selebihnya sebagai pengajuan terpisah.`
+      );
+      return;
+    }
     const created: LandPolygon = { id: createPolygonId(), coordinates: [] };
     applyPolygons([...polygons, created]);
     setActivePolygonId(created.id);
@@ -400,6 +437,37 @@ export function Step2FieldValidation({
       setActivePolygonId(remaining[0]?.id ?? null);
     }
     toast.info('Bidang dihapus');
+  };
+
+  /**
+   * Flip the lock on one bidang, both ways.
+   *
+   * A KML import arrives locked because the file is the survey record, but the
+   * lock is a working state, not a verdict: it is lifted to correct a bad
+   * import, and put back — on an imported *or* a hand-drawn bidang — once the
+   * boundary is right, so a later stray drag on the map cannot move it.
+   */
+  const handleToggleLock = (polygonId: string) => {
+    const target = polygons.find((polygon) => polygon.id === polygonId);
+    if (!target) return;
+    const nextLocked = !target.locked;
+    // Nothing to protect yet, and a locked empty bidang cannot be drawn at all.
+    if (nextLocked && target.coordinates.length === 0) {
+      toast.error('Bidang masih kosong. Gambar polygon-nya dulu sebelum dikunci.');
+      return;
+    }
+
+    applyPolygons(
+      polygons.map((polygon) =>
+        polygon.id === polygonId ? { ...polygon, locked: nextLocked } : polygon
+      )
+    );
+    setActivePolygonId(polygonId);
+    toast.info(
+      nextLocked
+        ? 'Bidang dikunci. Koordinatnya tidak dapat diubah sampai kunci dibuka lagi.'
+        : 'Kunci dibuka. Koordinat bidang ini sekarang dapat diubah.'
+    );
   };
 
   const handleGeographicCoordinateBlur = () => {
@@ -571,28 +639,36 @@ export function Step2FieldValidation({
   };
 
   /**
-   * Import every polygon in the file — a surveyor's KML routinely carries all the
-   * bidang of one claim. The imported bidang replace the current list and come in
-   * locked: the file is the survey record, so its vertices are not something to
-   * nudge by hand afterwards (the lock can be lifted per bidang).
+   * Import every polygon in the file — a surveyor's KML or shapefile routinely
+   * carries all the bidang of one claim. The imported bidang replace the current
+   * list and come in locked: the file is the survey record, so its vertices are
+   * not something to nudge by hand afterwards (the lock toggles per bidang — see
+   * {@link handleToggleLock}).
+   *
+   * A `.zip` is a shapefile set (.shp/.dbf/.shx/.prj/.cpg) — the parts are
+   * useless apart, which is why the archive is the unit of upload — and falls
+   * back to being read as a KMZ when it turns out to hold a KML instead.
    */
   const handleKmlUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.target;
     const file = input.files?.[0];
     if (!file) return;
 
-    if (!file.name.toLowerCase().endsWith('.kml')) {
-      toast.error('Format file tidak didukung. Harap unggah file .kml');
+    const fileName = file.name.toLowerCase();
+    if (!/\.(kml|kmz|zip)$/.test(fileName)) {
+      toast.error(
+        'Format file tidak didukung. Harap unggah file .kml, .kmz, atau .zip berisi shapefile (.shp, .dbf, .shx, .prj)'
+      );
       input.value = '';
       return;
     }
 
     setIsParsingKml(true);
     try {
-      const result = await parseKMLFile(file);
+      const result = await parseGeospatialFile(file);
 
       if (!result.success) {
-        toast.error(result.error || 'Gagal memproses file KML');
+        toast.error(result.error || 'Gagal memproses file');
         return;
       }
 
@@ -614,7 +690,16 @@ export function Step2FieldValidation({
 
       if (imported.length === 0) {
         toast.error(
-          `File KML harus berisi minimal ${MIN_POLYGON_POINTS} titik koordinat per polygon`
+          `File harus berisi minimal ${MIN_POLYGON_POINTS} titik koordinat per polygon`
+        );
+        return;
+      }
+
+      // Refused rather than truncated: importing the first two bidang of a file
+      // that holds more would issue a certificate quietly missing a parcel.
+      if (imported.length > MAX_POLYGONS_PER_SUBMISSION) {
+        toast.error(
+          `File berisi ${imported.length} bidang, sedangkan satu pengajuan maksimal ${MAX_POLYGONS_PER_SUBMISSION} bidang. Pisahkan menjadi beberapa pengajuan atau sesuaikan isi file.`
         );
         return;
       }
@@ -627,13 +712,13 @@ export function Step2FieldValidation({
         0
       );
       toast.success(
-        `File KML berhasil diimpor: ${imported.length} bidang, ${totalPoints} titik koordinat. Polygon terkunci.`
+        `File berhasil diimpor: ${imported.length} bidang, ${totalPoints} titik koordinat. Polygon terkunci — buka kunci bila perlu diubah.`
       );
     } catch (error) {
       toast.error(
         error instanceof Error
-          ? `Gagal memproses file KML: ${error.message}`
-          : 'Gagal memproses file KML'
+          ? `Gagal memproses file: ${error.message}`
+          : 'Gagal memproses file'
       );
     } finally {
       setIsParsingKml(false);
@@ -682,28 +767,68 @@ export function Step2FieldValidation({
     { enabled: !canSeeAllVillages }
   );
 
-  const referencePolygons = useMemo<ReferencePolygon[]>(() => {
-    const result: ReferencePolygon[] = [];
+  /**
+   * What the reference layer actually depends on: the *other* bidang's outlines
+   * and labels, and nothing else about them.
+   *
+   * The map rebuilds every google.maps.Polygon it holds — hundreds of kawasan
+   * and SPPTG — whenever the array handed to it changes identity, so this is
+   * keyed on a signature rather than on `polygons`, which gets a new identity on
+   * every keystroke in this step. Editing the active bidang leaves it untouched
+   * too: that boundary is drawn by Terra Draw, not as reference.
+   */
+  const otherBidangSignature = useMemo(
+    () =>
+      polygons
+        .map((polygon, index) =>
+          index === activePolygonIndex
+            ? ''
+            : [
+                polygon.id,
+                polygonLabel(polygon, index),
+                validCoordinates(polygon.coordinates)
+                  .map((coord) => `${coord.latitude},${coord.longitude}`)
+                  .join(';'),
+              ].join('|')
+        )
+        .join('||'),
+    [polygons, activePolygonIndex]
+  );
 
-    // The other bidang of this same pengajuan. Only one polygon is editable at a
-    // time (Terra Draw owns a single feature), so the rest are drawn as static
-    // reference — otherwise adding a second bidang would look like it erased the
-    // first.
-    polygons.forEach((polygon, index) => {
-      if (index === activePolygonIndex) return;
-      const path = validCoordinates(polygon.coordinates).map((coord) => ({
-        lat: Number(coord.latitude),
-        lng: Number(coord.longitude),
-      }));
-      if (path.length < MIN_POLYGON_POINTS) return;
-      result.push({
-        id: `bidang-${polygon.id}`,
-        path,
-        strokeColor: OTHER_POLYGON_COLOR,
-        fillColor: OTHER_POLYGON_COLOR,
-        label: `Bidang lain: ${polygonLabel(polygon, index)}`,
+  // Only one polygon is editable at a time (Terra Draw owns a single feature),
+  // so the rest are drawn as static reference — otherwise adding a second
+  // bidang would look like it erased the first.
+  const otherBidangReferences = useMemo<ReferencePolygon[]>(
+    () => {
+      const result: ReferencePolygon[] = [];
+      polygons.forEach((polygon, index) => {
+        if (index === activePolygonIndex) return;
+        const path = validCoordinates(polygon.coordinates).map((coord) => ({
+          lat: Number(coord.latitude),
+          lng: Number(coord.longitude),
+        }));
+        if (path.length < MIN_POLYGON_POINTS) return;
+        result.push({
+          id: `bidang-${polygon.id}`,
+          path,
+          strokeColor: OTHER_POLYGON_COLOR,
+          fillColor: OTHER_POLYGON_COLOR,
+          label: `Bidang lain: ${polygonLabel(polygon, index)}`,
+        });
       });
-    });
+      return result;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the signature is the dep; see above
+    [otherBidangSignature]
+  );
+
+  /**
+   * Everything on the reference layer that has nothing to do with this draft:
+   * kawasan and the SPPTG already on the map. Kept in its own memo so a change
+   * to the draft's own bidang never re-walks hundreds of stored geometries.
+   */
+  const staticReferences = useMemo<ReferencePolygon[]>(() => {
+    const result: ReferencePolygon[] = [];
 
     // Kawasan Non-SPPTG (prohibited areas)
     const areas = (prohibitedAreasData ?? []) as Array<{
@@ -776,13 +901,17 @@ export function Step2FieldValidation({
 
     return result;
   }, [
-    polygons,
-    activePolygonIndex,
     prohibitedAreasData,
     existingSubmissionsData,
     allVillagePolygons,
     canSeeAllVillages,
   ]);
+
+  // One array for the map, and a new one only when something on it moved.
+  const referencePolygons = useMemo<ReferencePolygon[]>(
+    () => [...otherBidangReferences, ...staticReferences],
+    [otherBidangReferences, staticReferences]
+  );
 
   /** Bidang complete enough to be checked, measured and submitted. */
   const usablePolygons = useMemo(
@@ -814,6 +943,9 @@ export function Step2FieldValidation({
   };
 
   const luas = useMemo(() => totalPolygonArea(polygons), [polygons]);
+  const rincianBidang = useMemo(() => bidangRincianList(polygons), [polygons]);
+  const luasManualTotal = useMemo(() => totalLuasManual(polygons), [polygons]);
+  const activeLuasHitung = rincianBidang[activePolygonIndex]?.luasHitung ?? 0;
 
   // Keep luasLahan in step with the drawn bidang (sum across all of them)
   useEffect(() => {
@@ -1124,16 +1256,6 @@ export function Step2FieldValidation({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="nomorPersil">Nomor Persil</Label>
-            <Input
-              id="nomorPersil"
-              value={draft.nomorPersil || ''}
-              onChange={(e) => onUpdateDraft({ nomorPersil: e.target.value })}
-              placeholder="Masukkan nomor persil"
-            />
-          </div>
-
-          <div>
             <Label htmlFor="rtrw">RT / RW</Label>
             <Input
               id="rtrw"
@@ -1142,17 +1264,20 @@ export function Step2FieldValidation({
               placeholder="Contoh: 001/002"
             />
           </div>
+
+          <div>
+            <Label htmlFor="dusun">Dusun</Label>
+            <Input
+              id="dusun"
+              value={draft.dusun || ''}
+              onChange={(e) => onUpdateDraft({ dusun: e.target.value })}
+              placeholder="Masukkan nama dusun"
+            />
+          </div>
         </div>
 
-        <div>
-          <Label htmlFor="dusun">Dusun</Label>
-          <Input
-            id="dusun"
-            value={draft.dusun || ''}
-            onChange={(e) => onUpdateDraft({ dusun: e.target.value })}
-            placeholder="Masukkan nama dusun"
-          />
-        </div>
+        {/* Nomor persil is recorded per bidang, next to that bidang's
+            measurements — see "Rincian Bidang" below the coordinate table. */}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -1250,18 +1375,27 @@ export function Step2FieldValidation({
 
         {!readOnly && (
         <div className="space-y-1">
-          <Label htmlFor="kml-coordinate-file">Impor KML (Opsional)</Label>
+          <Label htmlFor="kml-coordinate-file">
+            Impor KML / Shapefile (Opsional)
+          </Label>
           <Input
             id="kml-coordinate-file"
             type="file"
-            accept=".kml"
+            accept=".kml,.kmz,.zip"
             onChange={handleKmlUpload}
             disabled={isParsingKml}
           />
           <p className="text-xs text-gray-500">
-            Unggah file KML untuk menggantikan seluruh bidang saat ini. File dengan
-            banyak polygon akan dimuat sebagai beberapa bidang sekaligus, dan
-            terkunci agar sama persis dengan file aslinya.
+            Unggah file .kml/.kmz, atau .zip berisi shapefile lengkap (.shp, .dbf,
+            .shx, .prj, .cpg) untuk menggantikan seluruh bidang saat ini. File
+            dengan beberapa polygon dimuat sebagai beberapa bidang sekaligus
+            (maksimal {MAX_POLYGONS_PER_SUBMISSION} bidang), dan terkunci agar sama
+            persis dengan file aslinya. Kunci dapat dibuka dan dipasang kembali per
+            bidang.
+          </p>
+          <p className="text-xs text-gray-500">
+            Shapefile wajib menyertakan .prj — tanpa berkas itu koordinat UTM tidak
+            dapat dikonversi ke WGS 84.
           </p>
           {isParsingKml && <p className="text-xs text-blue-600">Memproses file...</p>}
         </div>
@@ -1273,21 +1407,39 @@ export function Step2FieldValidation({
             <div className="flex items-center gap-2">
               <Shapes className="w-4 h-4 text-gray-600" />
               <p className="text-sm font-medium text-gray-900">
-                Bidang Lahan ({polygons.length || 0})
+                Bidang Lahan ({polygons.length || 0} dari{' '}
+                {MAX_POLYGONS_PER_SUBMISSION})
               </p>
             </div>
             {!readOnly && (
-              <Button onClick={handleAddPolygon} variant="outline" size="sm">
+              <Button
+                onClick={handleAddPolygon}
+                variant="outline"
+                size="sm"
+                disabled={polygons.length >= MAX_POLYGONS_PER_SUBMISSION}
+                title={
+                  polygons.length >= MAX_POLYGONS_PER_SUBMISSION
+                    ? `Maksimal ${MAX_POLYGONS_PER_SUBMISSION} bidang per pengajuan`
+                    : undefined
+                }
+              >
                 <Plus className="w-4 h-4 mr-2" />
                 Tambah Bidang
               </Button>
             )}
           </div>
 
+          {polygons.length >= MAX_POLYGONS_PER_SUBMISSION && !readOnly && (
+            <p className="text-xs text-gray-500">
+              Batas {MAX_POLYGONS_PER_SUBMISSION} bidang per pengajuan tercapai.
+              Bidang selebihnya diajukan sebagai pengajuan terpisah.
+            </p>
+          )}
+
           {polygons.length === 0 ? (
             <p className="text-xs text-gray-500">
-              Belum ada bidang. Gambar polygon di peta, impor KML, atau tambah titik
-              koordinat.
+              Belum ada bidang. Gambar polygon di peta, impor KML/shapefile, atau
+              tambah titik koordinat.
             </p>
           ) : (
             <div className="flex flex-wrap gap-2">
@@ -1315,8 +1467,32 @@ export function Step2FieldValidation({
                         ({polygon.coordinates.length} titik)
                       </span>
                     </button>
-                    {polygon.locked && (
-                      <Lock className="w-3 h-3 text-gray-500" aria-label="Terkunci" />
+                    {readOnly ? (
+                      polygon.locked && (
+                        <Lock className="w-3 h-3 text-gray-500" aria-label="Terkunci" />
+                      )
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleLock(polygon.id)}
+                        className={
+                          polygon.locked
+                            ? 'text-amber-600 hover:text-amber-700'
+                            : 'text-gray-400 hover:text-gray-700'
+                        }
+                        aria-label={`${polygon.locked ? 'Buka kunci' : 'Kunci'} ${polygonLabel(polygon, index)}`}
+                        title={
+                          polygon.locked
+                            ? 'Terkunci — klik untuk mengubah koordinat'
+                            : 'Klik untuk mengunci agar koordinat tidak berubah'
+                        }
+                      >
+                        {polygon.locked ? (
+                          <Lock className="w-3 h-3" />
+                        ) : (
+                          <LockOpen className="w-3 h-3" />
+                        )}
+                      </button>
                     )}
                     {!readOnly && (
                       <button
@@ -1335,12 +1511,40 @@ export function Step2FieldValidation({
             </div>
           )}
 
-          {isActiveLocked && !readOnly && (
-            <p className="flex items-center gap-1.5 text-xs text-amber-700">
-              <Lock className="w-3.5 h-3.5" />
-              Bidang ini diimpor dari file KML dan tidak dapat diubah. Hapus bidang
-              lalu impor ulang bila koordinatnya keliru.
-            </p>
+          {!readOnly && activePolygon && (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {isActiveLocked ? (
+                <p className="flex items-center gap-1.5 text-amber-700">
+                  <Lock className="w-3.5 h-3.5" />
+                  Bidang ini terkunci — koordinat dan peta tidak dapat diubah. Buka
+                  kunci bila batasnya perlu diperbaiki.
+                </p>
+              ) : (
+                <p className="flex items-center gap-1.5 text-gray-500">
+                  <LockOpen className="w-3.5 h-3.5" />
+                  Bidang ini dapat diubah. Kunci bila batasnya sudah benar, agar tidak
+                  tergeser saat menggambar bidang lain.
+                </p>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => handleToggleLock(activePolygon.id)}
+              >
+                {isActiveLocked ? (
+                  <>
+                    <LockOpen className="w-3.5 h-3.5 mr-1" />
+                    Buka Kunci
+                  </>
+                ) : (
+                  <>
+                    <Lock className="w-3.5 h-3.5 mr-1" />
+                    Kunci Bidang
+                  </>
+                )}
+              </Button>
+            </div>
           )}
         </div>
 
@@ -1570,67 +1774,177 @@ export function Step2FieldValidation({
                     Total dari {usablePolygons.length} bidang.
                   </p>
                 )}
+                {luasManualTotal != null && (
+                  <p className="text-xs text-blue-700 mt-1">
+                    <strong>Luas manual:</strong>{' '}
+                    {luasManualTotal.toLocaleString('id-ID')} m²
+                    {rincianBidang.filter((bidang) => bidang.luasManual != null).length > 1
+                      ? ' (total pengukuran manual seluruh bidang)'
+                      : ''}
+                  </p>
+                )}
               </div>
             )}
 
-            {/* Hand measurements taken at the patok. They stand beside the drawn
-                boundary rather than feeding it: the area on the certificate still
-                comes from the polygon (or Luas Manual). */}
+            {/* Recorded per bidang: a claim covering three parcels has three
+                persil numbers and three tape measurements. They stand beside the
+                drawn boundary rather than feeding it — the luas terhitung above
+                still comes from the polygon. */}
             <fieldset disabled={readOnly} className="space-y-3 min-w-0">
-              <div className="space-y-1">
-                 <Label htmlFor="luasManual">Luas Manual (m²)</Label>
-                 <Input
-                    id="luasManual"
-                    type="number"
-                    step="0.01"
-                    placeholder="Masukkan luas manual jika berbeda"
-                    value={draft.luasManual || ''}
-                    onChange={(e) => onUpdateDraft({ luasManual: parseFloat(e.target.value) || 0 })}
-                 />
-                 <p className="text-xs text-gray-500">
-                    Opsional: Masukkan luas hasil pengukuran manual jika berbeda dengan perhitungan otomatis.
-                 </p>
+              <div>
+                <h4 className="text-sm font-medium text-gray-900">
+                  Rincian Bidang
+                  {activePolygon
+                    ? ` — ${polygonLabel(activePolygon, activePolygonIndex)}`
+                    : ''}
+                </h4>
+                <p className="text-xs text-gray-500">
+                  Nomor persil dan ukuran lapangan dicatat per bidang. Pilih bidang
+                  lain di atas untuk mengisi rinciannya.
+                </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label htmlFor="panjangLahan">Panjang (m)</Label>
-                  <Input
-                    id="panjangLahan"
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    placeholder="Contoh: 40"
-                    value={draft.panjangLahan ?? ''}
-                    onChange={(e) =>
-                      onUpdateDraft({
-                        panjangLahan: parseMeasurement(e.target.value),
-                      })
-                    }
-                  />
-                </div>
+              {!activePolygon ? (
+                <p className="text-xs text-gray-500">
+                  Belum ada bidang untuk diisi rinciannya.
+                </p>
+              ) : (
+                <>
+                  <div className="space-y-1">
+                    <Label htmlFor="bidangNomorPersil">Nomor Persil</Label>
+                    <Input
+                      id="bidangNomorPersil"
+                      value={activePolygon.nomorPersil || ''}
+                      onChange={(e) =>
+                        updatePolygonField(activePolygon.id, {
+                          nomorPersil: e.target.value,
+                        })
+                      }
+                      // Trimmed here rather than on every keystroke, which would
+                      // swallow the space in "12 A" as it is typed.
+                      onBlur={(e) =>
+                        updatePolygonField(activePolygon.id, {
+                          nomorPersil: e.target.value.trim(),
+                        })
+                      }
+                      placeholder="Masukkan nomor persil bidang ini"
+                    />
+                  </div>
 
-                <div className="space-y-1">
-                  <Label htmlFor="lebarLahan">Lebar (m)</Label>
-                  <Input
-                    id="lebarLahan"
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    placeholder="Contoh: 25"
-                    value={draft.lebarLahan ?? ''}
-                    onChange={(e) =>
-                      onUpdateDraft({
-                        lebarLahan: parseMeasurement(e.target.value),
-                      })
-                    }
-                  />
+                  <div className="space-y-1">
+                    <Label htmlFor="bidangLuasManual">Luas Manual (m²)</Label>
+                    <Input
+                      id="bidangLuasManual"
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      placeholder="Masukkan luas manual jika berbeda"
+                      value={activePolygon.luasManual ?? ''}
+                      onChange={(e) =>
+                        updatePolygonField(activePolygon.id, {
+                          luasManual: parseMeasurement(e.target.value),
+                        })
+                      }
+                    />
+                    <p className="text-xs text-gray-500">
+                      Opsional: luas hasil pengukuran manual bidang ini bila berbeda
+                      dengan perhitungan peta
+                      {activeLuasHitung > 0
+                        ? ` (${activeLuasHitung.toLocaleString('id-ID')} m²)`
+                        : ''}
+                      .
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="bidangPanjang">Panjang (m)</Label>
+                      <Input
+                        id="bidangPanjang"
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        placeholder="Contoh: 40"
+                        value={activePolygon.panjang ?? ''}
+                        onChange={(e) =>
+                          updatePolygonField(activePolygon.id, {
+                            panjang: parseMeasurement(e.target.value),
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label htmlFor="bidangLebar">Lebar (m)</Label>
+                      <Input
+                        id="bidangLebar"
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        placeholder="Contoh: 25"
+                        value={activePolygon.lebar ?? ''}
+                        onChange={(e) =>
+                          updatePolygonField(activePolygon.id, {
+                            lebar: parseMeasurement(e.target.value),
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Opsional: ukuran hasil pengukuran di lapangan. Tidak mengubah
+                    luas terhitung dari polygon.
+                  </p>
+                </>
+              )}
+
+              {/* Every bidang at a glance, so a rincian filled on one tab is not
+                  mistaken for the whole pengajuan's. */}
+              {polygons.length > 1 && (
+                <div className="overflow-x-auto rounded-lg border border-gray-200">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Bidang</TableHead>
+                        <TableHead>Nomor Persil</TableHead>
+                        <TableHead className="text-right">Luas Peta (m²)</TableHead>
+                        <TableHead className="text-right">Luas Manual (m²)</TableHead>
+                        <TableHead className="text-right">P × L (m)</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rincianBidang.map((bidang) => (
+                        <TableRow
+                          key={bidang.id}
+                          className={
+                            bidang.index === activePolygonIndex ? 'bg-orange-50' : undefined
+                          }
+                        >
+                          <TableCell className="whitespace-nowrap">{bidang.label}</TableCell>
+                          <TableCell>{bidang.nomorPersil || '-'}</TableCell>
+                          <TableCell className="text-right">
+                            {bidang.luasHitung
+                              ? Math.round(bidang.luasHitung).toLocaleString('id-ID')
+                              : '-'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {bidang.luasManual != null
+                              ? bidang.luasManual.toLocaleString('id-ID')
+                              : '-'}
+                          </TableCell>
+                          <TableCell className="text-right whitespace-nowrap">
+                            {bidang.panjang != null || bidang.lebar != null
+                              ? `${bidang.panjang?.toLocaleString('id-ID') ?? '-'} × ${
+                                  bidang.lebar?.toLocaleString('id-ID') ?? '-'
+                                }`
+                              : '-'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
-              </div>
-              <p className="text-xs text-gray-500">
-                Opsional: ukuran hasil pengukuran di lapangan. Tidak mengubah luas
-                terhitung dari polygon.
-              </p>
+              )}
             </fieldset>
           </div>
 

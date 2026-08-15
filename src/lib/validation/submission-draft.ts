@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { isValidPhoneNumber, PHONE_NUMBER_ERROR } from '@/lib/phone-number';
 import { EMAIL_ERROR, isValidEmail } from '@/lib/email-address';
+import { MAX_POLYGONS_PER_SUBMISSION } from '@/lib/land-polygons';
 
 // ============================================================================
 // SHARED TYPES & SCHEMAS
@@ -92,6 +93,17 @@ export const landPolygonSchema = z.object({
    * Only an import ever sets this; a hand-drawn bidang stays editable.
    */
   locked: z.boolean().optional(),
+
+  /**
+   * Recorded at the patok for this bidang alone. A pengajuan covering several
+   * parcels has a persil number and a tape measurement per parcel, so these sit
+   * on the bidang rather than on the draft; the draft-level fields of the same
+   * name are derived mirrors (see `@/lib/land-polygons`).
+   */
+  nomorPersil: z.string().trim().optional(),
+  luasManual: z.number().positive('Luas manual harus positif').optional(),
+  panjang: z.number().positive('Panjang bidang harus positif').optional(),
+  lebar: z.number().positive('Lebar bidang harus positif').optional(),
 });
 
 export type LandPolygon = z.infer<typeof landPolygonSchema>;
@@ -178,7 +190,10 @@ export const step2LapanganSchema = z.object({
 
   polygons: z
     .array(landPolygonSchema)
-    .max(20, 'Maksimal 20 polygon per pengajuan')
+    .max(
+      MAX_POLYGONS_PER_SUBMISSION,
+      `Maksimal ${MAX_POLYGONS_PER_SUBMISSION} bidang per pengajuan`
+    )
     .optional(),
 
   // Calculated fields
@@ -187,6 +202,7 @@ export const step2LapanganSchema = z.object({
     .positive('Luas lahan harus positif')
     .optional(),
 
+  // Total of the per-bidang `luasManual`, derived on save.
   luasManual: z
     .number()
     .positive('Luas manual harus positif')
@@ -197,9 +213,10 @@ export const step2LapanganSchema = z.object({
     .positive('Keliling lahan harus positif')
     .optional(),
 
-  // Field measurements taken with a tape at the patok, recorded alongside the
-  // polygon. Optional — a plot that is not roughly rectangular has no single
-  // panjang/lebar, and the area still comes from the drawn boundary.
+  // Field measurements taken with a tape at the patok, recorded per bidang and
+  // mirrored here from the first one. Optional — a plot that is not roughly
+  // rectangular has no single panjang/lebar, and the area still comes from the
+  // drawn boundary.
   panjangLahan: z
     .number()
     .positive('Panjang lahan harus positif')
