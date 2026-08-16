@@ -10,9 +10,12 @@
  *
  * Only one polygon is editable at a time (Terra Draw owns a single feature); the
  * rest are drawn behind it as reference so adding a second block never looks
- * like it erased the first. Imported polygons are locked and stay locked: the
- * file is the authority for where the boundary runs, and a nudged vertex would
- * silently put the kawasan somewhere the SK does not.
+ * like it erased the first. Imported polygons arrive locked — the file is the
+ * authority for where the boundary runs, and a nudged vertex would silently put
+ * the kawasan somewhere the SK does not — but the lock is a working state, not a
+ * verdict: it can be lifted per block to correct a bad import and put back
+ * afterwards. It lives only in this editor's state; the saved kawasan is the
+ * geometry alone, so a reopened block always comes back unlocked.
  */
 
 import {
@@ -26,8 +29,18 @@ import {
 import { DrawingMap, type ReferencePolygon } from './maps/DrawingMap';
 import { trpc } from '@/trpc/client';
 import { geoJSONToPaths } from '@/lib/map-utils';
-import { parseGeospatialFile } from '@/lib/kmz-parser';
+import {
+  parseGeospatialFile,
+  UNLIMITED_POLYGON_POINTS,
+} from '@/lib/kmz-parser';
 import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
+import type { KawasanAttributeSuggestion } from '@/lib/shapefile-attributes';
+import {
+  groupPolygonsIntoKawasan,
+  isImportable,
+  type KawasanBulkHandoff,
+  type KawasanImportGroup,
+} from '@/lib/kawasan-bulk-import';
 import {
   createPolygonId,
   isUsablePolygon,
@@ -36,6 +49,11 @@ import {
   polygonsToMultiPolygon,
   validCoordinates,
 } from '@/lib/land-polygons';
+import {
+  checkKawasanImportSize,
+  countKawasanPoints,
+  KAWASAN_COORDINATE_PAGE_SIZE,
+} from '@/lib/kawasan-limits';
 import {
   parseUtmInputStrings,
   toLatLonFromUtm,
@@ -60,7 +78,7 @@ import {
   SelectValue,
 } from './ui/select';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
-import { Lock, Plus, Shapes, Trash2 } from 'lucide-react';
+import { Layers, Lock, LockOpen, Plus, Shapes, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type {
   GeoJSONMultiPolygon,
@@ -77,9 +95,41 @@ interface LocalUtmRow {
 
 interface KawasanGeometryEditorProps {
   initialGeoJSON?: unknown;
-  onChange: (geoJSON: GeoJSONMultiPolygon | null) => void;
+  /**
+   * The geometry, plus the block list behind it. The form needs the blocks
+   * themselves — the MultiPolygon has already dropped anything incomplete, so
+   * it cannot tell whether a block was left half-drawn.
+   */
+  onChange: (geoJSON: GeoJSONMultiPolygon | null, polygons: LandPolygon[]) => void;
+  /**
+   * Form fields an imported file's attribute table can fill in. Reported here,
+   * decided in the form: only it knows what the officer has already typed, and
+   * a file must never overwrite that.
+   */
+  onAttributesDetected?: (attributes: KawasanAttributeSuggestion) => void;
+  /**
+   * Escalate to the bulk importer when the file turns out to describe several
+   * kawasan rather than several blocks of one.
+   *
+   * Only Tambah Kawasan passes this: editing an existing kawasan is about one
+   * row, so there is nothing to split there. When it is absent the editor keeps
+   * its old behaviour and loads everything as blocks of this kawasan.
+   */
+  onBulkImportRequested?: (handoff: KawasanBulkHandoff) => void;
   /** Exclude this area's own polygon from the reference layer (edit mode) */
   excludeAreaId?: number;
+}
+
+/** A parsed file waiting on the officer to say what it is. */
+interface PendingImport {
+  fileName: string;
+  /** Everything in the file, as blocks of one kawasan. */
+  merged: LandPolygon[];
+  /** The same rings, split by the name their features carry. */
+  groups: KawasanImportGroup[];
+  atribut?: KawasanAttributeSuggestion;
+  /** Set when the file cannot be one kawasan; the merge option is then refused. */
+  mergeBlockedReason: string | null;
 }
 
 /** Colour of the other blocks of this same kawasan on the map. */
@@ -113,6 +163,8 @@ function toPolygons(geo: unknown): LandPolygon[] {
 export function KawasanGeometryEditor({
   initialGeoJSON,
   onChange,
+  onAttributesDetected,
+  onBulkImportRequested,
   excludeAreaId,
 }: KawasanGeometryEditorProps) {
   const [polygons, setPolygons] = useState<LandPolygon[]>(() => toPolygons(initialGeoJSON));
@@ -121,6 +173,7 @@ export function KawasanGeometryEditor({
     toPolygons(initialGeoJSON).some(isUsablePolygon) ? 1 : 0
   );
   const [isParsing, setIsParsing] = useState(false);
+  const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
 
   const activePolygonIndex = useMemo(() => {
     const index = polygons.findIndex((polygon) => polygon.id === activePolygonId);
@@ -134,8 +187,11 @@ export function KawasanGeometryEditor({
   );
   const isActiveLocked = Boolean(activePolygon?.locked);
 
-  const { data: areasData } = trpc.prohibitedAreas.list.useQuery({ limit: 500, offset: 0 });
-  const { data: submissionsData } = trpc.submissions.list.useQuery({ limit: 500, offset: 0 });
+  // Every kawasan and every mapped pengajuan, unpaged: this layer is what an
+  // officer checks a new boundary against, so a page of it would quietly hide
+  // the very clash they are looking for.
+  const { data: areasData } = trpc.prohibitedAreas.geometriSemua.useQuery();
+  const { data: submissionsData } = trpc.submissions.listMapPolygons.useQuery();
 
   const referencePolygons = useMemo<ReferencePolygon[]>(() => {
     const result: ReferencePolygon[] = [];
@@ -177,16 +233,17 @@ export function KawasanGeometryEditor({
       });
     });
 
-    const subs = (submissionsData?.items ?? []) as Array<{
+    // `listMapPolygons` is already filtered server-side to valid
+    // terdaftar/terdata, and carries no applicant name — which suits a
+    // reference layer: the officer needs to see *that* a claim is there and
+    // where, not whose it is.
+    const subs = (submissionsData ?? []) as Array<{
       id: number;
-      namaPemilik: string;
       status: string;
-      isValid?: boolean;
+      desaNama: string | null;
       geoJSON?: unknown;
     }>;
     subs.forEach((sub) => {
-      if (sub.status !== 'SPPTG terdaftar' && sub.status !== 'SPPTG terdata') return;
-      if (sub.isValid === false) return;
       const color = sub.status === 'SPPTG terdaftar' ? '#22c55e' : '#3b82f6';
       geoJSONToPaths(sub.geoJSON).forEach((path, i) => {
         result.push({
@@ -194,11 +251,15 @@ export function KawasanGeometryEditor({
           path,
           strokeColor: color,
           fillColor: color,
-          label: `${sub.status}: ${sub.namaPemilik}`,
+          label: `${sub.status} #${sub.id}${sub.desaNama ? ` — ${sub.desaNama}` : ''}`,
         });
       });
     });
 
+    // No cap: every block of this kawasan, every other kawasan and every valid
+    // SPPTG is drawn. A reference layer showing a subset is worse than a slow
+    // one — an officer cannot tell a boundary that is absent from one that is
+    // not there, and this layer exists precisely to be checked against.
     return result;
   }, [polygons, activePolygonIndex, areasData, submissionsData, excludeAreaId]);
 
@@ -206,7 +267,7 @@ export function KawasanGeometryEditor({
   const applyPolygons = useCallback(
     (next: LandPolygon[], recenter = false) => {
       setPolygons(next);
-      onChange(polygonsToMultiPolygon(next));
+      onChange(polygonsToMultiPolygon(next), next);
       if (recenter) setRecenterSignal((v) => v + 1);
     },
     [onChange]
@@ -232,12 +293,40 @@ export function KawasanGeometryEditor({
   const [utmRows, setUtmRows] = useState<LocalUtmRow[]>([]);
   const [editingUtm, setEditingUtm] = useState(false);
 
-  // Derive the UTM view from the active block while not editing a cell
+  /**
+   * The coordinate table pages.
+   *
+   * An imported block runs to tens of thousands of vertices, and each row here
+   * is two number inputs — a block of 249 210 points (the largest ring in the
+   * provincial Kawasan Hutan shapefile) is roughly three quarters of a million
+   * DOM nodes, which does not render, it hangs the tab. Paging keeps every
+   * vertex reachable without ever asking the browser for more than a screenful.
+   */
+  const [coordinatePage, setCoordinatePage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(coordinates.length / KAWASAN_COORDINATE_PAGE_SIZE));
+  // Clamped rather than reset, so deleting the last row of the last page cannot
+  // strand the table on a page that no longer exists.
+  const safePage = Math.min(coordinatePage, pageCount - 1);
+  const pageStart = safePage * KAWASAN_COORDINATE_PAGE_SIZE;
+  const visibleCoordinates = useMemo(
+    () => coordinates.slice(pageStart, pageStart + KAWASAN_COORDINATE_PAGE_SIZE),
+    [coordinates, pageStart]
+  );
+
+  /** Move to another block and start its table at the top. */
+  const selectPolygon = useCallback((polygonId: string) => {
+    setActivePolygonId(polygonId);
+    setCoordinatePage(0);
+  }, []);
+
+  // Derive the UTM view from the *visible* rows while not editing a cell.
+  // Converting every vertex of a 100 000-point block on each keystroke is work
+  // nobody can see.
   useEffect(() => {
     if (coordinateSystem !== 'utm' || editingUtm) return;
 
     setUtmRows(
-      coordinates.map((c) => {
+      visibleCoordinates.map((c) => {
         const u = toUtmFromLatLon(c.latitude, c.longitude);
         return {
           zone: String(u.zone),
@@ -247,12 +336,12 @@ export function KawasanGeometryEditor({
         };
       })
     );
-  }, [coordinates, coordinateSystem, editingUtm]);
+  }, [visibleCoordinates, coordinateSystem, editingUtm]);
 
   const handleAddPolygon = () => {
     const created: LandPolygon = { id: createPolygonId(), coordinates: [] };
     applyPolygons([...polygons, created]);
-    setActivePolygonId(created.id);
+    selectPolygon(created.id);
     toast.info('Blok baru ditambahkan. Gambar polygon-nya di peta.');
   };
 
@@ -260,8 +349,37 @@ export function KawasanGeometryEditor({
     const remaining = polygons.filter((polygon) => polygon.id !== polygonId);
     applyPolygons(remaining, true);
     if (activePolygonId === polygonId) {
-      setActivePolygonId(remaining[0]?.id ?? null);
+      const next = remaining[0]?.id ?? null;
+      setActivePolygonId(next);
+      setCoordinatePage(0);
     }
+  };
+
+  /**
+   * Flip the lock on one block, both ways — lifted to correct a bad import, put
+   * back once the boundary is right. See the note at the top of this file.
+   */
+  const handleToggleLock = (polygonId: string) => {
+    const target = polygons.find((polygon) => polygon.id === polygonId);
+    if (!target) return;
+    const nextLocked = !target.locked;
+    // Nothing to protect yet, and a locked empty block cannot be drawn at all.
+    if (nextLocked && target.coordinates.length === 0) {
+      toast.error('Blok masih kosong. Gambar polygon-nya dulu sebelum dikunci.');
+      return;
+    }
+
+    applyPolygons(
+      polygons.map((polygon) =>
+        polygon.id === polygonId ? { ...polygon, locked: nextLocked } : polygon
+      )
+    );
+    selectPolygon(polygonId);
+    toast.info(
+      nextLocked
+        ? 'Blok dikunci. Koordinatnya tidak dapat diubah sampai kunci dibuka lagi.'
+        : 'Kunci dibuka. Koordinat blok ini sekarang dapat diubah.'
+    );
   };
 
   const handleAddPoint = () => {
@@ -269,6 +387,9 @@ export function KawasanGeometryEditor({
       ...coordinates,
       { id: `C-${Date.now()}`, latitude: 0, longitude: 0 },
     ]);
+    // Jump to where the new row actually landed, or "Tambah Titik" appears to
+    // do nothing whenever the table is not on its last page.
+    setCoordinatePage(Math.floor(coordinates.length / KAWASAN_COORDINATE_PAGE_SIZE));
   };
 
   const handleRemovePoint = (index: number) => {
@@ -321,7 +442,15 @@ export function KawasanGeometryEditor({
 
   /**
    * Import every polygon in the file as a block of this kawasan. Imported blocks
-   * are locked for good — see the note at the top of this file.
+   * arrive locked — see the note at the top of this file.
+   *
+   * The parser is still told `UNLIMITED_POLYGON_POINTS`: the 100-vertex default
+   * belongs to the pengajuan wizard, whose bidang live as JSON in a draft
+   * payload, while a kawasan goes straight into a PostGIS column and a Kawasan
+   * Hutan traced from an SK is routinely thousands of points. What *does* apply
+   * is the whole-kawasan ceiling in `kawasan-limits.ts`, checked here — and a
+   * file over it is **refused, never truncated**: a kawasan silently missing
+   * most of its blocks would be enforced against real pengajuan.
    */
   const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.target;
@@ -330,7 +459,9 @@ export function KawasanGeometryEditor({
 
     setIsParsing(true);
     try {
-      const result = await parseGeospatialFile(file);
+      const result = await parseGeospatialFile(file, {
+        maxPoints: UNLIMITED_POLYGON_POINTS,
+      });
       if (!result.success) {
         toast.error(result.error || 'Gagal memproses file geospasial');
         return;
@@ -369,14 +500,40 @@ export function KawasanGeometryEditor({
         return;
       }
 
+      const fits = checkKawasanImportSize(imported);
+
+      // Does the file describe one kawasan in several blocks, or several
+      // kawasan? Its own name column is what answers that, and only the officer
+      // can confirm — so when it says "several" and this page can escalate, the
+      // import waits for an answer instead of guessing.
+      const groups = groupPolygonsIntoKawasan(result.polygons);
+      if (onBulkImportRequested && groups.length > 1) {
+        setPendingImport({
+          fileName: file.name,
+          merged: imported,
+          groups,
+          atribut: result.atribut,
+          mergeBlockedReason: fits.ok ? null : (fits.message ?? null),
+        });
+        return;
+      }
+
+      if (!fits.ok) {
+        // Long on purpose: the message has to say what is wrong *and* what to
+        // do about it, because the fix is in QGIS, not here.
+        toast.error(fits.message!, { duration: 12000 });
+        return;
+      }
+
       applyPolygons(imported, true);
-      setActivePolygonId(imported[0].id);
+      selectPolygon(imported[0].id);
+      if (result.atribut) onAttributesDetected?.(result.atribut);
       const totalPoints = imported.reduce(
         (total, polygon) => total + polygon.coordinates.length,
         0
       );
       toast.success(
-        `Berhasil mengimpor ${imported.length} polygon (${totalPoints} titik). Polygon terkunci mengikuti file.`
+        `Berhasil mengimpor ${imported.length} polygon (${totalPoints} titik). Polygon terkunci mengikuti file — buka kunci bila perlu diubah.`
       );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Gagal memproses file geospasial');
@@ -391,22 +548,112 @@ export function KawasanGeometryEditor({
   return (
     <div className="space-y-3">
       <div>
-        <Label htmlFor="kawasan-file">Impor KML/KMZ/GPX (opsional)</Label>
+        <Label htmlFor="kawasan-file">
+          Impor KML/KMZ/GPX/Shapefile (opsional)
+        </Label>
         <Input
           id="kawasan-file"
           type="file"
-          accept=".kml,.kmz,.gpx"
+          accept=".kml,.kmz,.gpx,.zip"
           onChange={handleFileUpload}
           disabled={isParsing}
           className="mt-1"
         />
         <p className="mt-1 text-xs text-gray-500">
           Semua polygon dalam file akan dimuat sebagai blok kawasan ini, dan
-          terkunci agar sama persis dengan file aslinya. Atau gambar manual di peta
-          di bawah.
+          terkunci agar sama persis dengan file aslinya. Kunci dapat dibuka dan
+          dipasang kembali per blok. Atau gambar manual di peta di bawah.
+        </p>
+        <p className="mt-1 text-xs text-gray-500">
+          Shapefile diunggah sebagai .zip berisi berkas lengkapnya (.shp, .dbf,
+          .shx, .prj, .cpg). Sertakan .prj agar koordinat UTM dikonversi ke WGS 84.
         </p>
         {isParsing && <p className="mt-1 text-xs text-blue-600">Memproses file...</p>}
       </div>
+
+      {/* The file describes several kawasan — ask, do not guess. Merging a
+          provincial SK into one row would put one name on 187 different
+          kawasan; splitting a genuinely multi-block kawasan would file each of
+          its blocks as a kawasan of its own. Only the officer knows which. */}
+      {pendingImport && (
+        <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <div className="flex items-start gap-3">
+            <Layers className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
+            <div>
+              <p className="text-sm text-blue-900">
+                <strong>
+                  File ini berisi {pendingImport.groups.length.toLocaleString('id-ID')} nama
+                  kawasan yang berbeda
+                </strong>
+              </p>
+              <p className="mt-1 text-xs text-blue-800">
+                {pendingImport.fileName} — {pendingImport.merged.length.toLocaleString('id-ID')}{' '}
+                polygon, {countKawasanPoints(pendingImport.merged).toLocaleString('id-ID')} titik.
+                Contoh nama: {pendingImport.groups.slice(0, 3).map((g) => g.nama).join(', ')}
+                {pendingImport.groups.length > 3 ? ', …' : ''}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => {
+                const handoff: KawasanBulkHandoff = {
+                  fileName: pendingImport.fileName,
+                  groups: pendingImport.groups,
+                  atribut: pendingImport.atribut,
+                };
+                setPendingImport(null);
+                onBulkImportRequested?.(handoff);
+              }}
+              className="rounded-md border border-blue-300 bg-white p-3 text-left hover:border-blue-500 hover:bg-blue-50"
+            >
+              <p className="text-sm font-medium text-gray-900">
+                Buat {pendingImport.groups.filter(isImportable).length.toLocaleString('id-ID')}{' '}
+                kawasan terpisah
+              </p>
+              <p className="mt-0.5 text-xs text-gray-600">
+                Impor massal — satu baris kawasan per nama pada file. Pilih ini
+                untuk SK yang memuat banyak kawasan sekaligus.
+              </p>
+            </button>
+
+            <button
+              type="button"
+              disabled={pendingImport.mergeBlockedReason !== null}
+              onClick={() => {
+                applyPolygons(pendingImport.merged, true);
+                selectPolygon(pendingImport.merged[0].id);
+                if (pendingImport.atribut) onAttributesDetected?.(pendingImport.atribut);
+                toast.success(
+                  `${pendingImport.merged.length.toLocaleString('id-ID')} polygon dimuat sebagai blok dari satu kawasan.`
+                );
+                setPendingImport(null);
+              }}
+              className="rounded-md border border-gray-300 bg-white p-3 text-left hover:border-gray-500 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-gray-300"
+            >
+              <p className="text-sm font-medium text-gray-900">
+                Gabung jadi 1 kawasan ({pendingImport.merged.length.toLocaleString('id-ID')} blok)
+              </p>
+              <p className="mt-0.5 text-xs text-gray-600">
+                {pendingImport.mergeBlockedReason
+                  ? 'Tidak dapat digabung — file terlalu besar untuk satu kawasan.'
+                  : 'Semua polygon menjadi blok dari kawasan yang sedang Anda buat.'}
+              </p>
+            </button>
+          </div>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setPendingImport(null)}
+          >
+            Batalkan impor
+          </Button>
+        </div>
+      )}
 
       {/* Block selector — a kawasan may consist of several detached polygons */}
       <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
@@ -443,7 +690,7 @@ export function KawasanGeometryEditor({
                   <button
                     type="button"
                     onClick={() => {
-                      setActivePolygonId(polygon.id);
+                      selectPolygon(polygon.id);
                       setRecenterSignal((v) => v + 1);
                     }}
                     className="font-medium"
@@ -453,9 +700,27 @@ export function KawasanGeometryEditor({
                       ({polygon.coordinates.length} titik)
                     </span>
                   </button>
-                  {polygon.locked && (
-                    <Lock className="h-3 w-3 text-gray-500" aria-label="Terkunci" />
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleLock(polygon.id)}
+                    className={
+                      polygon.locked
+                        ? 'text-amber-600 hover:text-amber-700'
+                        : 'text-gray-400 hover:text-gray-700'
+                    }
+                    aria-label={`${polygon.locked ? 'Buka kunci' : 'Kunci'} ${polygonLabel(polygon, index)}`}
+                    title={
+                      polygon.locked
+                        ? 'Terkunci — klik untuk mengubah koordinat'
+                        : 'Klik untuk mengunci agar koordinat tidak berubah'
+                    }
+                  >
+                    {polygon.locked ? (
+                      <Lock className="h-3 w-3" />
+                    ) : (
+                      <LockOpen className="h-3 w-3" />
+                    )}
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleRemovePolygon(polygon.id)}
@@ -471,12 +736,40 @@ export function KawasanGeometryEditor({
           </div>
         )}
 
-        {isActiveLocked && (
-          <p className="flex items-center gap-1.5 text-xs text-amber-700">
-            <Lock className="h-3.5 w-3.5" />
-            Blok ini diimpor dari file dan tidak dapat diubah. Hapus blok lalu impor
-            ulang bila batasnya keliru.
-          </p>
+        {activePolygon && (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {isActiveLocked ? (
+              <p className="flex items-center gap-1.5 text-amber-700">
+                <Lock className="h-3.5 w-3.5" />
+                Blok ini terkunci — koordinat dan peta tidak dapat diubah. Buka kunci
+                bila batasnya perlu diperbaiki.
+              </p>
+            ) : (
+              <p className="flex items-center gap-1.5 text-gray-500">
+                <LockOpen className="h-3.5 w-3.5" />
+                Blok ini dapat diubah. Kunci bila batasnya sudah benar, agar tidak
+                tergeser saat menggambar blok lain.
+              </p>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleToggleLock(activePolygon.id)}
+            >
+              {isActiveLocked ? (
+                <>
+                  <LockOpen className="mr-1 h-3.5 w-3.5" />
+                  Buka Kunci
+                </>
+              ) : (
+                <>
+                  <Lock className="mr-1 h-3.5 w-3.5" />
+                  Kunci Blok
+                </>
+              )}
+            </Button>
+          </div>
         )}
       </div>
 
@@ -539,7 +832,12 @@ export function KawasanGeometryEditor({
               </TableHeader>
               <TableBody>
                 {coordinateSystem === 'geografis'
-                  ? coordinates.map((c, i) => (
+                  ? visibleCoordinates.map((c, pageIndex) => {
+                      // Absolute position in the block — every handler below
+                      // writes by index, and a page-local one would edit the
+                      // wrong vertex on page 2 onwards.
+                      const i = pageStart + pageIndex;
+                      return (
                       <TableRow key={c.id}>
                         <TableCell>{i + 1}</TableCell>
                         <TableCell>
@@ -570,8 +868,11 @@ export function KawasanGeometryEditor({
                           </Button>
                         </TableCell>
                       </TableRow>
-                    ))
-                  : utmRows.map((r, i) => (
+                      );
+                    })
+                  : utmRows.map((r, pageIndex) => {
+                      const i = pageStart + pageIndex;
+                      return (
                       <TableRow key={coordinates[i]?.id ?? i}>
                         <TableCell>{i + 1}</TableCell>
                         <TableCell>
@@ -580,7 +881,7 @@ export function KawasanGeometryEditor({
                             inputMode="numeric"
                             value={r.zone}
                             onFocus={() => setEditingUtm(true)}
-                            onChange={(e) => handleUtmInputChange(i, 'zone', e.target.value)}
+                            onChange={(e) => handleUtmInputChange(pageIndex, 'zone', e.target.value)}
                             onBlur={(e) => commitUtmRow(i, { ...r, zone: e.currentTarget.value })}
                             onKeyDown={handleKeyDown}
                             placeholder="48"
@@ -590,7 +891,7 @@ export function KawasanGeometryEditor({
                           <Select
                             value={r.hemisphere}
                             onValueChange={(val) => {
-                              handleUtmInputChange(i, 'hemisphere', val);
+                              handleUtmInputChange(pageIndex, 'hemisphere', val);
                               commitUtmRow(i, { ...r, hemisphere: val as 'N' | 'S' });
                             }}
                           >
@@ -608,7 +909,7 @@ export function KawasanGeometryEditor({
                             inputMode="decimal"
                             value={r.easting}
                             onFocus={() => setEditingUtm(true)}
-                            onChange={(e) => handleUtmInputChange(i, 'easting', e.target.value)}
+                            onChange={(e) => handleUtmInputChange(pageIndex, 'easting', e.target.value)}
                             onBlur={(e) => commitUtmRow(i, { ...r, easting: e.currentTarget.value })}
                             onKeyDown={handleKeyDown}
                             placeholder="Easting"
@@ -619,7 +920,7 @@ export function KawasanGeometryEditor({
                             inputMode="decimal"
                             value={r.northing}
                             onFocus={() => setEditingUtm(true)}
-                            onChange={(e) => handleUtmInputChange(i, 'northing', e.target.value)}
+                            onChange={(e) => handleUtmInputChange(pageIndex, 'northing', e.target.value)}
                             onBlur={(e) => commitUtmRow(i, { ...r, northing: e.currentTarget.value })}
                             onKeyDown={handleKeyDown}
                             placeholder="Northing"
@@ -631,12 +932,49 @@ export function KawasanGeometryEditor({
                           </Button>
                         </TableCell>
                       </TableRow>
-                    ))}
+                      );
+                    })}
               </TableBody>
             </Table>
           </div>
         )}
       </fieldset>
+
+      {/* Outside the fieldset on purpose: a locked block must still be
+          browsable end to end — reading an imported boundary is exactly how you
+          check the file was right, and `disabled` would seal it on page 1. */}
+      {pageCount > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs">
+          <span className="text-gray-600">
+            Titik {(pageStart + 1).toLocaleString('id-ID')}–
+            {Math.min(pageStart + KAWASAN_COORDINATE_PAGE_SIZE, coordinates.length).toLocaleString('id-ID')}{' '}
+            dari {coordinates.length.toLocaleString('id-ID')}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={safePage === 0}
+              onClick={() => setCoordinatePage(safePage - 1)}
+            >
+              Sebelumnya
+            </Button>
+            <span className="text-gray-600">
+              Hal. {(safePage + 1).toLocaleString('id-ID')} / {pageCount.toLocaleString('id-ID')}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={safePage >= pageCount - 1}
+              onClick={() => setCoordinatePage(safePage + 1)}
+            >
+              Berikutnya
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div>
         <Label>Polygon Kawasan</Label>
@@ -682,9 +1020,8 @@ export function KawasanGeometryEditor({
 
         {usableCount > 0 ? (
           <p className="mt-2 text-xs text-green-600">
-            ✓ Kawasan siap digunakan ({usableCount} blok,{' '}
-            {polygons.reduce((total, polygon) => total + polygon.coordinates.length, 0)}{' '}
-            titik).
+            ✓ Kawasan siap digunakan ({usableCount.toLocaleString('id-ID')} blok,{' '}
+            {countKawasanPoints(polygons).toLocaleString('id-ID')} titik).
           </p>
         ) : (
           <p className="mt-2 text-xs text-gray-500">

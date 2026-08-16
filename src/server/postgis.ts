@@ -1,6 +1,9 @@
 import { db, DBTransaction } from './db/db';
 import { sql } from 'drizzle-orm';
 import { overlapResults } from './db/schema';
+import type { KawasanGeometryConflict } from '@/lib/kawasan-conflicts';
+
+export type { KawasanGeometryConflict };
 
 /**
  * Interface for overlap calculation result
@@ -18,6 +21,8 @@ export interface OverlapCalculation {
 /** One submission × kawasan overlap pair, for the system-wide overlap report. */
 export interface SubmissionOverlapRow {
   submissionId: number;
+  /** The kawasan side of the pair, so the report can be drawn and grouped. */
+  kawasanId: number;
   namaPemilik: string;
   desaNama: string | null;
   kecamatan: string;
@@ -32,6 +37,11 @@ export interface SubmissionOverlapRow {
  * System-wide "Cek Tumpang Tindih": every submission whose polygon intersects an
  * *active* prohibited area, scoped to what the caller may see.
  *
+ * Only **recorded** pengajuan count — `SPPTG terdaftar` and `SPPTG terdata`,
+ * still `is_valid`. Those are the two the map draws and the two that assert a
+ * claim over the land; a rejected or under-review berkas sitting inside a
+ * kawasan is the system working, not a conflict to report.
+ *
  * NB: areas are measured by casting to `geography` so the result is real m² —
  * plain ST_Area on SRID 4326 geometry returns square degrees.
  */
@@ -44,7 +54,11 @@ export async function findOverlappingSubmissions(
   // Only submissions that are actually shown on the map count as a conflict:
   // `is_valid = false` means the entry was flagged invalid and its polygon is
   // hidden, so reporting it as an overlap contradicts what the user can see.
-  const conditions = [sql`pa.aktif_di_validasi = true`, sql`s.is_valid = true`];
+  const conditions = [
+    sql`pa.aktif_di_validasi = true`,
+    sql`s.is_valid = true`,
+    sql`s.status IN ('SPPTG terdaftar', 'SPPTG terdata')`,
+  ];
   if (scope.ownerUserId !== undefined) {
     conditions.push(sql`s.owner_user_id = ${scope.ownerUserId}`);
   }
@@ -59,6 +73,7 @@ export async function findOverlappingSubmissions(
   const result = await queryDb.execute(sql`
     SELECT
       s.id AS submission_id,
+      pa.id AS kawasan_id,
       s.nama_pemilik,
       s.kecamatan,
       s.status,
@@ -81,12 +96,102 @@ export async function findOverlappingSubmissions(
     const r = row as Record<string, unknown>;
     return {
       submissionId: Number(r.submission_id),
+      kawasanId: Number(r.kawasan_id),
       namaPemilik: String(r.nama_pemilik ?? ''),
       desaNama: r.nama_desa == null ? null : String(r.nama_desa),
       kecamatan: String(r.kecamatan ?? ''),
       status: String(r.status ?? ''),
       namaKawasan: String(r.nama_kawasan ?? ''),
       jenisKawasan: String(r.jenis_kawasan ?? ''),
+      luasOverlap: Number(r.luas_overlap ?? 0),
+      percentageOverlap: Number(r.percentage_overlap ?? 0),
+    };
+  });
+}
+
+/**
+ * "Cek Tumpang Tindih" for a boundary that has not been saved yet — what the
+ * Tambah/Edit Kawasan form runs before it will let a kawasan be written.
+ *
+ * Two different questions in one pass. Against `prohibited_areas` it asks
+ * whether this land is already recorded as restricted, so **every** kawasan
+ * counts, active in validation or not: a duplicate of a kawasan somebody
+ * switched off is still a duplicate, and the row carries `aktifDiValidasi` so
+ * the report can say which it is. Against `submissions` it asks who is already
+ * standing on the land, which is why it counts the same set the system-wide
+ * report does — `SPPTG terdaftar` and `SPPTG terdata` that are still valid.
+ *
+ * `excludeAreaId` is the kawasan being edited: a boundary cannot overlap
+ * itself, and without it every edit would report a 100% clash with its own row.
+ *
+ * The WKT is passed as a bound parameter rather than interpolated, so a
+ * geometry string can never become SQL.
+ */
+export async function findKawasanGeometryConflicts(
+  wkt: string,
+  options: { excludeAreaId?: number } = {},
+  tx?: DBTransaction
+): Promise<KawasanGeometryConflict[]> {
+  const queryDb = tx || db;
+
+  const kawasanConditions = [sql`ST_Intersects(k.geom, pa.geom)`];
+  if (options.excludeAreaId !== undefined) {
+    kawasanConditions.push(sql`pa.id <> ${options.excludeAreaId}`);
+  }
+
+  const result = await queryDb.execute(sql`
+    WITH kandidat AS (
+      SELECT ST_GeomFromText(${wkt}, 4326) AS geom
+    )
+    SELECT
+      'kawasan' AS jenis,
+      pa.id AS id,
+      pa.nama_kawasan AS nama,
+      pa.jenis_kawasan::text AS keterangan,
+      ''::text AS status,
+      pa.aktif_di_validasi AS aktif,
+      ST_Area(ST_Intersection(k.geom, pa.geom)::geography)::double precision AS luas_overlap,
+      (
+        ST_Area(ST_Intersection(k.geom, pa.geom)::geography)
+        / NULLIF(ST_Area(k.geom::geography), 0) * 100
+      )::double precision AS percentage_overlap
+    FROM prohibited_areas pa
+    CROSS JOIN kandidat k
+    WHERE ${sql.join(kawasanConditions, sql` AND `)}
+
+    UNION ALL
+
+    SELECT
+      'pengajuan' AS jenis,
+      s.id AS id,
+      s.nama_pemilik AS nama,
+      COALESCE(v.nama_desa, '')::text AS keterangan,
+      s.status::text AS status,
+      true AS aktif,
+      ST_Area(ST_Intersection(k.geom, s.geom)::geography)::double precision AS luas_overlap,
+      (
+        ST_Area(ST_Intersection(k.geom, s.geom)::geography)
+        / NULLIF(ST_Area(k.geom::geography), 0) * 100
+      )::double precision AS percentage_overlap
+    FROM submissions s
+    LEFT JOIN villages v ON v.id = s."villageId"
+    CROSS JOIN kandidat k
+    WHERE ST_Intersects(k.geom, s.geom)
+      AND s.is_valid = true
+      AND s.status IN ('SPPTG terdaftar', 'SPPTG terdata')
+
+    ORDER BY luas_overlap DESC
+  `);
+
+  return (result.rows || []).map((row: unknown) => {
+    const r = row as Record<string, unknown>;
+    return {
+      jenis: r.jenis === 'pengajuan' ? ('pengajuan' as const) : ('kawasan' as const),
+      id: Number(r.id),
+      nama: String(r.nama ?? ''),
+      keterangan: String(r.keterangan ?? ''),
+      status: String(r.status ?? ''),
+      aktifDiValidasi: r.aktif === true,
       luasOverlap: Number(r.luas_overlap ?? 0),
       percentageOverlap: Number(r.percentage_overlap ?? 0),
     };

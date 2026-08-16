@@ -17,7 +17,11 @@ import React from 'react';
 import { Page, Text, View } from '@react-pdf/renderer';
 import { styles, formatIndonesianDate, formatLuas } from './styles';
 import { DocumentFooter } from './DocumentFooter';
-import { PAGE_STATEMENTS_START, totalCertificatePages } from './pagination';
+import {
+  certificatePolygons,
+  PAGE_STATEMENTS_START,
+  totalCertificatePages,
+} from './pagination';
 import { PageProps } from './types';
 
 /**
@@ -31,6 +35,28 @@ const FieldRow: React.FC<{
     <Text style={styles.label}>{label}</Text>
     <Text style={styles.colon}>:</Text>
     <Text style={styles.value}>{value || '-'}</Text>
+  </View>
+);
+
+/**
+ * One field whose value is stated once per bidang.
+ *
+ * The label and its colon are printed once and the values stack under one
+ * another in the value column — repeating "Nomor persil" down the page would
+ * read as two different fields rather than one field with a figure per parcel.
+ */
+const MultiValueRow: React.FC<{
+  label: string;
+  values: string[];
+}> = ({ label, values }) => (
+  <View style={styles.row}>
+    <Text style={styles.label}>{label}</Text>
+    <Text style={styles.colon}>:</Text>
+    <View style={styles.value}>
+      {values.map((value, index) => (
+        <Text key={index}>{value || '-'}</Text>
+      ))}
+    </View>
   </View>
 );
 
@@ -69,6 +95,44 @@ export const SPPTGPage1: React.FC<PageProps> = ({ data }) => {
     .filter(Boolean)
     .join(', ');
 
+  /**
+   * Nomor persil and the tape measurements belong to one bidang each, and are
+   * stated here rather than on an attachment: a pengajuan covers at most
+   * `MAX_POLYGONS_PER_SUBMISSION` bidang, so the worst case is two extra rows
+   * per field — which page 1 has room for, and which page 1 may therefore state
+   * without the layout growing with the data (see `pagination.ts`).
+   *
+   * With one bidang the rows read exactly as they always did; with two, the
+   * label repeats and the value carries the marker — "12/A (bidang 1)" — so the
+   * label column stays the width it has always been and the eye reads the
+   * figures, not the bookkeeping.
+   */
+  const bidang = certificatePolygons(data);
+  const isMultiBidang = bidang.length > 1;
+
+  /** "40 m × 25 m", or nothing when the surveyor recorded neither side. */
+  const formatUkuran = (panjang?: number, lebar?: number): string | undefined => {
+    if (panjang === undefined && lebar === undefined) return undefined;
+    const sisi = (value?: number) =>
+      value === undefined ? '-' : `${value.toLocaleString('id-ID')} m`;
+    return `${sisi(panjang)} × ${sisi(lebar)}`;
+  };
+
+  /** Tags a value with the bidang it belongs to, only when there are two to tell apart. */
+  const withBidang = (value: string | undefined, index: number) =>
+    isMultiBidang ? `${value || '-'} (bidang ${index + 1})` : value;
+
+  const ukuranLahan = formatUkuran(data.panjangLahan, data.lebarLahan);
+
+  // Only the bidang that were actually measured: a parcel nobody put a tape to
+  // contributes no line rather than an empty one.
+  const ukuranPerBidang = bidang
+    .map((polygon, index) => {
+      const ukuran = formatUkuran(polygon.panjang, polygon.lebar);
+      return ukuran ? withBidang(ukuran, index) ?? ukuran : null;
+    })
+    .filter((value): value is string => value !== null);
+
   return (
     <Page size="A4" style={styles.page}>
       {/* Registration Number - Top Right */}
@@ -102,10 +166,12 @@ export const SPPTGPage1: React.FC<PageProps> = ({ data }) => {
         Dengan ini menyatakan dengan sebenarnya hal-hal sebagai berikut:
       </Text>
 
-      {/* Statement 1 */}
+      {/* Statement 1 — the wording follows the claim: one parcel or several. */}
       <Statement number="1.">
         <Text style={styles.text}>
-          Bahwa saya ada menguasai sebidang tanah seluas{' '}
+          Bahwa saya ada menguasai{' '}
+          {isMultiBidang ? `tanah dalam ${bidang.length} bidang` : 'sebidang tanah'}{' '}
+          seluas{' '}
           <Text style={{ fontFamily: 'Times-Bold' }}>
             {formatLuas(data.luasManual)}
           </Text>{' '}
@@ -119,7 +185,16 @@ export const SPPTGPage1: React.FC<PageProps> = ({ data }) => {
         <View style={styles.indented}>
           <FieldRow label="Jalan" value={data.namaJalan} />
           <FieldRow label="Gang" value={data.namaGang} />
-          <FieldRow label="Nomor persil" value={data.nomorPersil} />
+          {isMultiBidang ? (
+            <MultiValueRow
+              label="Nomor persil"
+              values={bidang.map(
+                (polygon, index) => withBidang(polygon.nomorPersil, index) ?? '-'
+              )}
+            />
+          ) : (
+            <FieldRow label="Nomor persil" value={data.nomorPersil} />
+          )}
           <FieldRow label="RT / RW" value={data.rtrw} />
           <FieldRow label="Dusun" value={data.dusun} />
           <FieldRow label="Kelurahan/Desa" value={data.namaDesa} />
@@ -142,6 +217,13 @@ export const SPPTGPage1: React.FC<PageProps> = ({ data }) => {
             label="Luas perhitungan peta"
             value={`${formatLuas(data.luasLahan)}`}
           />
+          {isMultiBidang
+            ? ukuranPerBidang.length > 0 && (
+                <MultiValueRow label="Panjang × Lebar" values={ukuranPerBidang} />
+              )
+            : ukuranLahan && (
+                <FieldRow label="Panjang × Lebar" value={ukuranLahan} />
+              )}
           {/* Display all 8 boundary positions */}
           {data.batasUtara && (
             <FieldRow

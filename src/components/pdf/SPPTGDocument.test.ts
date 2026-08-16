@@ -108,6 +108,56 @@ describe('SPPTGDocument — the rendered page count matches the promised one', (
     expect(await renderedPageCount(data)).toBe(totalCertificatePages(data));
   }, 90000);
 
+  it('keeps page 1 to one sheet with two bidang and every boundary named', async () => {
+    // The fullest statement 1 the layout can be asked for: two bidang (the cap),
+    // each printing its own persil number, area and tape measurement, on top of
+    // all eight boundary rows. Nomor persil and the measurements are stated here
+    // rather than on an attachment precisely because this fits — if it stops
+    // fitting, this test fails and the layout, not the expectation, is wrong.
+    const data = certificate({
+      luasManual: 3500,
+      luasLahan: 3400,
+      polygons: [
+        {
+          nama: 'Bidang Utara',
+          coordinates: coordinates(4),
+          nomorPersil: 'PERSIL-2026-0001',
+          luasManual: 1500,
+          luasHitung: 1450,
+          panjang: 50.25,
+          lebar: 30.75,
+        },
+        {
+          nama: 'Bidang Selatan',
+          coordinates: coordinates(4),
+          nomorPersil: 'PERSIL-2026-0002',
+          luasManual: 2000,
+          luasHitung: 1950,
+          panjang: 65.5,
+          lebar: 30.25,
+        },
+      ],
+      batasUtara: 'Utara',
+      penggunaanBatasUtara: 'Sawah milik Bapak Ahmad',
+      batasTimurLaut: 'Timur Laut',
+      penggunaanBatasTimurLaut: 'Kebun campuran',
+      batasTimur: 'Timur',
+      penggunaanBatasTimur: 'Jalan desa',
+      batasTenggara: 'Tenggara',
+      penggunaanBatasTenggara: 'Semak belukar',
+      batasSelatan: 'Selatan',
+      penggunaanBatasSelatan: 'Sungai kecil',
+      batasBaratDaya: 'Barat Daya',
+      penggunaanBatasBaratDaya: 'Kebun sawit',
+      batasBarat: 'Barat',
+      penggunaanBatasBarat: 'Tanah kosong',
+      batasBaratLaut: 'Barat Laut',
+      penggunaanBatasBaratLaut: 'Perumahan warga',
+    });
+
+    expect(await renderedPageCount(data)).toBe(totalCertificatePages(data));
+  }, 120000);
+
   it('renders the worst case: terdata, many saksi and many bidang at once', async () => {
     const data = certificate({
       variant: 'terdata',

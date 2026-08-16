@@ -1,7 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DOMParser as XmldomDOMParser } from '@xmldom/xmldom';
 import JSZip from 'jszip';
-import { parseKMLFile, parseKMZFile } from './kmz-parser';
+import {
+  DEFAULT_MAX_POLYGON_POINTS,
+  parseKMLFile,
+  parseKMZFile,
+  UNLIMITED_POLYGON_POINTS,
+} from './kmz-parser';
 
 function createKmlFile(content: string, name = 'test.kml'): File {
   return new File([content], name, {
@@ -317,5 +322,43 @@ describe('parseKMZFile', () => {
 
     expect(result.success).toBe(true);
     expect(result.polygons).toHaveLength(2);
+  });
+});
+
+/**
+ * Two callers, two ceilings. The wizard's bidang are stored as JSON in a draft
+ * payload and `landPolygonSchema` refuses more than 100 vertices, so an import
+ * over that must fail here rather than on save. A kawasan has no such limit —
+ * its geometry goes straight into a PostGIS column, and a Kawasan Hutan traced
+ * from an SK is routinely thousands of points.
+ */
+describe('vertex ceiling per caller', () => {
+  function kmlWithVertices(count: number): string {
+    const points = Array.from(
+      { length: count },
+      (_, index) => `${117.5 + index * 0.0001},${0.5 + (index % 2) * 0.0001},0`
+    ).join(' ');
+    return `<kml><Document><Placemark><name>Kawasan Hutan</name><Polygon>
+      <outerBoundaryIs><LinearRing><coordinates>${points}</coordinates></LinearRing></outerBoundaryIs>
+    </Polygon></Placemark></Document></kml>`;
+  }
+
+  const oversized = DEFAULT_MAX_POLYGON_POINTS + 50;
+
+  it('refuses an oversized boundary by default — the wizard would reject it on save', async () => {
+    const result = await parseKMLFile(createKmlFile(kmlWithVertices(oversized)));
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain(String(DEFAULT_MAX_POLYGON_POINTS));
+  });
+
+  it('accepts it for a caller that lifts the ceiling (the kawasan editor)', async () => {
+    const result = await parseKMLFile(createKmlFile(kmlWithVertices(oversized)), {
+      maxPoints: UNLIMITED_POLYGON_POINTS,
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.success).toBe(true);
+    expect(result.polygons[0].coordinates).toHaveLength(oversized);
   });
 });

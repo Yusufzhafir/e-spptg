@@ -23,6 +23,7 @@ import {
   Eye,
   Edit,
   Check,
+  Crosshair,
   EyeOff,
   ChevronUp,
   ChevronDown,
@@ -40,6 +41,13 @@ interface SubmissionsTableProps {
   onViewDetail: (submission: Submission) => void;
   onEdit: (submission: Submission) => void;
   onToggleValidity: (submission: Submission) => void;
+  /**
+   * Frame the dashboard map on this row's boundary.
+   *
+   * Optional: the table is also rendered where there is no map to move, and a
+   * button that points at nothing is worse than no button.
+   */
+  onFocusOnMap?: (submission: Submission) => void;
   isTogglingValidity: boolean;
   /** When set, the table pages to and highlights this submission's row */
   focusSubmissionId?: number | null;
@@ -68,6 +76,7 @@ export function SubmissionsTable({
   onViewDetail,
   onEdit,
   onToggleValidity,
+  onFocusOnMap,
   isTogglingValidity,
   focusSubmissionId,
   focusPosition,
@@ -288,6 +297,17 @@ export function SubmissionsTable({
                       )}
                     </Button>
                   )}
+                  {onFocusOnMap && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => onFocusOnMap(submission)}
+                      title="Fokuskan peta ke lahan ini"
+                      aria-label={`Fokuskan peta ke pengajuan ${submission.id}`}
+                    >
+                      <Crosshair className="w-4 h-4 text-blue-600" />
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"
@@ -348,7 +368,16 @@ export function SubmissionsTable({
                   // counts and out of every overlap check — none of which is
                   // visible from the row itself.
                   'akan disembunyikan dari peta, tidak dihitung pada KPI dan grafik, dan tidak ikut dalam cek tumpang tindih. Anda dapat menandainya valid kembali kapan saja. Apakah Anda yakin?'
-                : 'akan dibuka untuk diedit dan ditandai tidak valid sampai perubahannya disimpan kembali. Lanjutkan?'}
+                : // "tidak valid" is the consequence someone skimming this
+                  // dialog needs to catch: the berkas leaves the map and every
+                  // overlap check the moment the editor opens, not when it is
+                  // saved. Colouring the phrase is what makes it survive a
+                  // glance.
+                  <>
+                    akan dibuka untuk diedit dan ditandai{' '}
+                    <span className="font-semibold text-red-600">tidak valid</span> sampai
+                    perubahannya disimpan kembali. Lanjutkan?
+                  </>}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

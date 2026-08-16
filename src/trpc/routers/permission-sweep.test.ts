@@ -418,6 +418,26 @@ describe('kawasan non-SPPTG — write is Superadmin/Admin only', () => {
     expect(prohibitedAreaQueries.deleteProhibitedArea).not.toHaveBeenCalled();
   });
 
+  it('Verifikator, Kecamatan and Viewer cannot run the kawasan geometry overlap check', async () => {
+    for (const caller of [VERIFIKATOR, KECAMATAN, VIEWER]) {
+      await expectDenied(
+        prohibitedAreasRouter.createCaller(caller()).cekGeometriTumpangTindih({
+          geomGeoJSON: {
+            type: 'Polygon',
+            coordinates: [
+              [
+                [117.1, 0.1],
+                [117.2, 0.2],
+                [117.1, 0.3],
+                [117.1, 0.1],
+              ],
+            ],
+          },
+        })
+      );
+    }
+  });
+
   it('every signed-in role may read a kawasan', async () => {
     for (const caller of [SUPERADMIN, ADMIN, VERIFIKATOR, KECAMATAN, VIEWER]) {
       await expect(

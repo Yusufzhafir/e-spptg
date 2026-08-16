@@ -24,6 +24,10 @@ interface MapViewProps {
    * instead of the popup vanishing while nothing visible has happened yet.
    */
   pendingFocusId?: number | null;
+  /** Frame the map on this geometry — see `ReadOnlyMap`. */
+  focusGeoJSON?: unknown;
+  /** Bumped per focus request, so the same row can be focused twice. */
+  focusSignal?: number;
 }
 
 export function MapView({
@@ -38,6 +42,8 @@ export function MapView({
   onPolygonClick,
   onViewInTable,
   pendingFocusId,
+  focusGeoJSON,
+  focusSignal,
 }: MapViewProps) {
   const [activeSubmission, setActiveSubmission] = useState<Submission | null>(null);
   /** The id this popup asked for, so it only closes on its own request. */
@@ -63,6 +69,8 @@ export function MapView({
         height={height}
         center={center}
         zoom={zoom}
+        focusGeoJSON={focusGeoJSON}
+        focusSignal={focusSignal}
         onPolygonClick={(submission) => {
           setActiveSubmission(submission);
           onPolygonClick?.(submission);

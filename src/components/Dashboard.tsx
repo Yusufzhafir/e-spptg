@@ -1,3 +1,5 @@
+import { useCallback, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { Check, Database, X, RefreshCw, FileText } from 'lucide-react';
 import { KPICard } from './KPICard';
 import { MapView } from './MapView';
@@ -95,6 +97,35 @@ export function Dashboard({
   // The map draws every polygon in scope, not just the page on screen. Invalid
   // rows are already excluded by `listForMap`; this keeps the guarantee local.
   const validSubmissions = mapSubmissions.filter((s) => s.isValid);
+
+  /**
+   * "Fokus di peta" from a table row. Bumped per click because focusing is an
+   * action, not a state — clicking the same row again after panning away has to
+   * bring the map back.
+   */
+  const [focusTarget, setFocusTarget] = useState<unknown>(null);
+  const [focusSignal, setFocusSignal] = useState(0);
+  const mapCardRef = useRef<HTMLDivElement | null>(null);
+
+  const focusOnMap = useCallback(
+    (submission: Submission) => {
+      // The map's own polygon set is the authority; the table row is a fallback
+      // for a berkas the map query has not caught up with.
+      const geometry =
+        validSubmissions.find((row) => row.id === submission.id)?.geoJSON ??
+        submission.geoJSON;
+      if (!geometry) {
+        toast.error('Pengajuan ini tidak memiliki batas lahan untuk ditampilkan di peta.');
+        return;
+      }
+      setFocusTarget(geometry);
+      setFocusSignal((signal) => signal + 1);
+      // The table sits below the map, so framing a polygon the reader cannot
+      // see would look like nothing happened.
+      mapCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+    [validSubmissions]
+  );
   // Which row to jump to is owned by the page, not by this component: the page
   // is what asks the server where that row sits, and the server is the only one
   // that knows — the table holds a single page now. Keeping the request in
@@ -165,7 +196,7 @@ export function Dashboard({
 
       {/* Map and Chart */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2" ref={mapCardRef}>
           <CardHeader>
             <CardTitle>Peta Sebaran Lahan</CardTitle>
           </CardHeader>
@@ -175,6 +206,8 @@ export function Dashboard({
               height="600px"
               onViewInTable={(s) => onFocusRow(s.id)}
               pendingFocusId={pendingFocusId}
+              focusGeoJSON={focusTarget}
+              focusSignal={focusSignal}
             />
           </CardContent>
         </Card>
@@ -271,6 +304,7 @@ export function Dashboard({
           onViewDetail={onViewDetail}
           onEdit={onEdit}
           onToggleValidity={onToggleValidity}
+          onFocusOnMap={focusOnMap}
           isTogglingValidity={isTogglingValidity}
           focusSubmissionId={focusSubmissionId}
           focusNonce={focusNonce}

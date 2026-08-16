@@ -1,14 +1,25 @@
 /**
- * Export a filed pengajuan as KML / KMZ — the counterpart of the import in
- * `kmz-parser.ts`. Officials hand the boundary over to BPN, ATR or their own
- * GIS desk, and those tools read KML, so the polygon plus a readable summary of
- * the pengajuan is written into a single Placemark.
+ * Export a filed pengajuan as GeoJSON / KML / KMZ — the counterpart of the
+ * import in `kmz-parser.ts`. Officials hand the boundary over to BPN, ATR or
+ * their own GIS desk, and those tools read these formats, so the polygon plus a
+ * readable summary of the pengajuan is written into a single feature.
  *
- * Runs in the browser: the detail page already holds the whole submission, so
- * there is nothing for the server to do.
+ * The envelopes themselves live in `geo-export.ts`, shared with the kawasan
+ * download: this module owns only what is specific to a pengajuan — which
+ * fields go into the description and the attribute table, and what the file is
+ * called. Runs in the browser: the detail page already holds the whole
+ * submission, so there is nothing for the server to do.
  */
 
-import JSZip from 'jszip';
+import {
+  buildGeoExport,
+  buildKML,
+  buildKMZ,
+  sanitiseFilename as sanitiseGeoFilename,
+  usablePolygons,
+  type GeoExportFeature,
+  type GeoExportFormat,
+} from './geo-export';
 import type { SubmissionGeometry } from '@/types';
 
 export type KMLExportSubmission = {
@@ -31,40 +42,14 @@ export type KMLExportSubmission = {
   geoJSON?: SubmissionGeometry | null;
 };
 
-/** The polygons of a geometry, each as its list of rings (outer ring first). */
-function geometryPolygons(geometry: SubmissionGeometry | null | undefined): number[][][][] {
-  if (!geometry) return [];
-  if (geometry.type === 'MultiPolygon') {
-    return geometry.coordinates as number[][][][];
-  }
-  return [geometry.coordinates as number[][][]];
-}
-
-/** KML is XML — every value interpolated into it has to be escaped. */
-function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
-
-/** Filesystems (and Windows in particular) reject these in a filename. */
+/** Re-exported so callers keep one import for the whole export path. */
 export function sanitiseFilename(value: string): string {
-  return (
-    value
-      .replace(/[\\/:*?"<>|]/g, '-')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 80) || 'pengajuan'
-  );
+  return sanitiseGeoFilename(value, 'pengajuan');
 }
 
 export function submissionExportFilename(
   submission: Pick<KMLExportSubmission, 'id' | 'namaPemilik'>,
-  extension: 'kml' | 'kmz'
+  extension: GeoExportFormat
 ): string {
   return `SPPTG-${submission.id}-${sanitiseFilename(submission.namaPemilik)}.${extension}`;
 }
@@ -79,48 +64,10 @@ function formatDate(value: Date | string): string {
   });
 }
 
-/**
- * A KML LinearRing must be explicitly closed. Drawn polygons usually already
- * repeat the first vertex, but KML/KMZ imports and older rows do not always.
- */
-function closeRing(ring: number[][]): number[][] {
-  if (ring.length < 3) return ring;
-  const [firstLng, firstLat] = ring[0];
-  const [lastLng, lastLat] = ring[ring.length - 1];
-  if (firstLng === lastLng && firstLat === lastLat) return ring;
-  return [...ring, ring[0]];
-}
-
-/** KML orders each tuple lng,lat,altitude — the same order as GeoJSON. */
-function ringToCoordinates(ring: number[][]): string {
-  return closeRing(ring)
-    .map(([lng, lat]) => `${lng},${lat},0`)
-    .join(' ');
-}
-
-function extendedData(rows: Array<[string, string]>): string {
-  const entries = rows
-    .map(
-      ([name, value]) =>
-        `        <Data name="${escapeXml(name)}"><value>${escapeXml(value)}</value></Data>`
-    )
-    .join('\n');
-  return `      <ExtendedData>\n${entries}\n      </ExtendedData>`;
-}
-
-/**
- * Build the KML document for one pengajuan.
- *
- * @throws when the submission has no usable polygon — there is nothing to export.
- */
-export function buildSubmissionKML(submission: KMLExportSubmission): string {
-  const polygons = geometryPolygons(submission.geoJSON).filter(
-    (rings) => (rings[0]?.length ?? 0) >= 3
-  );
-  if (polygons.length === 0) {
-    throw new Error('Pengajuan ini tidak memiliki polygon batas lahan.');
-  }
-
+/** The pengajuan as one export feature — name, blurb and attribute table. */
+export function submissionExportFeature(
+  submission: KMLExportSubmission
+): GeoExportFeature {
   const lokasi = [
     submission.desaNama ?? undefined,
     submission.desaKecamatan || submission.kecamatan || undefined,
@@ -129,103 +76,78 @@ export function buildSubmissionKML(submission: KMLExportSubmission): string {
     .filter((part): part is string => Boolean(part && part.trim()))
     .join(', ');
 
-  const name = `SPPTG #${submission.id} — ${submission.namaPemilik}`;
-  const description = [
-    `Nama Pemilik: ${submission.namaPemilik}`,
-    submission.nik ? `NIK: ${submission.nik}` : null,
-    lokasi ? `Lokasi: ${lokasi}` : null,
-    `Luas: ${submission.luas.toLocaleString('id-ID')} m²`,
-    submission.penggunaanLahan ? `Penggunaan Lahan: ${submission.penggunaanLahan}` : null,
-    `Status: ${submission.status}`,
-    `Tanggal Pengajuan: ${formatDate(submission.tanggalPengajuan)}`,
-  ]
-    .filter((line): line is string => line !== null)
-    .join('\n');
-
-  const data: Array<[string, string]> = [
-    ['id', String(submission.id)],
-    ['namaPemilik', submission.namaPemilik],
-  ];
-  if (submission.nik) data.push(['nik', submission.nik]);
-  if (submission.desaNama) data.push(['desa', submission.desaNama]);
   const kecamatan = submission.desaKecamatan || submission.kecamatan;
-  if (kecamatan) data.push(['kecamatan', kecamatan]);
-  if (submission.kabupaten) data.push(['kabupaten', submission.kabupaten]);
-  data.push(['luas_m2', String(submission.luas)]);
-  if (submission.luasManual != null) {
-    data.push(['luas_manual_m2', String(submission.luasManual)]);
-  }
-  if (submission.penggunaanLahan) {
-    data.push(['penggunaanLahan', submission.penggunaanLahan]);
-  }
-  data.push(['status', submission.status]);
 
-  // Inner rings are holes in the parcel. The app cannot draw them today, but a
-  // KML import can carry them, so round-trip whatever is stored.
-  const polygonXml = polygons
-    .map((rings) => {
-      const innerBoundaries = rings
-        .slice(1)
-        .filter((ring) => ring.length >= 3)
-        .map(
-          (ring) =>
-            `          <innerBoundaryIs><LinearRing><coordinates>${ringToCoordinates(
-              ring
-            )}</coordinates></LinearRing></innerBoundaryIs>`
-        )
-        .join('\n');
-
-      return `      <Polygon>
-        <tessellate>1</tessellate>
-        <altitudeMode>clampToGround</altitudeMode>
-        <outerBoundaryIs>
-          <LinearRing>
-            <coordinates>${ringToCoordinates(rings[0])}</coordinates>
-          </LinearRing>
-        </outerBoundaryIs>${innerBoundaries ? `\n${innerBoundaries}` : ''}
-      </Polygon>`;
-    })
-    .join('\n');
-
-  // Several bidang go into one MultiGeometry Placemark so the pengajuan stays a
-  // single feature in whatever GIS desk opens it.
-  const geometryXml =
-    polygons.length > 1
-      ? `      <MultiGeometry>\n${polygonXml}\n      </MultiGeometry>`
-      : polygonXml;
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-  <Document>
-    <name>${escapeXml(name)}</name>
-    <description>${escapeXml(`Diekspor dari SIAPTAH — Sistem Informasi Administrasi Pertanahan`)}</description>
-    <Style id="batasLahan">
-      <LineStyle>
-        <color>ff2563eb</color>
-        <width>3</width>
-      </LineStyle>
-      <PolyStyle>
-        <color>4d2563eb</color>
-      </PolyStyle>
-    </Style>
-    <Placemark>
-      <name>${escapeXml(name)}</name>
-      <description>${escapeXml(description)}</description>
-      <styleUrl>#batasLahan</styleUrl>
-${extendedData(data)}
-${geometryXml}
-    </Placemark>
-  </Document>
-</kml>
-`;
+  return {
+    name: `SPPTG #${submission.id} — ${submission.namaPemilik}`,
+    description: [
+      `Nama Pemilik: ${submission.namaPemilik}`,
+      submission.nik ? `NIK: ${submission.nik}` : null,
+      lokasi ? `Lokasi: ${lokasi}` : null,
+      `Luas: ${submission.luas.toLocaleString('id-ID')} m²`,
+      submission.penggunaanLahan ? `Penggunaan Lahan: ${submission.penggunaanLahan}` : null,
+      `Status: ${submission.status}`,
+      `Tanggal Pengajuan: ${formatDate(submission.tanggalPengajuan)}`,
+    ]
+      .filter((line): line is string => line !== null)
+      .join('\n'),
+    properties: {
+      id: submission.id,
+      namaPemilik: submission.namaPemilik,
+      nik: submission.nik,
+      desa: submission.desaNama,
+      kecamatan,
+      kabupaten: submission.kabupaten,
+      luas_m2: submission.luas,
+      luas_manual_m2: submission.luasManual,
+      penggunaanLahan: submission.penggunaanLahan,
+      status: submission.status,
+    },
+    geometry: submission.geoJSON,
+  };
 }
 
 /**
- * Zip the KML into a KMZ. Google Earth expects the document at the archive
- * root and named `doc.kml`.
+ * Refuse a pengajuan with nothing to export, in this screen's own words.
+ *
+ * The shared builders throw a generic message because they do not know what
+ * they were handed; on the detail page the reader knows exactly which berkas
+ * they pressed the button for, and "pengajuan ini tidak memiliki polygon batas
+ * lahan" tells them what to fix.
+ */
+function assertHasPolygon(submission: KMLExportSubmission): void {
+  if (usablePolygons(submission.geoJSON).length === 0) {
+    throw new Error('Pengajuan ini tidak memiliki polygon batas lahan.');
+  }
+}
+
+/**
+ * Build the KML document for one pengajuan.
+ *
+ * @throws when the submission has no usable polygon — there is nothing to export.
+ */
+export function buildSubmissionKML(submission: KMLExportSubmission): string {
+  assertHasPolygon(submission);
+  return buildKML([submissionExportFeature(submission)], {
+    documentName: `SPPTG #${submission.id} — ${submission.namaPemilik}`,
+  });
+}
+
+/** The pengajuan's boundary in whichever format was asked for. */
+export async function buildSubmissionExport(
+  submission: KMLExportSubmission,
+  format: GeoExportFormat
+): Promise<Blob> {
+  assertHasPolygon(submission);
+  return buildGeoExport([submissionExportFeature(submission)], format, {
+    documentName: `SPPTG #${submission.id} — ${submission.namaPemilik}`,
+  });
+}
+
+/**
+ * Zip the KML into a KMZ. Kept as a named export because the detail page has
+ * always called it directly; `buildKMZ` is the shared implementation.
  */
 export async function buildSubmissionKMZ(kml: string): Promise<Blob> {
-  const zip = new JSZip();
-  zip.file('doc.kml', kml);
-  return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+  return buildKMZ(kml);
 }

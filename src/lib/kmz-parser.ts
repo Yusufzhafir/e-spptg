@@ -3,6 +3,8 @@
  * Converts to GeoJSON Polygon format for backend submission
  */
 
+import type { KawasanAttributeSuggestion } from './shapefile-attributes';
+
 export interface ParsedCoordinate {
   id: string;
   latitude: number;
@@ -17,6 +19,17 @@ export interface ParsedCoordinate {
 export interface ParsedPolygon {
   /** `<name>` of the owning Placemark, when it had one. */
   name?: string;
+  /**
+   * Name of the **feature** this ring came from, before any per-ring numbering.
+   *
+   * `name` is a label for one ring, and a multi-part feature has its parts
+   * numbered into it (`TN Kutai (1)`, `TN Kutai (2)`, …) so a list of polygons
+   * does not show the same text repeatedly. That numbering is exactly wrong for
+   * deciding which rings belong to the same kawasan — it turned one 16-block
+   * kawasan into 16 — so the unnumbered name is kept alongside it and that is
+   * what `kawasan-bulk-import` groups on.
+   */
+  featureName?: string;
   coordinates: ParsedCoordinate[];
 }
 
@@ -32,6 +45,13 @@ export interface ParseResult {
     type: 'Polygon';
     coordinates: [[[number, number]]];
   };
+  /**
+   * Form fields the file's own attribute table can fill in — see
+   * `./shapefile-attributes`. Only the shapefile reader produces this; a KML
+   * carries a `<name>` and little else, and a caller that ignores it is
+   * unaffected.
+   */
+  atribut?: KawasanAttributeSuggestion;
   error?: string;
 }
 
@@ -39,21 +59,53 @@ export interface ParseResult {
 export type KMZParseResult = ParseResult;
 
 /** Failure shape shared by every parser entry point. */
-function parseFailure(error: string): ParseResult {
+export function parseFailure(error: string): ParseResult {
   return { success: false, coordinates: [], polygons: [], error };
+}
+
+/**
+ * Vertices one polygon may carry, and who the ceiling is for.
+ *
+ * A **pengajuan** keeps its boundary in `submission_drafts.payload` as JSON, and
+ * `landPolygonSchema` refuses more than this per bidang — so an import that
+ * exceeded it would only fail later, on save, with the work already done.
+ *
+ * A **kawasan** has no such ceiling: its geometry goes straight into a PostGIS
+ * `geometry(MultiPolygon,4326)` column, and the boundaries that go in there are
+ * whole Kawasan Hutan traced from an SK — hundreds or thousands of vertices is
+ * what those files legitimately look like. Refusing them was the wizard's rule
+ * leaking onto a page it never applied to, so that caller passes
+ * {@link UNLIMITED_POLYGON_POINTS}.
+ */
+export const DEFAULT_MAX_POLYGON_POINTS = 100;
+export const UNLIMITED_POLYGON_POINTS = Number.POSITIVE_INFINITY;
+
+/** How strictly an importer checks the polygons it read. */
+export interface ParseOptions {
+  /** Vertices allowed per polygon. Defaults to {@link DEFAULT_MAX_POLYGON_POINTS}. */
+  maxPoints?: number;
 }
 
 /**
  * Validate every polygon found and package them into a ParseResult.
  * The first polygon doubles as the flat `coordinates`/`geoJSON` result.
+ *
+ * Exported for the shapefile reader (`./shapefile-parser`), which lives in its
+ * own module so shpjs stays out of the bundle until someone imports a .zip, but
+ * must produce results this one's callers cannot tell apart.
  */
-function buildParseResult(polygons: ParsedPolygon[], emptyError: string): ParseResult {
+export function buildParseResult(
+  polygons: ParsedPolygon[],
+  emptyError: string,
+  options: ParseOptions = {},
+  atribut?: KawasanAttributeSuggestion
+): ParseResult {
   if (polygons.length === 0) {
     return parseFailure(emptyError);
   }
 
   for (const [index, polygon] of polygons.entries()) {
-    const validation = validatePolygonCoordinates(polygon.coordinates);
+    const validation = validatePolygonCoordinates(polygon.coordinates, options);
     if (!validation.valid) {
       const label = polygon.name?.trim() || `Polygon ${index + 1}`;
       return parseFailure(`${label}: ${validation.error}`);
@@ -65,18 +117,26 @@ function buildParseResult(polygons: ParsedPolygon[], emptyError: string): ParseR
     coordinates: polygons[0].coordinates,
     polygons,
     geoJSON: convertCoordinatesToGeoJSONPolygon(polygons[0].coordinates),
+    atribut,
   };
 }
 
 /**
  * Parse KML file directly (not zipped)
  */
-export async function parseKMLFile(file: File): Promise<ParseResult> {
+export async function parseKMLFile(
+  file: File,
+  options: ParseOptions = {}
+): Promise<ParseResult> {
   try {
     const content = await file.text();
     const polygons = parseKMLPolygons(content);
 
-    return buildParseResult(polygons, 'Tidak ada koordinat yang ditemukan dalam file KML');
+    return buildParseResult(
+      polygons,
+      'Tidak ada koordinat yang ditemukan dalam file KML',
+      options
+    );
   } catch (error) {
     console.error('Error parsing KML:', error);
     return parseFailure(
@@ -88,7 +148,10 @@ export async function parseKMLFile(file: File): Promise<ParseResult> {
 /**
  * Parse GPX file and extract coordinates
  */
-export async function parseGPXFile(file: File): Promise<ParseResult> {
+export async function parseGPXFile(
+  file: File,
+  options: ParseOptions = {}
+): Promise<ParseResult> {
   try {
     const content = await file.text();
     const coordinates = parseGPXCoordinates(content);
@@ -97,7 +160,11 @@ export async function parseGPXFile(file: File): Promise<ParseResult> {
     const polygons: ParsedPolygon[] =
       coordinates.length > 0 ? [{ coordinates }] : [];
 
-    return buildParseResult(polygons, 'Tidak ada koordinat yang ditemukan dalam file GPX');
+    return buildParseResult(
+      polygons,
+      'Tidak ada koordinat yang ditemukan dalam file GPX',
+      options
+    );
   } catch (error) {
     console.error('Error parsing GPX:', error);
     return parseFailure(
@@ -191,7 +258,10 @@ function parseGPXCoordinates(
   }
 }
 
-export async function parseKMZFile(file: File): Promise<KMZParseResult> {
+export async function parseKMZFile(
+  file: File,
+  options: ParseOptions = {}
+): Promise<KMZParseResult> {
   try {
     // Use JSZip to unzip the KMZ file
     const JSZip = (await import('jszip')).default;
@@ -214,7 +284,11 @@ export async function parseKMZFile(file: File): Promise<KMZParseResult> {
 
     const polygons = parseKMLPolygons(kmlContent);
 
-    return buildParseResult(polygons, 'Tidak ada koordinat yang ditemukan dalam file KML');
+    return buildParseResult(
+      polygons,
+      'Tidak ada koordinat yang ditemukan dalam file KML',
+      options
+    );
   } catch (error) {
     console.error('Error parsing KMZ:', error);
     return parseFailure(
@@ -330,8 +404,11 @@ const processCoordinates = (coordsString: string): Array<{ lat: number; lng: num
  * - Not self-intersecting (simplified check)
  */
 export function validatePolygonCoordinates(
-  coordinates: Array<{ latitude: number; longitude: number }>
+  coordinates: Array<{ latitude: number; longitude: number }>,
+  options: ParseOptions = {}
 ): { valid: boolean; error?: string } {
+  const maxPoints = options.maxPoints ?? DEFAULT_MAX_POLYGON_POINTS;
+
   if (coordinates.length < 3) {
     return {
       valid: false,
@@ -339,10 +416,10 @@ export function validatePolygonCoordinates(
     };
   }
 
-  if (coordinates.length > 100) {
+  if (coordinates.length > maxPoints) {
     return {
       valid: false,
-      error: 'Maksimal 100 titik koordinat',
+      error: `Maksimal ${maxPoints} titik koordinat`,
     };
   }
 
@@ -395,22 +472,45 @@ export function convertCoordinatesToGeoJSONPolygon(
 }
 
 /**
- * Unified parser that detects file type and routes to appropriate parser
+ * Unified parser that detects file type and routes to appropriate parser.
+ *
+ * A `.zip` is read as an ESRI shapefile set — that archive is how ArcGIS and
+ * QGIS hand a boundary over, and its parts (.shp/.dbf/.shx/.prj/.cpg) are
+ * useless apart. The reader is loaded on demand, so shpjs and its projection
+ * tables never reach a bundle nobody imports a shapefile in.
  */
-export async function parseGeospatialFile(file: File): Promise<ParseResult> {
+export async function parseGeospatialFile(
+  file: File,
+  options: ParseOptions = {}
+): Promise<ParseResult> {
   const fileName = file.name.toLowerCase();
   const extension = fileName.split('.').pop();
 
   switch (extension) {
     case 'kmz':
-      return parseKMZFile(file);
+      return parseKMZFile(file, options);
     case 'kml':
-      return parseKMLFile(file);
+      return parseKMLFile(file, options);
     case 'gpx':
-      return parseGPXFile(file);
+      return parseGPXFile(file, options);
+    case 'zip': {
+      const { parseShapefileZip, zipContainsShapefile } = await import(
+        './shapefile-parser'
+      );
+      // Read once and hand the same bytes to both steps. A provincial
+      // shapefile is 16 MB compressed and 24 MB of geometry inside it; reading
+      // the File twice meant two copies plus two full archive loads before a
+      // single coordinate had been produced.
+      const bytes = await file.arrayBuffer();
+      // No .shp inside almost always means a KMZ that was renamed or re-zipped;
+      // reading it as one beats telling the operator their file is unsupported.
+      return (await zipContainsShapefile(bytes))
+        ? parseShapefileZip(bytes, options, file.name)
+        : parseKMZFile(file, options);
+    }
     default:
       return parseFailure(
-        'Format file tidak didukung. Format yang didukung: KMZ, KML, GPX'
+        'Format file tidak didukung. Format yang didukung: KML, KMZ, GPX, dan ZIP berisi shapefile (.shp, .dbf, .shx, .prj)'
       );
   }
 }

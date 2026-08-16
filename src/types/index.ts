@@ -239,11 +239,30 @@ export interface LandPolygon {
   nama?: string;
   coordinates: GeographicCoordinate[];
   /**
-   * Imported from a geospatial file, so the vertices are the file's record and
-   * are not editable — a wrong import is deleted and re-imported rather than
-   * unlocked.
+   * The vertices are frozen — set on import, because the file is the record of
+   * where the boundary runs. A working state, not a verdict: the editors toggle
+   * it per polygon ("Buka Kunci" / "Kunci"), so a wrong import can be corrected
+   * in place and locked again, and a hand-drawn polygon can be pinned the same
+   * way once it is right.
    */
   locked?: boolean;
+
+  /**
+   * What was recorded at the patok for *this* bidang. Each parcel has its own
+   * persil number and its own tape measurements — a claim covering three
+   * separated bidang has three of each, and folding them into one pengajuan-level
+   * value said something false about all but one of them.
+   *
+   * The draft still carries `nomorPersil` / `luasManual` / `panjangLahan` /
+   * `lebarLahan` at the top level, derived from this list on save — see
+   * `derivedBidangFields` in `@/lib/land-polygons`.
+   */
+  nomorPersil?: string;
+  /** m², measured rather than computed from the boundary. */
+  luasManual?: number;
+  /** Tape measurement at the patok, in metres. */
+  panjang?: number;
+  lebar?: number;
 }
 
 export interface UTMCoordinate {
@@ -288,7 +307,12 @@ export interface SubmissionDraft {
   villageId?: number; // Village ID
   namaJalan?: string; // Street name
   namaGang?: string; // Alley name
-  nomorPersil?: string; // Plot number
+  /**
+   * Persil number of the first bidang, mirrored from `polygons` — the editable
+   * value lives on the bidang itself. Kept for drafts filed before a pengajuan
+   * could hold more than one.
+   */
+  nomorPersil?: string;
   rtrw?: string; // RT/RW
   dusun?: string; // Hamlet
   kecamatan?: string; // District
@@ -323,10 +347,17 @@ export interface SubmissionDraft {
   dokumenTidakSengketa?: UploadedDocument;
   
   overlapResults: OverlapResult[];
-  luasLahan?: number; // m² calculated from polygon
-  luasManual?: number | null; // m² input manual
+  luasLahan?: number; // m² calculated from polygon (total across bidang)
+  /**
+   * Total manually measured area, summed over the bidang that have one. Derived
+   * from `polygons` on save; the per-bidang figure is `LandPolygon.luasManual`.
+   */
+  luasManual?: number | null;
   kelilingLahan?: number; // m
-  /** Tape measurement at the patok, in metres. Optional, printed on no document. */
+  /**
+   * Tape measurement of the first bidang, in metres — mirrored from `polygons`
+   * the same way `nomorPersil` is.
+   */
   panjangLahan?: number;
   lebarLahan?: number;
   

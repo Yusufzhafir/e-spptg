@@ -4,8 +4,10 @@ import {
   generateStaticMapUrlForPolygons,
 } from '@/lib/map-static-api';
 import {
+  bidangRincianList,
   draftPolygons,
   isUsablePolygon,
+  totalLuasPengukuran,
   validCoordinates,
 } from '@/lib/land-polygons';
 import { numberToIndonesianWords } from '@/lib/number-to-words';
@@ -96,13 +98,25 @@ export function buildSPPTGPDFData(
   villageData?: VillageLike | null,
   options: BuildSPPTGPDFDataOptions = {}
 ): SPPTGPDFData {
-  const luasValue = draft.luasManual || draft.luasLahan || 0;
-  const luasTerbilang = luasValue ? numberToIndonesianWords(luasValue) : '';
-
-  // Every bidang of the pengajuan: the map frames all of them, and the
-  // coordinate attachment prints one sheet per boundary.
+  // Every bidang of the pengajuan: the map frames all of them, the coordinate
+  // attachment prints one sheet per boundary, and each carries its own persil
+  // number and measurements.
   const polygons = draftPolygons(draft).filter(isUsablePolygon);
   const polygonRings = polygons.map((polygon) => validCoordinates(polygon.coordinates));
+  const rincian = bidangRincianList(polygons);
+
+  /**
+   * The area the certificate states. Summed per bidang — each one contributes
+   * what the surveyor measured on it, or what its boundary computes when it was
+   * not measured by hand — so a claim of three parcels states all three, and
+   * never a single parcel's figure for the lot.
+   *
+   * Falls back to the draft's own totals for a berkas with no usable boundary at
+   * all, which is the only way it can be zero here.
+   */
+  const luasValue =
+    totalLuasPengukuran(polygons) || draft.luasManual || draft.luasLahan || 0;
+  const luasTerbilang = luasValue ? numberToIndonesianWords(luasValue) : '';
 
   const mapImageUrl =
     polygonRings.length > 0
@@ -128,6 +142,8 @@ export function buildSPPTGPDFData(
     luasManual: luasValue || undefined,
     luasTerbilang,
     luasLahan: draft.luasLahan,
+    panjangLahan: rincian.length === 1 ? rincian[0].panjang : undefined,
+    lebarLahan: rincian.length === 1 ? rincian[0].lebar : undefined,
     penggunaanLahan: draft.penggunaanLahan,
     tahunAwalGarap: draft.tahunAwalGarap,
     statusTanah: draft.statusTanah,
@@ -135,7 +151,9 @@ export function buildSPPTGPDFData(
     tahunPerolehan: draft.tahunPerolehan,
     namaJalan: draft.namaJalan,
     namaGang: draft.namaGang,
-    nomorPersil: draft.nomorPersil,
+    // The single-bidang value. With more than one, statement 1.a prints a row
+    // per bidang straight from `polygons` instead.
+    nomorPersil: rincian.length === 1 ? rincian[0].nomorPersil : undefined,
     rtrw: draft.rtrw,
     dusun: draft.dusun,
     namaDesa: resolvedNamaDesa,
@@ -150,6 +168,11 @@ export function buildSPPTGPDFData(
     polygons: polygons.map((polygon, index) => ({
       nama: polygon.nama,
       coordinates: polygonRings[index],
+      nomorPersil: rincian[index]?.nomorPersil,
+      luasManual: rincian[index]?.luasManual,
+      luasHitung: rincian[index]?.luasHitung,
+      panjang: rincian[index]?.panjang,
+      lebar: rincian[index]?.lebar,
     })),
     mapImageUrl,
     ...buildVariantData(draft),

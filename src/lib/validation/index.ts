@@ -125,12 +125,54 @@ export const createProhibitedAreaSchema = z.object({
 export const updateProhibitedAreaSchema = createProhibitedAreaSchema.partial();
 
 /**
- * A whole KML worth of kawasan in one go.
+ * A saved-but-unfinished Tambah/Edit Kawasan form.
  *
- * The attributes (jenis, sumber, dasar hukum, tanggal efektif) are shared by the
- * batch — a boundary file comes from one SK — while each polygon keeps its own
- * name, taken from its placemark. Capped so a stray file cannot insert
- * thousands of rows in a single transaction.
+ * Kawasan drafts live in the browser (`src/lib/kawasan-draft-storage.ts`), not
+ * the database, so this schema is here for the **shape** — `KawasanDraftPayload`
+ * is what the storage layer reads and writes — rather than to guard a
+ * procedure. Every field is optional and none of the "wajib diisi" rules apply:
+ * the point of a draft is that it is incomplete, and the full
+ * `createProhibitedAreaSchema` runs when the kawasan is actually written.
+ * `warna` is absent because Kawasan Non-SPPTG are always red and the field is
+ * not user-editable.
+ *
+ * `tanggalEfektif` stays the `yyyy-mm-dd` string the date input holds rather
+ * than a coerced Date, so a half-typed date round-trips instead of being
+ * rejected or silently turned into something else.
+ */
+export const kawasanDraftPayloadSchema = z.object({
+  namaKawasan: z.string().max(255).optional(),
+  jenisKawasan: z.enum(PROHIBITED_AREA_TYPES).optional(),
+  sumberData: z.string().max(255).optional(),
+  dasarHukum: z.string().max(1000).optional(),
+  tanggalEfektif: z.string().max(32).optional(),
+  statusValidasi: z.enum(['Lolos', 'Perlu Perbaikan']).optional(),
+  aktifDiValidasi: z.boolean().optional(),
+  catatan: z.string().max(4000).nullable().optional(),
+  geomGeoJSON: geomGeoJSONAreaSchema.nullable().optional(),
+});
+
+export type KawasanDraftPayload = z.infer<typeof kawasanDraftPayloadSchema>;
+
+/**
+ * A whole boundary file worth of kawasan in one request.
+ *
+ * The attributes (jenis, sumber, dasar hukum, tanggal efektif) are the batch's
+ * **defaults** — a boundary file comes from one SK, so they are right nearly
+ * always — while each kawasan keeps its own name and geometry and may override
+ * any of them. *Nearly* is why the overrides exist: one release routinely mixes
+ * Hutan Lindung with Hutan Produksi, and a batch-only form left an officer
+ * either importing twice or recording the wrong jenis on half the rows.
+ *
+ * That geometry is a **MultiPolygon**, not a single Polygon: grouping a KLHK
+ * release by its name column gives one kawasan made of several detached blocks
+ * far more often than not (188 named areas across 1 440 rings in the Kaltim SK),
+ * and accepting only Polygon would have meant either one row per ring — 1 440
+ * kawasan where there are 188 — or quietly keeping the first block of each.
+ *
+ * Capped per request so a stray file cannot insert thousands of rows in a
+ * single transaction; the client batches to stay under it, sized by vertex
+ * count rather than row count (see `kawasan-bulk-import.ts`).
  */
 export const createProhibitedAreasBulkSchema = createProhibitedAreaSchema
   .omit({ namaKawasan: true, geomGeoJSON: true })
@@ -139,11 +181,21 @@ export const createProhibitedAreasBulkSchema = createProhibitedAreaSchema
       .array(
         z.object({
           namaKawasan: z.string().min(2, 'Nama kawasan minimal 2 karakter'),
-          geomGeoJSON: geomGeoJSONPolygonSchema,
+          geomGeoJSON: geomGeoJSONAreaSchema,
+          // Per-kawasan overrides. Absent means "use the batch value", which is
+          // why every one of them is optional rather than defaulted here — a
+          // default would make "not overridden" indistinguishable from
+          // "overridden with the same value".
+          jenisKawasan: z.enum(PROHIBITED_AREA_TYPES).optional(),
+          sumberData: z.string().min(2, 'Sumber data minimal 2 karakter').optional(),
+          dasarHukum: z.string().optional(),
+          tanggalEfektif: z.coerce.date().optional(),
+          statusValidasi: z.enum(['Lolos', 'Perlu Perbaikan']).optional(),
+          aktifDiValidasi: z.boolean().optional(),
         })
       )
-      .min(1, 'Minimal 1 polygon diperlukan')
-      .max(200, 'Maksimal 200 polygon per impor'),
+      .min(1, 'Minimal 1 kawasan diperlukan')
+      .max(200, 'Maksimal 200 kawasan per permintaan'),
   });
 
 // ============================================================================

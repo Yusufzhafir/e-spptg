@@ -18,13 +18,27 @@ import { SortableHead } from './table-sort';
 import { TablePager } from './table-pagination';
 import { useServerPagination, useTableUrlState } from './table-url-state';
 import { useAuthRole } from './AuthRoleProvider';
-import { formatDate } from '@/lib/format-date';
+import { formatDate, formatDateTime } from '@/lib/format-date';
+import {
+  deleteKawasanDraft,
+  listKawasanDrafts,
+  type KawasanDraftRecord,
+} from '@/lib/kawasan-draft-storage';
 import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
+import {
+  GEO_EXPORT_FORMATS,
+  GEO_EXPORT_LABELS,
+  type GeoExportFormat,
+} from '@/lib/geo-export';
 import { PROHIBITED_AREA_TYPES } from '@/lib/prohibited-area-types';
 import { trpc } from '@/trpc/client';
-import { StatusBadge } from './StatusBadge';
-import type { StatusSPPTG } from '../types';
 import { SearchableSelect } from './SearchableSelect';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 import {
   Dialog,
   DialogContent,
@@ -53,11 +67,12 @@ import {
   Trash2,
   AlertTriangle,
   Shield,
-  Upload,
+  FileClock,
+  FileUp,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CreateProhibitedAreaInput, UpdateProhibitedAreaInput } from '@/types/prohibitedAreas';
-import { KawasanBulkImportDialog } from './KawasanBulkImportDialog';
+import type { GeoJSONMultiPolygon, GeoJSONPolygon } from '@/types';
 
 /** Filters this table keeps in the URL, beside the search box. */
 const AREA_FILTER_KEYS = ['jenis', 'status'] as const;
@@ -130,6 +145,27 @@ export function ProhibitedAreasTab({
 
   const pagination = useServerPagination(table, areasPage?.total ?? 0);
 
+  // This officer's unfinished kawasan forms, held in this browser. Read after
+  // mount — localStorage does not exist while the page prerenders.
+  const [drafts, setDrafts] = useState<KawasanDraftRecord[]>([]);
+
+  useEffect(() => {
+    if (!canManageKawasan || !currentUser) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage is unreadable during render
+    setDrafts(listKawasanDrafts(currentUser.id));
+  }, [canManageKawasan, currentUser]);
+
+  const handleDeleteDraft = (id: string) => {
+    if (!currentUser) return;
+    try {
+      deleteKawasanDraft(currentUser.id, id);
+      setDrafts(listKawasanDrafts(currentUser.id));
+      toast.success('Draft kawasan dihapus.');
+    } catch {
+      toast.error('Gagal menghapus draft kawasan dari browser ini.');
+    }
+  };
+
   const prohibitedAreas: ProhibitedArea[] = useMemo(
     () =>
       (areasPage?.items ?? []).map((a) => ({
@@ -160,24 +196,7 @@ export function ProhibitedAreasTab({
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false);
-  const [isOverlapCheckDialogOpen, setIsOverlapCheckDialogOpen] = useState(false);
-  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [selectedArea, setSelectedArea] = useState<ProhibitedArea | null>(null);
-
-  // Overlap report is computed on demand (PostGIS), only while the dialog is open
-  const {
-    data: overlapData,
-    isLoading: isLoadingOverlaps,
-    isError: overlapError,
-  } = trpc.prohibitedAreas.checkOverlaps.useQuery(undefined, {
-    enabled: isOverlapCheckDialogOpen,
-  });
-  const overlapRows = useMemo(() => overlapData ?? [], [overlapData]);
-  // A submission can overlap several kawasan — count distinct submissions
-  const overlapSubmissionCount = useMemo(
-    () => new Set(overlapRows.map((r) => r.submissionId)).size,
-    [overlapRows]
-  );
 
   // Optimistic override for the "Aktif di Validasi" toggle (id -> value)
   const [optimisticActive, setOptimisticActive] = useState<Record<number, boolean>>({});
@@ -262,53 +281,90 @@ export function ProhibitedAreasTab({
     );
   };
 
+  // The overlap report is its own page now: it carries a map beside the table,
+  // and an officer follows a row into a pengajuan and comes back to it — none of
+  // which a dialog survives.
   const handleOverlapCheck = () => {
-    setIsOverlapCheckDialogOpen(true);
+    router.push('/app/pengaturan/kawasan/tumpang-tindih');
   };
 
-  const handleDownloadArea = (area: ProhibitedArea) => {
+  /**
+   * Download one kawasan's boundary.
+   *
+   * The same three formats the pengajuan detail page offers, from the same
+   * builder — an office handing a boundary to BPN or its own GIS desk should
+   * not find that "download" means something different depending on which
+   * screen it came from.
+   */
+  const handleDownloadArea = async (area: ProhibitedArea, format: GeoExportFormat) => {
     if (!area.geomGeoJSON) {
       toast.error('Kawasan ini tidak memiliki data geometri untuk diunduh.');
       return;
     }
-    let geometry: unknown;
+
+    let geometry: GeoJSONPolygon | GeoJSONMultiPolygon;
     try {
-      geometry = JSON.parse(area.geomGeoJSON);
+      geometry =
+        typeof area.geomGeoJSON === 'string'
+          ? JSON.parse(area.geomGeoJSON)
+          : (area.geomGeoJSON as GeoJSONPolygon | GeoJSONMultiPolygon);
     } catch {
       toast.error('Data geometri tidak valid.');
       return;
     }
-    const featureCollection = {
-      type: 'FeatureCollection',
-      features: [
-        {
-          type: 'Feature',
-          properties: {
-            id: area.id,
-            namaKawasan: area.namaKawasan,
-            jenisKawasan: area.jenisKawasan,
-            sumberData: area.sumberData,
-            dasarHukum: area.dasarHukum,
-            statusValidasi: area.statusValidasi,
-            warna: area.warna,
+
+    try {
+      const { buildGeoExport, downloadBlob, sanitiseFilename } = await import(
+        '@/lib/geo-export'
+      );
+
+      const blob = await buildGeoExport(
+        [
+          {
+            name: area.namaKawasan,
+            description: [
+              `Nama Kawasan: ${area.namaKawasan}`,
+              `Jenis Kawasan: ${area.jenisKawasan}`,
+              `Sumber Data: ${area.sumberData}`,
+              area.dasarHukum ? `Dasar Hukum: ${area.dasarHukum}` : null,
+              `Tanggal Efektif: ${formatDate(area.tanggalEfektif)}`,
+              `Status Validasi: ${area.statusValidasi}`,
+            ]
+              .filter((line): line is string => line !== null)
+              .join('\n'),
+            properties: {
+              id: area.id,
+              namaKawasan: area.namaKawasan,
+              jenisKawasan: area.jenisKawasan,
+              sumberData: area.sumberData,
+              dasarHukum: area.dasarHukum,
+              tanggalEfektif: area.tanggalEfektif,
+              statusValidasi: area.statusValidasi,
+              aktifDiValidasi: String(area.aktifDiValidasi),
+            },
+            geometry,
           },
-          geometry,
-        },
-      ],
-    };
-    const blob = new Blob([JSON.stringify(featureCollection, null, 2)], {
-      type: 'application/geo+json',
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    const safeName = area.namaKawasan.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '') || 'kawasan';
-    link.href = url;
-    link.download = `${safeName}.geojson`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    toast.success('File GeoJSON berhasil diunduh.');
+        ],
+        format,
+        {
+          documentName: `Kawasan Non-SPPTG — ${area.namaKawasan}`,
+          // Red, the one colour every Kawasan Non-SPPTG is drawn in here, so
+          // the file opens in Google Earth looking like the app's own map.
+          lineColor: 'ff4444ef',
+          fillColor: '4d4444ef',
+        }
+      );
+
+      downloadBlob(
+        blob,
+        `${sanitiseFilename(area.namaKawasan, 'kawasan')}.${format}`
+      );
+      toast.success(`Berkas ${format.toUpperCase()} berhasil diunduh.`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : `Gagal membuat berkas ${format.toUpperCase()}.`
+      );
+    }
   };
 
   const jenisKawasanOptions: readonly ProhibitedAreaType[] = PROHIBITED_AREA_TYPES;
@@ -375,28 +431,94 @@ export function ProhibitedAreasTab({
             Cek Tumpang Tindih
           </Button>
           {canManageKawasan && (
-            <>
-              {/* One file, many kawasan — the usual shape of a boundary
-                  handover, which the single-area form made painful. */}
-              <Button
-                variant="outline"
-                onClick={() => setIsBulkImportOpen(true)}
-                className="flex-1 lg:flex-initial"
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                Impor KML
-              </Button>
-              <Button
-                onClick={handleAddArea}
-                className="bg-blue-600 hover:bg-blue-700 flex-1 lg:flex-initial"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Tambah Kawasan Non‑SPPTG
-              </Button>
-            </>
+            <Button
+              variant="outline"
+              onClick={() => router.push('/app/pengaturan/kawasan/impor')}
+              className="flex-1 lg:flex-initial"
+              title="Unggah satu file berisi banyak kawasan sekaligus"
+            >
+              <FileUp className="h-4 w-4 mr-2" />
+              Impor Massal
+            </Button>
+          )}
+          {canManageKawasan && (
+            <Button
+              onClick={handleAddArea}
+              className="bg-blue-600 hover:bg-blue-700 flex-1 lg:flex-initial"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Tambah Kawasan Non‑SPPTG
+            </Button>
           )}
         </div>
       </div>
+
+      {/* Unfinished kawasan forms, if this officer has any in this browser.
+          Tracing a Kawasan Hutan out of an SK rarely finishes in one sitting. */}
+      {canManageKawasan && drafts.length > 0 && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <p className="mb-1 flex items-center gap-2 text-sm font-semibold text-blue-900">
+            <FileClock className="h-4 w-4" />
+            Draft Kawasan Belum Selesai ({drafts.length})
+          </p>
+          {/* Said outright, because it is the one thing a browser-stored draft
+              does differently from everything else in this app. */}
+          <p className="mb-3 text-xs text-blue-800">
+            Draft tersimpan di browser ini saja — tidak tersedia di perangkat lain
+            dan hilang jika data situs dibersihkan.
+          </p>
+          <ul className="space-y-2">
+            {drafts.map((draft) => (
+              <li
+                key={draft.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-blue-200 bg-white p-3"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-gray-900">
+                    {draft.payload?.namaKawasan?.trim() || 'Kawasan tanpa nama'}
+                    {draft.editingAreaId !== null && (
+                      <span className="ml-2 text-xs font-normal text-gray-500">
+                        (perubahan kawasan #{draft.editingAreaId})
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    {draft.payload?.jenisKawasan || 'Jenis belum dipilih'} · Disimpan{' '}
+                    {formatDateTime(draft.lastSaved)}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      // A draft started from an existing kawasan resumes on that
+                      // kawasan's edit page — resuming it as a new kawasan would
+                      // file the same boundary twice.
+                      router.push(
+                        draft.editingAreaId !== null
+                          ? `/app/pengaturan/kawasan/${draft.editingAreaId}/edit?draft=${encodeURIComponent(draft.id)}`
+                          : `/app/pengaturan/kawasan/tambah?draft=${encodeURIComponent(draft.id)}`
+                      )
+                    }
+                  >
+                    Lanjutkan
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                    onClick={() => handleDeleteDraft(draft.id)}
+                    title="Hapus draft"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Table */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -482,14 +604,29 @@ export function ProhibitedAreasTab({
                             <Edit className="h-4 w-4" />
                           </Button>
                         )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDownloadArea(area)}
-                          title="Unduh GeoJSON"
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Unduh batas kawasan"
+                              aria-label={`Unduh batas kawasan ${area.namaKawasan}`}
+                            >
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {GEO_EXPORT_FORMATS.map((format) => (
+                              <DropdownMenuItem
+                                key={format}
+                                onSelect={() => void handleDownloadArea(area, format)}
+                              >
+                                <Download className="mr-2 h-4 w-4" />
+                                {GEO_EXPORT_LABELS[format]}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         {canManageKawasan && (
                           <Button
                             variant="ghost"
@@ -574,123 +711,6 @@ export function ProhibitedAreasTab({
         </DialogContent>
       </Dialog>
 
-      {/* Overlap Check Dialog */}
-      <Dialog open={isOverlapCheckDialogOpen} onOpenChange={setIsOverlapCheckDialogOpen}>
-        <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Hasil Cek Tumpang Tindih</DialogTitle>
-            <DialogDescription>
-              Pengajuan SPPTG yang tumpang tindih dengan kawasan non-SPPTG
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            {isLoadingOverlaps ? (
-              <div className="flex items-center justify-center py-10 text-sm text-gray-500">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2" />
-                Menghitung tumpang tindih...
-              </div>
-            ) : overlapError ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-                Gagal menghitung tumpang tindih. Silakan coba lagi.
-              </div>
-            ) : overlapRows.length === 0 ? (
-              <div className="rounded-lg border border-green-200 bg-green-50 p-4">
-                <div className="flex items-start gap-3">
-                  <Shield className="h-5 w-5 text-green-600 mt-0.5" />
-                  <div>
-                    <p className="text-green-900">
-                      <strong>Tidak ada pengajuan yang tumpang tindih</strong>
-                    </p>
-                    <p className="text-sm text-green-700 mt-1">
-                      Semua pengajuan SPPTG berada di luar kawasan Non-SPPTG yang aktif.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <>
-                {/* Summary */}
-                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5" />
-                    <div>
-                      <p className="text-orange-900">
-                        <strong>
-                          Ditemukan {overlapSubmissionCount} pengajuan SPPTG tumpang tindih
-                        </strong>
-                      </p>
-                      <p className="text-sm text-orange-700 mt-1">
-                        Pengajuan berikut terindikasi tumpang tindih dengan kawasan Non-SPPTG
-                        yang aktif. Buka detail untuk meninjau dan menentukan statusnya.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Results Table — scrolls horizontally on narrow screens */}
-                <div className="border rounded-lg overflow-x-auto">
-                  <Table className="min-w-205">
-                    <TableHeader>
-                      <TableRow className="bg-gray-50">
-                        <TableHead>ID Pengajuan</TableHead>
-                        <TableHead>Pemilik</TableHead>
-                        <TableHead>Desa/Kecamatan</TableHead>
-                        <TableHead>Luas Overlap</TableHead>
-                        <TableHead>Kawasan</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Aksi</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {overlapRows.map((row, index) => (
-                        <TableRow key={`${row.submissionId}-${row.namaKawasan}-${index}`}>
-                          <TableCell className="font-mono text-xs">#{row.submissionId}</TableCell>
-                          <TableCell>{row.namaPemilik}</TableCell>
-                          <TableCell className="text-gray-600">
-                            {row.desaNama || `Desa #${row.submissionId}`}
-                            {row.kecamatan ? `, ${row.kecamatan}` : ''}
-                          </TableCell>
-                          <TableCell>
-                            {Math.round(row.luasOverlap).toLocaleString('id-ID')} m²
-                            <span className="text-gray-500 text-xs">
-                              {' '}
-                              ({row.percentageOverlap.toFixed(2)}%)
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-gray-600">{row.namaKawasan}</TableCell>
-                          <TableCell>
-                            <StatusBadge status={row.status as StatusSPPTG} />
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setIsOverlapCheckDialogOpen(false);
-                                router.push(`/app/pengajuan/${row.submissionId}`);
-                              }}
-                            >
-                              Buka Detail
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsOverlapCheckDialogOpen(false)}>
-              Tutup
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
@@ -712,12 +732,6 @@ export function ProhibitedAreasTab({
         </AlertDialogContent>
       </AlertDialog>
 
-      {canManageKawasan && (
-        <KawasanBulkImportDialog
-          open={isBulkImportOpen}
-          onOpenChange={setIsBulkImportOpen}
-        />
-      )}
     </div>
   );
 }
