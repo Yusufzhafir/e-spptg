@@ -25,9 +25,20 @@ import {
   type KawasanDraftRecord,
 } from '@/lib/kawasan-draft-storage';
 import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
+import {
+  GEO_EXPORT_FORMATS,
+  GEO_EXPORT_LABELS,
+  type GeoExportFormat,
+} from '@/lib/geo-export';
 import { PROHIBITED_AREA_TYPES } from '@/lib/prohibited-area-types';
 import { trpc } from '@/trpc/client';
 import { SearchableSelect } from './SearchableSelect';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 import {
   Dialog,
   DialogContent,
@@ -61,6 +72,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CreateProhibitedAreaInput, UpdateProhibitedAreaInput } from '@/types/prohibitedAreas';
+import type { GeoJSONMultiPolygon, GeoJSONPolygon } from '@/types';
 
 /** Filters this table keeps in the URL, beside the search box. */
 const AREA_FILTER_KEYS = ['jenis', 'status'] as const;
@@ -276,49 +288,83 @@ export function ProhibitedAreasTab({
     router.push('/app/pengaturan/kawasan/tumpang-tindih');
   };
 
-  const handleDownloadArea = (area: ProhibitedArea) => {
+  /**
+   * Download one kawasan's boundary.
+   *
+   * The same three formats the pengajuan detail page offers, from the same
+   * builder — an office handing a boundary to BPN or its own GIS desk should
+   * not find that "download" means something different depending on which
+   * screen it came from.
+   */
+  const handleDownloadArea = async (area: ProhibitedArea, format: GeoExportFormat) => {
     if (!area.geomGeoJSON) {
       toast.error('Kawasan ini tidak memiliki data geometri untuk diunduh.');
       return;
     }
-    let geometry: unknown;
+
+    let geometry: GeoJSONPolygon | GeoJSONMultiPolygon;
     try {
-      geometry = JSON.parse(area.geomGeoJSON);
+      geometry =
+        typeof area.geomGeoJSON === 'string'
+          ? JSON.parse(area.geomGeoJSON)
+          : (area.geomGeoJSON as GeoJSONPolygon | GeoJSONMultiPolygon);
     } catch {
       toast.error('Data geometri tidak valid.');
       return;
     }
-    const featureCollection = {
-      type: 'FeatureCollection',
-      features: [
-        {
-          type: 'Feature',
-          properties: {
-            id: area.id,
-            namaKawasan: area.namaKawasan,
-            jenisKawasan: area.jenisKawasan,
-            sumberData: area.sumberData,
-            dasarHukum: area.dasarHukum,
-            statusValidasi: area.statusValidasi,
-            warna: area.warna,
+
+    try {
+      const { buildGeoExport, downloadBlob, sanitiseFilename } = await import(
+        '@/lib/geo-export'
+      );
+
+      const blob = await buildGeoExport(
+        [
+          {
+            name: area.namaKawasan,
+            description: [
+              `Nama Kawasan: ${area.namaKawasan}`,
+              `Jenis Kawasan: ${area.jenisKawasan}`,
+              `Sumber Data: ${area.sumberData}`,
+              area.dasarHukum ? `Dasar Hukum: ${area.dasarHukum}` : null,
+              `Tanggal Efektif: ${formatDate(area.tanggalEfektif)}`,
+              `Status Validasi: ${area.statusValidasi}`,
+            ]
+              .filter((line): line is string => line !== null)
+              .join('\n'),
+            properties: {
+              id: area.id,
+              namaKawasan: area.namaKawasan,
+              jenisKawasan: area.jenisKawasan,
+              sumberData: area.sumberData,
+              dasarHukum: area.dasarHukum,
+              tanggalEfektif: area.tanggalEfektif,
+              statusValidasi: area.statusValidasi,
+              aktifDiValidasi: String(area.aktifDiValidasi),
+            },
+            geometry,
           },
-          geometry,
-        },
-      ],
-    };
-    const blob = new Blob([JSON.stringify(featureCollection, null, 2)], {
-      type: 'application/geo+json',
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    const safeName = area.namaKawasan.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '') || 'kawasan';
-    link.href = url;
-    link.download = `${safeName}.geojson`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    toast.success('File GeoJSON berhasil diunduh.');
+        ],
+        format,
+        {
+          documentName: `Kawasan Non-SPPTG — ${area.namaKawasan}`,
+          // Red, the one colour every Kawasan Non-SPPTG is drawn in here, so
+          // the file opens in Google Earth looking like the app's own map.
+          lineColor: 'ff4444ef',
+          fillColor: '4d4444ef',
+        }
+      );
+
+      downloadBlob(
+        blob,
+        `${sanitiseFilename(area.namaKawasan, 'kawasan')}.${format}`
+      );
+      toast.success(`Berkas ${format.toUpperCase()} berhasil diunduh.`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : `Gagal membuat berkas ${format.toUpperCase()}.`
+      );
+    }
   };
 
   const jenisKawasanOptions: readonly ProhibitedAreaType[] = PROHIBITED_AREA_TYPES;
@@ -558,14 +604,29 @@ export function ProhibitedAreasTab({
                             <Edit className="h-4 w-4" />
                           </Button>
                         )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDownloadArea(area)}
-                          title="Unduh GeoJSON"
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Unduh batas kawasan"
+                              aria-label={`Unduh batas kawasan ${area.namaKawasan}`}
+                            >
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {GEO_EXPORT_FORMATS.map((format) => (
+                              <DropdownMenuItem
+                                key={format}
+                                onSelect={() => void handleDownloadArea(area, format)}
+                              >
+                                <Download className="mr-2 h-4 w-4" />
+                                {GEO_EXPORT_LABELS[format]}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         {canManageKawasan && (
                           <Button
                             variant="ghost"

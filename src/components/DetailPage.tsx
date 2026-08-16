@@ -29,6 +29,11 @@ import { formatDate } from '@/lib/format-date';
 import { keepLatestPerCategory } from '@/lib/document-list';
 import { documentCategoryLabel } from '@/lib/document-category-label';
 import {
+  GEO_EXPORT_FORMATS,
+  GEO_EXPORT_LABELS,
+  type GeoExportFormat,
+} from '@/lib/geo-export';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -248,47 +253,34 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
    * submission is already in memory, so the file is built and downloaded in the
    * browser — `jszip` for KMZ is only pulled in when someone asks for it.
    */
-  const handleExportGeo = async (format: 'kml' | 'kmz') => {
+  const handleExportGeo = async (format: GeoExportFormat) => {
     setIsExportingGeo(true);
-    let objectUrl: string | null = null;
-
     try {
-      const { buildSubmissionKML, submissionExportFilename } = await import(
+      const { buildSubmissionExport, submissionExportFilename } = await import(
         '@/lib/kml-export'
       );
-      const kml = buildSubmissionKML({
-        id: submission.id,
-        namaPemilik: submission.namaPemilik,
-        nik: submission.nik,
-        desaNama: submission.desaNama,
-        desaKecamatan: submission.desaKecamatan,
-        kecamatan: submission.kecamatan,
-        kabupaten: submission.kabupaten,
-        luas: submission.luas,
-        luasManual: submission.luasManual,
-        penggunaanLahan: submission.penggunaanLahan,
-        status: submission.status,
-        tanggalPengajuan: submission.tanggalPengajuan,
-        geoJSON: submission.geoJSON,
-      });
+      const { downloadBlob } = await import('@/lib/geo-export');
 
-      let blob: Blob;
-      if (format === 'kmz') {
-        const { buildSubmissionKMZ } = await import('@/lib/kml-export');
-        blob = await buildSubmissionKMZ(kml);
-      } else {
-        blob = new Blob([kml], {
-          type: 'application/vnd.google-earth.kml+xml;charset=utf-8',
-        });
-      }
+      const blob = await buildSubmissionExport(
+        {
+          id: submission.id,
+          namaPemilik: submission.namaPemilik,
+          nik: submission.nik,
+          desaNama: submission.desaNama,
+          desaKecamatan: submission.desaKecamatan,
+          kecamatan: submission.kecamatan,
+          kabupaten: submission.kabupaten,
+          luas: submission.luas,
+          luasManual: submission.luasManual,
+          penggunaanLahan: submission.penggunaanLahan,
+          status: submission.status,
+          tanggalPengajuan: submission.tanggalPengajuan,
+          geoJSON: submission.geoJSON,
+        },
+        format
+      );
 
-      objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = objectUrl;
-      link.download = submissionExportFilename(submission, format);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      downloadBlob(blob, submissionExportFilename(submission, format));
       toast.success(`Berkas ${format.toUpperCase()} berhasil diunduh.`);
     } catch (error) {
       toast.error(
@@ -297,8 +289,6 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
           : `Gagal membuat berkas ${format.toUpperCase()}.`
       );
     } finally {
-      // Revoking straight away can cancel the download in Safari; give it a tick.
-      if (objectUrl) setTimeout(() => URL.revokeObjectURL(objectUrl!), 10_000);
       setIsExportingGeo(false);
     }
   };
@@ -341,14 +331,15 @@ export function DetailPage({ submission, onBack }: DetailPageProps) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => void handleExportGeo('kmz')}>
-                <Download className="mr-2 h-4 w-4" />
-                Format KMZ (Google Earth)
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => void handleExportGeo('kml')}>
-                <Download className="mr-2 h-4 w-4" />
-                Format KML
-              </DropdownMenuItem>
+              {GEO_EXPORT_FORMATS.map((format) => (
+                <DropdownMenuItem
+                  key={format}
+                  onSelect={() => void handleExportGeo(format)}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  {GEO_EXPORT_LABELS[format]}
+                </DropdownMenuItem>
+              ))}
             </DropdownMenuContent>
           </DropdownMenu>
         )}
