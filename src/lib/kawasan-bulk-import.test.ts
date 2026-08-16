@@ -10,7 +10,6 @@ import {
   summarizeImportGroups,
   UNNAMED_KAWASAN_LABEL,
 } from './kawasan-bulk-import';
-import { MAX_KAWASAN_TOTAL_POINTS } from './kawasan-limits';
 import type { ParsedPolygon } from './kmz-parser';
 
 /** A ring of `points` vertices, named as a feature in the file would be. */
@@ -68,19 +67,18 @@ describe('groupPolygonsIntoKawasan', () => {
     expect(groups[0].pointCount).toBe(4);
   });
 
-  it('carries an oversized group through, flagged rather than dropped', () => {
-    // Silently dropping it would leave a kawasan missing from the map with
-    // nothing on screen having said so.
+  it('refuses nothing for being large', () => {
+    // An SK that draws one kawasan as hundreds of blocks over hundreds of
+    // thousands of vertices is describing one kawasan; splitting it in QGIS
+    // would file something the SK does not say.
     const groups = groupPolygonsIntoKawasan([
-      ring('Sangat Besar', MAX_KAWASAN_TOTAL_POINTS + 1),
+      ring('Sangat Besar', 450_000),
       ring('Biasa', 500),
     ]);
 
     expect(groups).toHaveLength(2);
-    const big = groups.find((group) => group.nama === 'Sangat Besar')!;
-    expect(isImportable(big)).toBe(false);
-    expect(big.blockedReason).toMatch(/titik/);
-    expect(isImportable(groups.find((group) => group.nama === 'Biasa')!)).toBe(true);
+    expect(groups.every(isImportable)).toBe(true);
+    expect(groups.every((group) => group.blockedReason === null)).toBe(true);
   });
 });
 
@@ -283,14 +281,15 @@ describe('summarizeImportGroups', () => {
     const groups = groupPolygonsIntoKawasan([
       ring('A', 100),
       ring('B', 200),
-      ring('C', MAX_KAWASAN_TOTAL_POINTS + 1),
+      ring('C', 400_000),
     ]);
     const summary = summarizeImportGroups(groups);
 
     expect(summary.totalGroups).toBe(3);
-    expect(summary.importableGroups).toBe(2);
-    expect(summary.blockedGroups).toBe(1);
+    // Nothing is blocked on size, so every group counts as importable.
+    expect(summary.importableGroups).toBe(3);
+    expect(summary.blockedGroups).toBe(0);
     expect(summary.totalBlocks).toBe(3);
-    expect(summary.totalPoints).toBe(300 + MAX_KAWASAN_TOTAL_POINTS + 1);
+    expect(summary.totalPoints).toBe(400_300);
   });
 });

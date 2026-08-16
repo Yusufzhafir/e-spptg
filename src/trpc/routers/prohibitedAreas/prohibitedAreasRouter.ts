@@ -22,10 +22,6 @@ import {
   invalidateProhibitedAreas,
 } from '@/server/redis/cache';
 import { geometryToMultiPolygonWKT } from '@/lib/land-polygons';
-import {
-  MAX_KAWASAN_BLOCKS,
-  MAX_KAWASAN_TOTAL_POINTS,
-} from '@/lib/kawasan-limits';
 import type { GeomGeoJSONArea } from '@/lib/validation';
 
 /**
@@ -42,46 +38,6 @@ function areaGeometryWKT(geometry: GeomGeoJSONArea): string {
       code: 'BAD_REQUEST',
       message:
         error instanceof Error ? error.message : 'Format koordinat GeoJSON tidak valid',
-    });
-  }
-}
-
-/**
- * Refuse a kawasan whose geometry is past what one row may hold.
- *
- * The bulk importer already checks this before it offers a group for import,
- * but that check is in the browser: this is the one a caller cannot skip.
- * Counting rings and vertices off the GeoJSON directly, rather than rebuilding
- * an editor's polygon list, keeps it cheap on a batch of a hundred kawasan.
- */
-function assertKawasanGeometryWithinLimits(
-  geometry: GeomGeoJSONArea,
-  namaKawasan: string
-): void {
-  const parts =
-    geometry.type === 'MultiPolygon'
-      ? (geometry.coordinates as number[][][][])
-      : [geometry.coordinates as number[][][]];
-
-  let blocks = 0;
-  let points = 0;
-  for (const rings of parts) {
-    const outer = rings?.[0];
-    if (!Array.isArray(outer)) continue;
-    blocks += 1;
-    points += outer.length;
-  }
-
-  if (blocks > MAX_KAWASAN_BLOCKS) {
-    throw new TRPCError({
-      code: 'BAD_REQUEST',
-      message: `Kawasan "${namaKawasan}" memiliki ${blocks} blok, melebihi batas ${MAX_KAWASAN_BLOCKS} blok per kawasan.`,
-    });
-  }
-  if (points > MAX_KAWASAN_TOTAL_POINTS) {
-    throw new TRPCError({
-      code: 'BAD_REQUEST',
-      message: `Kawasan "${namaKawasan}" memiliki ${points.toLocaleString('id-ID')} titik, melebihi batas ${MAX_KAWASAN_TOTAL_POINTS.toLocaleString('id-ID')} titik per kawasan.`,
     });
   }
 }
@@ -350,12 +306,6 @@ export const prohibitedAreasRouter = router({
             message: `Polygon "${area.namaKawasan}" tidak memiliki koordinat yang valid`,
           });
         }
-
-        // The same ceilings the single-kawasan form enforces, applied here too:
-        // the client checks before it offers a kawasan for import, and a caller
-        // that skips the UI must not be able to write a row the editor could
-        // never open again.
-        assertKawasanGeometryWithinLimits(area.geomGeoJSON, area.namaKawasan);
 
         return {
           namaKawasan: area.namaKawasan,

@@ -3,23 +3,24 @@
  *
  * `SK_397_TAHUN_2025_KH_KALTIM` is 188 features holding 1 440 rings and 1.33
  * million vertices — 51 MB of GeoJSON. It is not one kawasan, it is a province
- * of them, and before the ceilings in `kawasan-limits.ts` it would have frozen
- * the form and then failed on save. This test pins both halves of the answer:
- * the file still parses, and it is refused with an explanation rather than
- * loaded or silently truncated.
+ * of them, and the bulk importer is what turns it into the ~187 rows it
+ * describes. This test pins the whole path against the real file: it parses in
+ * full, **nothing is refused for its size** (the largest single kawasan is 781
+ * blocks over 444 000 vertices), the groups match the file's own name column,
+ * and every batch the planner produces is small enough to actually send.
  *
  * Skipped unless the file is present (it is 16 MB and not in the repo):
  *   KAWASAN_SHP_FIXTURE=/path/to/SHP.zip pnpm vitest run src/lib/shp-zip-huge.e2e.test.ts
  */
 import fs from 'node:fs';
-import { checkKawasanImportSize, countKawasanPoints } from './kawasan-limits';
+import { countKawasanPoints } from './kawasan-limits';
 import type { LandPolygon } from '@/types';
 
 const fixture = process.env.KAWASAN_SHP_FIXTURE;
 const available = Boolean(fixture && fs.existsSync(fixture));
 
 describe.runIf(available)('provincial Kawasan Hutan shapefile', () => {
-  it('parses, and is refused as one kawasan with a message that says why', async () => {
+  it('parses in full, with nothing refused for its size', async () => {
     // shpjs reaches for `self`; it is a browser build.
     (globalThis as unknown as { self: unknown }).self = globalThis;
     const { parseShapefileZip } = await import('./shapefile-parser');
@@ -37,13 +38,9 @@ describe.runIf(available)('provincial Kawasan Hutan shapefile', () => {
       coordinates: polygon.coordinates,
     }));
 
-    // The numbers this whole ceiling exists for.
+    // The size this file actually is — 1 440 rings, 1.33 million vertices.
     expect(polygons.length).toBeGreaterThan(1_000);
     expect(countKawasanPoints(polygons)).toBeGreaterThan(1_000_000);
-
-    const fits = checkKawasanImportSize(polygons);
-    expect(fits.ok).toBe(false);
-    expect(fits.message).toMatch(/QGIS|ArcGIS/);
 
     // The attribute table still answers, so a file split per kawasan prefills.
     expect(result.atribut?.dasarHukum).toBe('SK 397 Tahun 2025');
@@ -77,11 +74,11 @@ describe.runIf(available)('provincial Kawasan Hutan shapefile', () => {
       result.polygons.length
     );
 
-    // The one group that cannot be a single kawasan is the unnamed catch-all,
-    // and it is flagged rather than dropped.
-    const blocked = groups.filter((group) => !isImportable(group));
-    expect(blocked).toHaveLength(1);
-    expect(blocked[0].isUnnamed).toBe(true);
+    // Nothing is blocked: the unnamed catch-all is 781 blocks over 444 000
+    // vertices, and that is one kawasan of the SK, not an error.
+    expect(groups.filter((group) => !isImportable(group))).toHaveLength(0);
+    const biggest = [...groups].sort((a, b) => b.pointCount - a.pointCount)[0];
+    expect(biggest.pointCount).toBeGreaterThan(400_000);
 
     const importable = groups.filter(isImportable);
     const batches = planKawasanImportBatches(importable);
@@ -93,9 +90,10 @@ describe.runIf(available)('provincial Kawasan Hutan shapefile', () => {
       const points = batch.reduce((total, group) => total + group.pointCount, 0);
       // A single kawasan may exceed the budget alone; a batch of several may not.
       if (batch.length > 1) expect(points).toBeLessThanOrEqual(BULK_IMPORT_POINT_BUDGET);
-      // The request body each batch becomes has to be a sane size.
+      // Every batch has to fit the nginx `client_max_body_size` of 64m, with
+      // room for the tRPC/superjson envelope around it.
       const bytesOut = JSON.stringify(batch.map(groupToMultiPolygon)).length;
-      expect(bytesOut).toBeLessThan(8 * 1024 * 1024);
+      expect(bytesOut).toBeLessThan(48 * 1024 * 1024);
     }
 
     // Every part of every kawasan survives the trip into GeoJSON.
