@@ -14,21 +14,18 @@
  * 1. **It never merges features that disagree on the name.** Two rings labelled
  *    `TN Kutai` are two blocks of one kawasan; a ring labelled `HP S. Santan`
  *    is a different kawasan, full stop.
- * 2. **It never silently drops a group that is too big.** An oversized group is
- *    carried through with the reason attached, so the preview can show it as
- *    unimportable rather than the officer discovering later that a kawasan is
- *    missing from the map.
+ * 2. **It never refuses a group for being large.** An SK is authoritative: if
+ *    the ministry drew one kawasan as 781 detached blocks over 444 000
+ *    vertices, that is what the kawasan is, and making the office split it in
+ *    QGIS would file something the SK does not say. The geometry goes straight
+ *    into a PostGIS column, so there is no editor that has to render it first.
  */
 
 import type { ParsedPolygon } from './kmz-parser';
-import {
-  checkKawasanImportSize,
-  MAX_KAWASAN_TOTAL_POINTS,
-} from './kawasan-limits';
 import { MIN_POLYGON_POINTS } from './land-polygons';
 import type { KawasanAttributeSuggestion } from './shapefile-attributes';
 import type { ProhibitedAreaType } from './prohibited-area-types';
-import type { LandPolygon, ValidationStatus } from '@/types';
+import type { ValidationStatus } from '@/types';
 
 /** Label for features whose name column is blank. */
 export const UNNAMED_KAWASAN_LABEL = '(Tanpa nama)';
@@ -44,17 +41,14 @@ export interface KawasanImportGroup {
   blocks: ParsedPolygon[];
   blockCount: number;
   pointCount: number;
-  /** Set when this group cannot be saved as one kawasan; `null` when it can. */
+  /**
+   * Why this group cannot be saved, or `null` — which is now always.
+   *
+   * Kept because the preview still renders it: nothing is refused on size any
+   * more, but a future blocker (a geometry PostGIS rejects, say) has a place to
+   * be reported rather than silently dropping a kawasan.
+   */
   blockedReason: string | null;
-}
-
-/** The blocks of a group, in the shape the size checks expect. */
-function toLandPolygons(blocks: readonly ParsedPolygon[], keyPrefix: string): LandPolygon[] {
-  return blocks.map((block, index) => ({
-    id: `${keyPrefix}-${index}`,
-    nama: block.name,
-    coordinates: block.coordinates,
-  }));
 }
 
 /**
@@ -83,21 +77,19 @@ export function groupPolygonsIntoKawasan(
     else byName.set(nama, [polygon]);
   }
 
-  return [...byName.entries()].map(([nama, blocks], index) => {
-    const key = `grp-${index}`;
-    const pointCount = blocks.reduce((total, block) => total + block.coordinates.length, 0);
-    const fits = checkKawasanImportSize(toLandPolygons(blocks, key));
-
-    return {
-      key,
-      nama: nama || UNNAMED_KAWASAN_LABEL,
-      isUnnamed: nama === '',
-      blocks,
-      blockCount: blocks.length,
-      pointCount,
-      blockedReason: fits.ok ? null : (fits.message ?? 'Kawasan terlalu besar untuk disimpan.'),
-    };
-  });
+  return [...byName.entries()].map(([nama, blocks], index) => ({
+    key: `grp-${index}`,
+    nama: nama || UNNAMED_KAWASAN_LABEL,
+    isUnnamed: nama === '',
+    blocks,
+    blockCount: blocks.length,
+    pointCount: blocks.reduce((total, block) => total + block.coordinates.length, 0),
+    // Nothing is refused on size. A kawasan of 781 blocks and 444 000 vertices
+    // is one kawasan in the SK it came from, and the import writes it straight
+    // into a PostGIS column — there is no editor to render it and no reason to
+    // make the office split a boundary the ministry did not.
+    blockedReason: null,
+  }));
 }
 
 /** A group the officer may actually tick. */
@@ -136,9 +128,9 @@ export const BULK_IMPORT_MAX_ROWS = 25;
 /**
  * Split the chosen kawasan into requests that will actually fit.
  *
- * A single kawasan always gets its own batch when it exceeds the budget on its
- * own — it is under `MAX_KAWASAN_TOTAL_POINTS` by then, so it fits one request,
- * just not one shared with anything else.
+ * A kawasan larger than the whole budget gets a batch of its own rather than
+ * being refused: nothing is capped on size any more, so the planner's job is
+ * only to stop *several* large ones sharing one request.
  */
 export function planKawasanImportBatches(
   groups: readonly KawasanImportGroup[],
@@ -351,5 +343,3 @@ export function summarizeImportGroups(
   };
 }
 
-/** Ceiling reported in the UI, so the number and its meaning stay together. */
-export { MAX_KAWASAN_TOTAL_POINTS };

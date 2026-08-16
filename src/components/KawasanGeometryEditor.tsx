@@ -50,7 +50,6 @@ import {
   validCoordinates,
 } from '@/lib/land-polygons';
 import {
-  checkKawasanImportSize,
   countKawasanPoints,
   KAWASAN_COORDINATE_PAGE_SIZE,
 } from '@/lib/kawasan-limits';
@@ -128,8 +127,6 @@ interface PendingImport {
   /** The same rings, split by the name their features carry. */
   groups: KawasanImportGroup[];
   atribut?: KawasanAttributeSuggestion;
-  /** Set when the file cannot be one kawasan; the merge option is then refused. */
-  mergeBlockedReason: string | null;
 }
 
 /** Colour of the other blocks of this same kawasan on the map. */
@@ -500,8 +497,6 @@ export function KawasanGeometryEditor({
         return;
       }
 
-      const fits = checkKawasanImportSize(imported);
-
       // Does the file describe one kawasan in several blocks, or several
       // kawasan? Its own name column is what answers that, and only the officer
       // can confirm — so when it says "several" and this page can escalate, the
@@ -513,15 +508,7 @@ export function KawasanGeometryEditor({
           merged: imported,
           groups,
           atribut: result.atribut,
-          mergeBlockedReason: fits.ok ? null : (fits.message ?? null),
         });
-        return;
-      }
-
-      if (!fits.ok) {
-        // Long on purpose: the message has to say what is wrong *and* what to
-        // do about it, because the fix is in QGIS, not here.
-        toast.error(fits.message!, { duration: 12000 });
         return;
       }
 
@@ -621,7 +608,6 @@ export function KawasanGeometryEditor({
 
             <button
               type="button"
-              disabled={pendingImport.mergeBlockedReason !== null}
               onClick={() => {
                 applyPolygons(pendingImport.merged, true);
                 selectPolygon(pendingImport.merged[0].id);
@@ -631,15 +617,13 @@ export function KawasanGeometryEditor({
                 );
                 setPendingImport(null);
               }}
-              className="rounded-md border border-gray-300 bg-white p-3 text-left hover:border-gray-500 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-gray-300"
+              className="rounded-md border border-gray-300 bg-white p-3 text-left hover:border-gray-500"
             >
               <p className="text-sm font-medium text-gray-900">
                 Gabung jadi 1 kawasan ({pendingImport.merged.length.toLocaleString('id-ID')} blok)
               </p>
               <p className="mt-0.5 text-xs text-gray-600">
-                {pendingImport.mergeBlockedReason
-                  ? 'Tidak dapat digabung — file terlalu besar untuk satu kawasan.'
-                  : 'Semua polygon menjadi blok dari kawasan yang sedang Anda buat.'}
+                Semua polygon menjadi blok dari kawasan yang sedang Anda buat.
               </p>
             </button>
           </div>

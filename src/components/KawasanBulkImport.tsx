@@ -24,26 +24,34 @@
  * would only add a place for it to time out.
  *
  * **Nothing is imported without being shown first.** A provincial SK covers
- * kabupaten this office has no business recording, so every kawasan is listed
- * and ticked individually; groups too large to be one kawasan, and names
- * already on record, are listed too but start unticked with the reason beside
- * them.
+ * kabupaten this office has no business recording, and "is this one even ours"
+ * is a question no column can answer — so the file is drawn whole on an
+ * overview map (ticked kawasan red, unticked grey, nothing capped), each row
+ * carries a crosshair that frames the map on its boundary, and an eye that
+ * opens that one kawasan with its own map and attributes. Names already on
+ * record are listed too but start unticked. **No kawasan is refused for its
+ * size**: when an SK draws one kawasan as 781 blocks over 444 000 vertices,
+ * that is what the kawasan is.
  *
  * **The upload is batched by vertex count, not row count.** 1.33 million
  * vertices is 51 MB of JSON; batching keeps each request predictable regardless
- * of whether the next kawasan is 400 points or 40 000. Progress is reported per
+ * of whether the next kawasan is 400 points or 40 000. A kawasan larger than
+ * the whole budget gets a request to itself rather than being refused — which
+ * is why `client_max_body_size` in the nginx config is 64m. Progress is reported per
  * batch, and a failure stops rather than pressing on — the officer needs to
  * know exactly how far it got.
  */
 
-import { useMemo, useState, type ChangeEvent } from 'react';
+import { useCallback, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   ChevronLeft,
+  Crosshair,
   FileUp,
   Layers,
   Loader2,
+  Eye,
   Pencil,
   ShieldCheck,
   Wand2,
@@ -65,6 +73,7 @@ import {
   type KawasanRowAttributes,
 } from '@/lib/kawasan-bulk-import';
 import { KAWASAN_NON_SPPTG_COLOR } from '@/lib/kawasan';
+import { ReadOnlyMap } from './maps/ReadOnlyMap';
 import { PROHIBITED_AREA_TYPES } from '@/lib/prohibited-area-types';
 import { formatDate } from '@/lib/format-date';
 import type { ProhibitedAreaType, ValidationStatus } from '@/types';
@@ -100,6 +109,9 @@ const num = (value: number) => value.toLocaleString('id-ID');
 
 const jenisOptions = PROHIBITED_AREA_TYPES.map((jenis) => ({ value: jenis, label: jenis }));
 
+/** Kawasan left unticked — drawn, but visibly not part of this import. */
+const UNSELECTED_COLOR = '#9ca3af';
+
 interface KawasanBulkImportProps {
   /**
    * A file already parsed elsewhere — handed over by Tambah Kawasan when the
@@ -131,6 +143,18 @@ export function KawasanBulkImport({ handoff, onCancel }: KawasanBulkImportProps 
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [editingKey, setEditingKey] = useState<string | null>(null);
+  /** The kawasan whose detail + map preview is open. */
+  const [previewKey, setPreviewKey] = useState<string | null>(null);
+
+  /**
+   * "Fokus di peta" for one kawasan on the overview map below. The signal is a
+   * counter because focusing is an action: clicking the same row again after
+   * panning away has to bring the map back, and the geometry alone cannot tell
+   * those two clicks apart.
+   */
+  const [focusTarget, setFocusTarget] = useState<unknown>(null);
+  const [focusSignal, setFocusSignal] = useState(0);
+  const overviewMapRef = useRef<HTMLDivElement | null>(null);
 
   /** The "Isi Cepat" form. Written into rows on demand, never read at save time. */
   const [quickFill, setQuickFill] = useState<Partial<KawasanRowAttributes>>(() => ({
@@ -177,6 +201,58 @@ export function KawasanBulkImport({ handoff, onCancel }: KawasanBulkImportProps 
   );
   const selectedPoints = selectedGroups.reduce((total, g) => total + g.pointCount, 0);
   const selectedBlocks = selectedGroups.reduce((total, g) => total + g.blockCount, 0);
+
+  /**
+   * Every kawasan in the file, drawn on the overview map.
+   *
+   * Ticked ones are red — the colour every Kawasan Non-SPPTG is drawn in — and
+   * unticked ones grey, so the map answers "what am I about to import" rather
+   * than only "what is in the file". No cap: a kawasan missing from this map is
+   * indistinguishable from one that is not in the file, which is the whole
+   * question this map exists to answer.
+   */
+  const overviewPolygons = useMemo(() => {
+    const result: Array<{
+      id: string;
+      path: Array<{ lat: number; lng: number }>;
+      strokeColor: string;
+      fillColor: string;
+      label: string;
+    }> = [];
+
+    for (const group of groups) {
+      const isSelected = selected.has(group.key);
+      const color = isSelected ? KAWASAN_NON_SPPTG_COLOR : UNSELECTED_COLOR;
+      const nama = rows[group.key]?.namaKawasan?.trim() || group.nama;
+
+      group.blocks.forEach((block, index) => {
+        result.push({
+          id: `${group.key}-${index}`,
+          path: block.coordinates.map((coordinate) => ({
+            lat: coordinate.latitude,
+            lng: coordinate.longitude,
+          })),
+          strokeColor: color,
+          fillColor: color,
+          label: `${nama} — blok ${index + 1}${isSelected ? '' : ' (tidak dipilih)'}`,
+        });
+      });
+    }
+
+    return result;
+  }, [groups, rows, selected]);
+
+  /** Frame the overview map on one kawasan. */
+  const focusOnMap = useCallback(
+    (group: KawasanImportGroup) => {
+      setFocusTarget(groupToMultiPolygon(group));
+      setFocusSignal((signal) => signal + 1);
+      // The table sits below the map, so framing a boundary the reader cannot
+      // see would look like nothing happened.
+      overviewMapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+    []
+  );
 
   /** Selected kawasan that are still missing something they need. */
   const problems = useMemo(
@@ -382,6 +458,36 @@ export function KawasanBulkImport({ handoff, onCancel }: KawasanBulkImportProps 
   const editingGroup = groups.find((group) => group.key === editingKey) ?? null;
   const editingRow = editingKey ? rows[editingKey] : undefined;
 
+  const previewGroup = groups.find((group) => group.key === previewKey) ?? null;
+  const previewRow = previewKey ? rows[previewKey] : undefined;
+
+  /**
+   * The previewed kawasan's boundary, built only while its dialog is open.
+   *
+   * A group can hold hundreds of thousands of vertices, and building the
+   * GeoJSON for every row up front would cost that on every render of a table
+   * that shows fifty of them.
+   */
+  const previewGeometry = useMemo(
+    () => (previewGroup ? groupToMultiPolygon(previewGroup) : null),
+    [previewGroup]
+  );
+
+  /** Its blocks as map reference polygons — drawn in the Non-SPPTG red. */
+  const previewPolygons = useMemo(() => {
+    if (!previewGroup) return [];
+    return previewGroup.blocks.map((block, index) => ({
+      id: `preview-${index}`,
+      path: block.coordinates.map((coordinate) => ({
+        lat: coordinate.latitude,
+        lng: coordinate.longitude,
+      })),
+      strokeColor: KAWASAN_NON_SPPTG_COLOR,
+      fillColor: KAWASAN_NON_SPPTG_COLOR,
+      label: `Blok ${index + 1}`,
+    }));
+  }, [previewGroup]);
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
       <Button
@@ -452,6 +558,37 @@ export function KawasanBulkImport({ handoff, onCancel }: KawasanBulkImportProps 
 
       {groups.length > 0 && (
         <>
+          {/* The whole file on one map — every kawasan, every block, no cap.
+              A boundary missing from here is indistinguishable from one that is
+              not in the file, and "is this kawasan even in our kabupaten" is
+              precisely what this map is for. */}
+          <Card ref={overviewMapRef}>
+            <CardHeader>
+              <CardTitle className="text-base">Peta Seluruh Kawasan pada File</CardTitle>
+              <p className="text-sm text-gray-600">
+                Merah = akan diimpor, abu-abu = tidak dicentang. Tekan ikon{' '}
+                <Crosshair className="inline h-3.5 w-3.5 align-text-bottom text-blue-600" />{' '}
+                pada baris tabel untuk memfokuskan peta ke kawasan itu.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <ReadOnlyMap
+                submissions={[]}
+                referencePolygons={overviewPolygons}
+                showNonSpptgLegend
+                legendStatuses={[]}
+                height="28rem"
+                focusGeoJSON={focusTarget}
+                focusSignal={focusSignal}
+              />
+              <p className="text-xs text-gray-500">
+                Menggambar seluruh {num(summary.totalBlocks)} blok dari{' '}
+                {num(summary.totalGroups)} kawasan. File besar membuat peta terasa
+                berat — itu wajar, tidak ada blok yang disembunyikan.
+              </p>
+            </CardContent>
+          </Card>
+
           {/* Step 2 — the kawasan themselves. This is the form. */}
           <Card>
             <CardHeader>
@@ -580,15 +717,35 @@ export function KawasanBulkImport({ handoff, onCancel }: KawasanBulkImportProps 
                             {num(group.pointCount)}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={!importable || isBusy}
-                              onClick={() => setEditingKey(group.key)}
-                            >
-                              <Pencil className="mr-1 h-3.5 w-3.5" />
-                              Ubah
-                            </Button>
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Fokuskan peta ke kawasan ini"
+                                aria-label={`Fokuskan peta ke ${row?.namaKawasan?.trim() || group.nama}`}
+                                onClick={() => focusOnMap(group)}
+                              >
+                                <Crosshair className="h-4 w-4 text-blue-600" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Lihat detail dan peta kawasan ini"
+                                aria-label={`Lihat detail ${row?.namaKawasan?.trim() || group.nama}`}
+                                onClick={() => setPreviewKey(group.key)}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={!importable || isBusy}
+                                onClick={() => setEditingKey(group.key)}
+                              >
+                                <Pencil className="mr-1 h-3.5 w-3.5" />
+                                Ubah
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -883,6 +1040,107 @@ export function KawasanBulkImport({ handoff, onCancel }: KawasanBulkImportProps 
 
           <DialogFooter>
             <Button onClick={() => setEditingKey(null)}>Selesai</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Detail + map for one kawasan, before it is imported.
+          The boundary is the only thing here that cannot be checked by reading
+          the row: an officer deciding whether a kawasan belongs to this
+          kabupaten needs to see *where* it is, not just how many blocks it
+          has. */}
+      <Dialog open={previewKey !== null} onOpenChange={(open) => !open && setPreviewKey(null)}>
+        <DialogContent className="sm:max-w-[860px]">
+          <DialogHeader>
+            <DialogTitle>
+              {previewRow?.namaKawasan?.trim() || previewGroup?.nama || 'Kawasan'}
+            </DialogTitle>
+            {previewGroup && (
+              <p className="text-sm text-gray-600">
+                {num(previewGroup.blockCount)} blok · {num(previewGroup.pointCount)} titik
+                {previewGroup.isUnnamed && ' · file tidak memberi nama kawasan ini'}
+              </p>
+            )}
+          </DialogHeader>
+
+          {previewGroup && (
+            <div className="space-y-4">
+              <ReadOnlyMap
+                submissions={[]}
+                referencePolygons={previewPolygons}
+                showNonSpptgLegend
+                // Only the kawasan is drawn here, so no SPPTG entry belongs in
+                // the legend.
+                legendStatuses={[]}
+                height="22rem"
+                focusGeoJSON={previewGeometry}
+                // Constant: the dialog mounts fresh per kawasan, so one frame
+                // on open is exactly the behaviour wanted.
+                focusSignal={1}
+              />
+
+              <div className="grid grid-cols-1 gap-3 rounded-lg bg-gray-50 p-4 text-sm sm:grid-cols-2">
+                <div>
+                  <p className="text-xs text-gray-500">Nama pada file</p>
+                  <p className="text-gray-900">{previewGroup.nama}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Jenis Kawasan</p>
+                  <p className="text-gray-900">
+                    {previewRow?.jenisKawasan ?? (
+                      <span className="text-amber-700 italic">Belum dipilih</span>
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Sumber Data</p>
+                  <p className="text-gray-900">
+                    {previewRow?.sumberData?.trim() || (
+                      <span className="text-amber-700 italic">Belum diisi</span>
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Tanggal Efektif</p>
+                  <p className="text-gray-900">
+                    {previewRow?.tanggalEfektif ? (
+                      formatDate(previewRow.tanggalEfektif)
+                    ) : (
+                      <span className="text-amber-700 italic">Belum diisi</span>
+                    )}
+                  </p>
+                </div>
+                <div className="sm:col-span-2">
+                  <p className="text-xs text-gray-500">Dasar Hukum</p>
+                  <p className="text-gray-900">{previewRow?.dasarHukum?.trim() || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Status Validasi</p>
+                  <p className="text-gray-900">{previewRow?.statusValidasi ?? '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Aktif di Validasi</p>
+                  <p className="text-gray-900">
+                    {previewRow?.aktifDiValidasi ? 'Ya' : 'Tidak'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const key = previewKey;
+                setPreviewKey(null);
+                if (key) setEditingKey(key);
+              }}
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Ubah Kawasan Ini
+            </Button>
+            <Button onClick={() => setPreviewKey(null)}>Tutup</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
